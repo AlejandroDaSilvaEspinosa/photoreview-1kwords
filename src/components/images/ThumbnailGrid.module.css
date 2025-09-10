@@ -1,0 +1,68 @@
+/* --- Thumbnails --- */
+.thumbnailSelector {
+    display: flex;
+    gap: 10px;
+    padding: 15px 20px;
+    background-color: #222;
+    border-top: 1px solid #333;
+    overflow-x: auto;
+    max-height: 120px;
+}
+
+.thumbnailWrapper {
+    position: relative;
+    min-width: 80px;
+    height: 80px;
+    cursor: pointer;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid transparent;
+    transition: border-color 0.2s ease;
+}
+
+.thumbnailWrapper:hover {
+    border-color: #555;
+}
+
+.activeThumbnail {
+    border-color: #FF0040 !important;
+}
+
+.thumbnail {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 6px;
+}
+
+.thumbnailName {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 4px;
+    text-align: center;
+}
+
+/* Indicadores */
+.commentIndicator,
+.validatedIndicator {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background-color: rgba(0, 0, 0, 0.8);
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+}
+
+.validatedIndicator {
+    background-color: rgba(0, 150, 0, 0.8);
+}

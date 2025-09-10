@@ -1,0 +1,192 @@
+/* --- ImageViewer: layout principal y área de imagen --- */
+.viewerContainer {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  background-color: #1a1a1a;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.mainViewer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header */
+.imageHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  background-color: #222;
+  border-bottom: 1px solid #333;
+}
+
+.imageHeader h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.imageCounter {
+  background-color: #333;
+  padding: 5px 12px;
+  border-radius: 15px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Área principal de imagen */
+.mainImageContainer {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  position: relative;
+  background-color: #181818;
+  min-height: 0;
+}
+
+.mainImageWrapper {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: crosshair;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.mainImage {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Botón de zoom/lightbox */
+.zoomButton {
+  position: absolute;
+  right: 28px;
+  bottom: 28px;
+  background: rgba(34, 34, 34, 0.85);
+  border: 1px solid #444;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: all .15s ease;
+  z-index: 6;
+}
+
+.zoomButton:hover {
+  background: #FF0040;
+  border-color: #FF0040;
+}
+
+/* Navegación */
+.navButton {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background-color: rgba(42, 42, 42, 0.9);
+  border: 1px solid #555;
+  color: #fff;
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.navButton:hover:not(:disabled) {
+  background-color: #FF0040;
+  border-color: #FF0040;
+}
+
+.navButton:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.navLeft {
+  left: 20px;
+}
+
+.navRight {
+  right: 20px;
+}
+
+/* Nodos de anotación */
+.annotationNode {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  background-color: #FF0040;
+  color: #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 14px;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  transition: all 0.2s ease;
+  z-index: 5;
+}
+
+.annotationNode:hover,
+.activeNode {
+  transform: translate(-50%, -50%) scale(1.1);
+  box-shadow: 0 4px 15px rgba(255, 0, 64, 0.4);
+}
+
+/* Mensajes globales */
+.message,
+.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-size: 18px;
+  background-color: #1a1a1a;
+  padding: 20px;
+  text-align: center;
+}
+
+.message {
+  color: #888;
+}
+
+.error {
+  color: #FF0040;
+}
+
+/* Responsive del layout principal */
+@media (max-width: 768px) {
+  .viewerContainer {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .mainViewer {
+    height: 50vh;
+  }
+}

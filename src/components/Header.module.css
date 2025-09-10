@@ -1,0 +1,153 @@
+/* Fichero: components/Header.module.css */
+
+.appHeader {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 40px;
+  background-color: #1f1f1f;
+  border-bottom: 1px solid #333;
+  z-index: 1000;
+  
+  /* Animación de transición */
+  transform: translateY(-85%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Mostrar header completo al hacer hover */
+.appHeader:hover {
+  transform: translateY(0);
+}
+
+/* Indicador visual para mostrar que hay contenido arriba */
+.appHeader::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 4px;
+  background: linear-gradient(90deg, transparent, #FF0040, transparent);
+  border-radius: 0 0 4px 4px;
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+.appHeader:hover::after {
+  opacity: 0;
+}
+
+/* Área de activación más grande en la parte superior */
+.hoverZone {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  z-index: 1001;
+  background: transparent;
+}
+
+.logoContainer, .clientInfo {
+  flex: 1;
+}
+
+.logoContainer {
+  display: flex;
+  align-items: center;
+}
+
+/* Estilos del selector wrapper */
+.selectorWrapper {
+  flex: 2;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.selectorText {
+  text-align: left;
+}
+
+.selectorWrapper h2 {
+  margin: 0;
+  font-size: 16px;
+  color: #D9D9D9;
+  font-weight: 500;
+}
+
+.selectorWrapper p {
+  margin: 0;
+  color: #a0a0a0;
+  font-size: 14px;
+}
+
+.skuSelector {
+  padding: 10px 16px;
+  font-size: 14px;
+  border-radius: 8px;
+  border: 1px solid #444;
+  background-color: #1f1f1f;
+  color: #D9D9D9;
+  min-width: 250px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.skuSelector:focus {
+  outline: none;
+  border-color: #FF0040;
+  box-shadow: 0 0 0 3px rgba(255, 0, 64, 0.2);
+}
+
+.clientInfo {
+  text-align: right;
+}
+
+.clientInfo h3 {
+  margin: 0 0 4px 0;
+  font-size: 18px;
+  font-weight: bold;
+  color: #D9D9D9;
+}
+
+.clientInfo p {
+  margin: 0;
+  font-size: 14px;
+  color: #a0a0a0;
+}
+
+/* Estilos responsive */
+@media (max-width: 768px) {
+  .appHeader {
+    padding: 15px 20px;
+    transform: translateY(-90%);
+  }
+  
+  .selectorWrapper {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .selectorText {
+    text-align: center;
+  }
+  
+  .skuSelector {
+    min-width: 200px;
+  }
+}
+
+/* Compensar el espacio del header fijo en el body */
+.headerSpacer {
+  height: 20px;
+  background: linear-gradient(180deg, rgba(31, 31, 31, 0.1), transparent);
+}

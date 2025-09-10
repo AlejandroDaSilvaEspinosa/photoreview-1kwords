@@ -1,0 +1,32 @@
+/* Fichero: app/globals.css */
+
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+
+:root {
+  --background: #181818;
+  --foreground: #D9D9D9;
+  /* Ajustado al color de tu marca */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #181818;
+    /* Ajustado al color de tu marca */
+    --foreground: #D9D9D9;
+    /* Ajustado al color de tu marca */
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Roboto', sans-serif;
+  /* Tipografía principal actualizada */
+}

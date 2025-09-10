@@ -1,0 +1,16 @@
+# Fichero: .gitignore (en la raíz del proyecto)
+
+# Dependencias
+/node_modules
+
+# Ficheros de build de Next.js
+/.next/
+/out/
+
+# Variables de entorno locales
+.env.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
