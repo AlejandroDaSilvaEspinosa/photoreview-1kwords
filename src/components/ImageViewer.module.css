@@ -1,4 +1,3 @@
-/* --- ImageViewer: layout principal y área de imagen --- */
 .viewerContainer {
   display: flex;
   width: 100%;
@@ -15,7 +14,6 @@
   overflow: hidden;
 }
 
-/* Header */
 .imageHeader {
   display: flex;
   justify-content: space-between;
@@ -39,7 +37,6 @@
   font-weight: 500;
 }
 
-/* Área principal de imagen */
 .mainImageContainer {
   flex: 1;
   display: flex;
@@ -71,7 +68,7 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
-/* Botón de zoom/lightbox */
+/* Zoom */
 .zoomButton {
   position: absolute;
   right: 28px;
@@ -131,7 +128,7 @@
   right: 20px;
 }
 
-/* Nodos de anotación */
+/* Anotaciones */
 .annotationNode {
   position: absolute;
   width: 28px;
@@ -179,7 +176,6 @@
   color: #FF0040;
 }
 
-/* Responsive del layout principal */
 @media (max-width: 768px) {
   .viewerContainer {
     flex-direction: column;

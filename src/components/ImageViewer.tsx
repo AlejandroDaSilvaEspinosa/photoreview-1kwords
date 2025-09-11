@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import styles from "./ImageViewer.module.css";
 import { useAuth } from "@/contexts/AuthContext";
 import Lightbox, { type Slide } from "yet-another-react-lightbox";
@@ -9,12 +15,14 @@ import AuthenticatedImage from "./images/AuthenticatedImage";
 import ThumbnailGrid from "./images/ThumbnailGrid";
 import SidePanel from "./images/SidePanel";
 import type {
-  Annotation,
+  AnnotationThread,
   AnnotationState,
   ValidationState,
-  SkuData,
   ImageItem,
 } from "@/types/review";
+
+/** Reviews payload: { [filename]: { points?: AnnotationThread[] } } */
+type ReviewsPayload = Record<string, { points?: AnnotationThread[] }>;
 
 interface ImageViewerProps {
   sku: string;
@@ -24,18 +32,20 @@ interface ImageViewerProps {
 export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
   const { token } = useAuth();
 
-  const [data, setData] = useState<SkuData | null>(null);
+  // Estado principal
+  const [images, setImages] = useState<ImageItem[]>([]);
   const [annotations, setAnnotations] = useState<AnnotationState>({});
   const [validatedImages, setValidatedImages] = useState<ValidationState>({});
-  const [activeAnnotationId, setActiveAnnotationId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
+
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [completionMessage, setCompletionMessage] = useState("");
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
 
-  // Geometría para anotaciones
+  // Geometría
   const wrapperRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const [imgBox, setImgBox] = useState({
@@ -59,149 +69,222 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
     });
   }, []);
 
+  // Recalcular geometría en resize (debounced por el propio browser)
   useEffect(() => {
     const onResize = () => updateImageGeometry();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [updateImageGeometry]);
 
-  // Cargar datos
+  // ResizeObserver para cambios de tamaño del contenedor/imagen
   useEffect(() => {
+    if (!wrapperRef.current) return;
+    const ro = new ResizeObserver(() => updateImageGeometry());
+    ro.observe(wrapperRef.current);
+    return () => ro.disconnect();
+  }, [updateImageGeometry]);
+
+  // 1) Cargar imágenes
+  useEffect(() => {
+    let alive = true;
     if (!sku || !token) {
       setLoading(false);
       return;
     }
-
     setLoading(true);
     setError("");
     setCompletionMessage("");
-    setData(null);
+    setImages([]);
+    setAnnotations({});
+    setValidatedImages({});
+    setSelectedImageIndex(0);
+    setActiveThreadId(null);
 
     fetch(`/api/images/${sku}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {
-        if (res.status === 401) throw new Error("No autorizado. Inicie sesión de nuevo.");
+        if (res.status === 401)
+          throw new Error("No autorizado. Inicie sesión de nuevo.");
         if (!res.ok) throw new Error("Fallo al obtener las imágenes de la SKU.");
         return res.json();
       })
-      .then((fetchedData: SkuData) => {
-        if (fetchedData.allReviewed) {
-          setCompletionMessage("¡Todas las imágenes para esta SKU ya han sido revisadas!");
-          return;
-        }
-        if (!fetchedData.images?.length) {
+      .then((fetched: ImageItem[]) => {
+        if (!alive) return;
+        if (!Array.isArray(fetched) || fetched.length === 0) {
           setError(`No se encontraron imágenes pendientes para la SKU ${sku}.`);
           return;
         }
 
-        setData(fetchedData);
+        // Inicializar anotaciones y validaciones vacías
+        const initAnns: AnnotationState = {};
+        const initVal: ValidationState = {};
+        for (const img of fetched) {
+          initAnns[img.filename] = [];
+          initVal[img.filename] = false;
+        }
 
-        // Estados iniciales
-        const initialAnnotations: AnnotationState = {};
-        const initialValidation: ValidationState = {};
-        fetchedData.images.forEach((img) => {
-          initialAnnotations[img.filename] = [];
-          initialValidation[img.filename] = false;
-        });
-        setAnnotations(initialAnnotations);
-        setValidatedImages(initialValidation);
+        setImages(fetched);
+        setAnnotations(initAnns);
+        setValidatedImages(initVal);
 
         // Selección inicial
-        const idx = targetImage
-          ? fetchedData.images.findIndex((img) => img.filename === targetImage)
-          : -1;
-        setSelectedImageIndex(idx !== -1 ? idx : 0);
+        const initialIndex = targetImage
+          ? Math.max(0, fetched.findIndex((i) => i.filename === targetImage))
+          : 0;
+        setSelectedImageIndex(initialIndex === -1 ? 0 : initialIndex);
       })
-      .catch((err) => setError(err.message))
+      .catch((err: unknown) => {
+        if (!alive) return;
+        setError(err instanceof Error ? err.message : "Error al cargar imágenes");
+      })
       .finally(() => {
-        setLoading(false);
-        setTimeout(updateImageGeometry, 0);
+        if (alive) setLoading(false);
       });
-  }, [sku, token, targetImage, updateImageGeometry]);
 
-  // Reposicionar al cambiar ?image=
+    return () => {
+      alive = false;
+    };
+  }, [sku, token, targetImage]);
+
+  // 2) Cargar anotaciones existentes (última revisión)
   useEffect(() => {
-    if (!data || !targetImage) return;
-    const idx = data.images.findIndex((img) => img.filename === targetImage);
-    if (idx !== -1) setSelectedImageIndex(idx);
-  }, [targetImage, data]);
+    let alive = true;
+    if (!sku || images.length === 0) return;
 
-  // Click para anotar
+    (async () => {
+      try {
+        const res = await fetch(`/api/reviews/${sku}`);
+        if (!res.ok) return; // no reviews previas
+        const payload: ReviewsPayload = await res.json();
+
+        // Mezcla segura: solo filenames que existen en las imágenes actuales
+        const merged: AnnotationState = {};
+        for (const img of images) {
+          const entry = payload[img.filename];
+          merged[img.filename] = entry?.points ?? [];
+        }
+
+        if (alive) {
+          setAnnotations((prev) => ({ ...prev, ...merged }));
+          // Tras pintar la imagen con anotaciones, recalcula geometría
+          requestAnimationFrame(updateImageGeometry);
+        }
+      } catch {
+        /* ignorar reviews corruptos */
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [sku, images, updateImageGeometry]);
+
+  // Handlers de anotaciones
   const handleImageClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const current = images[selectedImageIndex];
+    if (!current) return;
     if ((event.target as HTMLElement).closest(`.${styles.annotationNode}`)) return;
-    if (!data?.images[selectedImageIndex]) return;
-    if (validatedImages[data.images[selectedImageIndex].filename]) return;
 
     const imgEl = imgRef.current;
     if (!imgEl) return;
+    const r = imgEl.getBoundingClientRect();
+    const x = event.clientX - r.left;
+    const y = event.clientY - r.top;
+    if (x < 0 || y < 0 || x > r.width || y > r.height) return;
 
-    const iRect = imgEl.getBoundingClientRect();
-    const x = event.clientX - iRect.left;
-    const y = event.clientY - iRect.top;
-    if (x < 0 || y < 0 || x > iRect.width || y > iRect.height) return;
+    const xPercent = (x / r.width) * 100;
+    const yPercent = (y / r.height) * 100;
 
-    const xPercent = (x / iRect.width) * 100;
-    const yPercent = (y / iRect.height) * 100;
-
-    const currentImage = data.images[selectedImageIndex];
-    const newAnnotation: Annotation = {
-      id: Date.now(),
+    const threadId = Date.now();
+    const newThread: AnnotationThread = {
+      id: threadId,
       x: xPercent,
       y: yPercent,
-      comment: "",
+      messages: [
+        { id: threadId + 1, text: "", createdAt: new Date().toISOString() },
+      ],
     };
 
     setAnnotations((prev) => ({
       ...prev,
-      [currentImage.filename]: [...(prev[currentImage.filename] || []), newAnnotation],
+      [current.filename]: [...(prev[current.filename] || []), newThread],
     }));
-    setActiveAnnotationId(newAnnotation.id);
+    setActiveThreadId(threadId);
   };
 
-  const handleAnnotationChange = (id: number, comment: string) => {
-    if (!data?.images[selectedImageIndex]) return;
-    const currentImage = data.images[selectedImageIndex];
+  const onChangeMessage = (threadId: number, messageId: number, text: string) => {
+    const img = images[selectedImageIndex];
+    if (!img) return;
     setAnnotations((prev) => ({
       ...prev,
-      [currentImage.filename]: prev[currentImage.filename].map((ann) =>
-        ann.id === id ? { ...ann, comment } : ann
+      [img.filename]: (prev[img.filename] || []).map((t) =>
+        t.id === threadId
+          ? {
+              ...t,
+              messages: t.messages.map((m) =>
+                m.id === messageId ? { ...m, text } : m
+              ),
+            }
+          : t
       ),
     }));
   };
 
-  const deleteAnnotation = (id: number) => {
-    if (!data?.images[selectedImageIndex]) return;
-    const currentImage = data.images[selectedImageIndex];
+  const onAddMessage = (threadId: number) => {
+    const img = images[selectedImageIndex];
+    if (!img) return;
+    const newId = Date.now();
     setAnnotations((prev) => ({
       ...prev,
-      [currentImage.filename]: prev[currentImage.filename].filter((ann) => ann.id !== id),
+      [img.filename]: (prev[img.filename] || []).map((t) =>
+        t.id === threadId
+          ? {
+              ...t,
+              messages: [
+                ...t.messages,
+                { id: newId, text: "", createdAt: new Date().toISOString() },
+              ],
+            }
+          : t
+      ),
     }));
-    if (activeAnnotationId === id) setActiveAnnotationId(null);
+    setActiveThreadId(threadId);
   };
 
+  const deleteThread = (threadId: number) => {
+    const img = images[selectedImageIndex];
+    if (!img) return;
+    setAnnotations((prev) => ({
+      ...prev,
+      [img.filename]: (prev[img.filename] || []).filter((t) => t.id !== threadId),
+    }));
+    if (activeThreadId === threadId) setActiveThreadId(null);
+  };
+
+  // Validación
   const handleValidateImage = () => {
-    if (!data?.images[selectedImageIndex]) return;
-    const currentImage = data.images[selectedImageIndex];
-    setValidatedImages((prev) => ({ ...prev, [currentImage.filename]: true }));
-    if (selectedImageIndex < (data?.images.length || 1) - 1) {
-      setTimeout(() => setSelectedImageIndex((i) => i + 1), 300);
+    const img = images[selectedImageIndex];
+    if (!img) return;
+    setValidatedImages((prev) => ({ ...prev, [img.filename]: true }));
+    if (selectedImageIndex < images.length - 1) {
+      setSelectedImageIndex((i) => i + 1);
     }
   };
 
   const handleUnvalidateImage = () => {
-    if (!data?.images[selectedImageIndex]) return;
-    const currentImage = data.images[selectedImageIndex];
-    setValidatedImages((prev) => ({ ...prev, [currentImage.filename]: false }));
+    const img = images[selectedImageIndex];
+    if (!img) return;
+    setValidatedImages((prev) => ({ ...prev, [img.filename]: false }));
   };
 
+  // Submit
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!data || !token) return;
-
+    if (!images.length || !token) return;
     setSaving(true);
     try {
-      const reviewData = data.images.map((img) => ({
+      const reviewData = images.map((img) => ({
         filename: img.filename,
         validated: validatedImages[img.filename] || false,
         url: img.url,
@@ -214,68 +297,103 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ sku: data.sku, review: reviewData }),
+        body: JSON.stringify({ sku, review: reviewData }),
       });
 
-      if (res.status === 401) throw new Error("No autorizado. Inicie sesión de nuevo.");
+      if (res.status === 401)
+        throw new Error("No autorizado. Inicie sesión de nuevo.");
       if (!res.ok) throw new Error("Error en la respuesta del servidor");
 
-      alert("¡Revisión guardada con éxito!");
+      const payload = await res.json();
+      alert(`¡Revisión #${payload?.revision} guardada con éxito!`);
       setCompletionMessage("¡Revisión completada! Puedes buscar otra SKU.");
-      setData(null);
-    } catch (err: any) {
-      console.error("Error al guardar:", err);
-      alert(err?.message || "Error al guardar la revisión.");
+      setImages([]);
+      setAnnotations({});
+      setValidatedImages({});
+    } catch (err: unknown) {
+      alert(
+        err instanceof Error ? err.message : "Error al guardar la revisión."
+      );
     } finally {
       setSaving(false);
     }
   };
 
+  // Selección de imagen
   const selectImage = (index: number) => {
-    if (!data?.images?.length) return;
-    if (index < 0 || index >= data.images.length) return;
+    if (!images.length) return;
+    if (index < 0 || index >= images.length) return;
     setSelectedImageIndex(index);
-    setActiveAnnotationId(null);
-    setTimeout(updateImageGeometry, 0);
+    setActiveThreadId(null);
+    requestAnimationFrame(updateImageGeometry);
   };
 
+  // Derivados
+  const currentImage = images[selectedImageIndex];
+
+  const threads: AnnotationThread[] = useMemo(
+    () => (currentImage ? annotations[currentImage.filename] || [] : []),
+    [annotations, currentImage]
+  );
+
+  const hasAnyText = useCallback(
+    (t: AnnotationThread[]) =>
+      t.some((th) => th.messages?.some((m) => m.text.trim() !== "")),
+    []
+  );
+
+  const withCorrectionsCount = useMemo(
+    () =>
+      images.reduce(
+        (acc, img) =>
+          acc + (hasAnyText(annotations[img.filename] || []) ? 1 : 0),
+        0
+      ),
+    [images, annotations, hasAnyText]
+  );
+
+  const validatedImagesCount = useMemo(
+    () => images.reduce((acc, img) => acc + (validatedImages[img.filename] ? 1 : 0), 0),
+    [images, validatedImages]
+  );
+
+  const totalCompleted = useMemo(
+    () =>
+      images.reduce(
+        (acc, img) =>
+          acc +
+          (validatedImages[img.filename] ||
+          hasAnyText(annotations[img.filename] || [])
+            ? 1
+            : 0),
+        0
+      ),
+    [images, validatedImages, annotations, hasAnyText]
+  );
+
+  const isSubmitDisabled = images.length === 0 || totalCompleted !== images.length;
+
+  const lightboxSlides: Slide[] = useMemo(
+    () => images.map((image) => ({ src: image.url })),
+    [images]
+  );
+
+  // Render
   if (loading) return <div className={styles.message}>Cargando SKU...</div>;
   if (error) return <div className={styles.error}>{error}</div>;
   if (completionMessage) return <div className={styles.message}>{completionMessage}</div>;
-  if (!data?.images?.length) return null;
+  if (!images.length || !currentImage) return null;
 
-  const currentImage = data.images[selectedImageIndex];
-  const currentAnnotations = annotations[currentImage.filename] || [];
   const isCurrentImageValidated = !!validatedImages[currentImage.filename];
-
-  const withCorrectionsCount = data.images.filter((img) => {
-    const anns = annotations[img.filename] || [];
-    return anns.length > 0 && anns.every((a) => a.comment.trim() !== "");
-  }).length;
-
-  const validatedImagesCount = data.images.filter(
-    (img) => validatedImages[img.filename]
-  ).length;
-
-  const isCompleted = (img: ImageItem) => {
-    const anns = annotations[img.filename] || [];
-    const hasAll = anns.length > 0 && anns.every((a) => a.comment.trim() !== "");
-    return validatedImages[img.filename] || hasAll;
-  };
-  const totalCompleted = data.images.filter(isCompleted).length;
-  const isSubmitDisabled = totalCompleted !== data.images.length;
-
-  const lightboxSlides: Slide[] = data.images.map((image) => ({ src: image.url }));
 
   return (
     <>
       <div className={styles.viewerContainer}>
-        {/* Panel principal */}
         <div className={styles.mainViewer}>
           <div className={styles.imageHeader}>
-            <h1>Revisión de SKU: {data.sku}</h1>
+            <h1>Revisión de SKU: {sku}</h1>
             <div className={styles.imageCounter}>
-              {selectedImageIndex + 1} de {data.images.length}
+              {selectedImageIndex + 1} de {images.length}
             </div>
           </div>
 
@@ -305,29 +423,19 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
                 onLoadRealImage={updateImageGeometry}
               />
 
-              <button
-                type="button"
-                className={styles.zoomButton}
-                aria-label="Abrir visor"
-                onClick={() => setLightboxOpen(true)}
-              >
-                🔍
-              </button>
-
-              {/* Puntos de anotación */}
-              {currentAnnotations.map((ann, index) => {
-                const topPx = imgBox.offsetTop + (ann.y / 100) * imgBox.height;
-                const leftPx = imgBox.offsetLeft + (ann.x / 100) * imgBox.width;
+              {threads.map((th, index) => {
+                const topPx = imgBox.offsetTop + (th.y / 100) * imgBox.height;
+                const leftPx = imgBox.offsetLeft + (th.x / 100) * imgBox.width;
                 return (
                   <div
-                    key={ann.id}
+                    key={th.id}
                     className={`${styles.annotationNode} ${
-                      activeAnnotationId === ann.id ? styles.activeNode : ""
+                      activeThreadId === th.id ? "activeNode" : ""
                     }`}
                     style={{ top: `${topPx}px`, left: `${leftPx}px` }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setActiveAnnotationId(ann.id);
+                      setActiveThreadId(th.id);
                     }}
                   >
                     {index + 1}
@@ -339,16 +447,15 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
             <button
               className={`${styles.navButton} ${styles.navRight}`}
               onClick={() => selectImage(selectedImageIndex + 1)}
-              disabled={selectedImageIndex === data.images.length - 1}
+              disabled={selectedImageIndex === images.length - 1}
               aria-label="Imagen siguiente"
             >
               ›
             </button>
           </div>
 
-          {/* Thumbnails */}
           <ThumbnailGrid
-            images={data.images}
+            images={images}
             selectedIndex={selectedImageIndex}
             onSelect={selectImage}
             annotations={annotations}
@@ -358,27 +465,26 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
           />
         </div>
 
-        {/* Panel lateral */}
         <SidePanel
           filename={currentImage.filename}
           isValidated={isCurrentImageValidated}
-          annotations={currentAnnotations}
+          threads={threads}
           onValidate={handleValidateImage}
           onUnvalidate={handleUnvalidateImage}
-          onChangeComment={handleAnnotationChange}
-          onDeleteAnnotation={deleteAnnotation}
-          onFocusAnnotation={(id) => setActiveAnnotationId(id)}
+          onAddMessage={onAddMessage}
+          onChangeMessage={onChangeMessage}
+          onDeleteThread={deleteThread}
+          onFocusThread={(id) => setActiveThreadId(id)}
           onSubmit={handleSubmit}
           submitDisabled={isSubmitDisabled}
           saving={saving}
           withCorrectionsCount={withCorrectionsCount}
           validatedImagesCount={validatedImagesCount}
           totalCompleted={totalCompleted}
-          totalImages={data.images.length}
+          totalImages={images.length}
         />
       </div>
 
-      {/* Lightbox */}
       <Lightbox
         open={lightboxOpen}
         close={() => setLightboxOpen(false)}

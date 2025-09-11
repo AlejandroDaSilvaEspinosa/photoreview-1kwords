@@ -1,22 +1,17 @@
 import { NextResponse } from "next/server";
 import { getImagesForSku, getReviewsBySku } from "@/lib/data";
+import { transform } from "next/dist/build/swc";
 
 export const runtime = "nodejs";
 
 export async function GET(_: Request, { params }: { params: { sku: string } }) {
   try {
     const { sku } = params;
-    const images = await getImagesForSku(sku);
-    //change "name prop" to "filename"
-    images?.forEach(img => {
-      img.filename = img.name;
-      img.url = `https://drive.google.com/uc?id=${img.id}`
-      delete img.name;
-    });
-    console.log(images)
-    return NextResponse.json( images );
+    const reviews = await getReviewsBySku(sku);
+    console.log(reviews)
+    return NextResponse.json(reviews);
   } catch (e: any) {
-    console.error("GET /api/images/[sku] error:", e);
+    console.error("GET /api/reviews/[sku] error:", e);
     return NextResponse.json({ error: "Failed to load images" }, { status: 500 });
   }
 }

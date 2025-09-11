@@ -3,7 +3,6 @@
 import React from "react";
 import AuthenticatedImage from "./AuthenticatedImage";
 import styles from "./ThumbnailGrid.module.css";
-
 import type {
   AnnotationState,
   ValidationState,
@@ -17,7 +16,6 @@ type Props = {
   annotations: AnnotationState;
   validatedImages: ValidationState;
   token: string | null;
-  /** Tamaño de miniatura (por defecto 112x112) */
   thumbSize?: number;
 };
 
@@ -50,12 +48,10 @@ export default function ThumbnailGrid({
               alt={image.filename}
               token={token}
               lazy
-              // tamaño estable para que el IO funcione siempre
               placeholderWidth={thumbSize}
               placeholderHeight={thumbSize}
               className={styles.thumbnail}
             />
-
             <div className={styles.thumbnailName}>
               {image.filename.split(".")[0].substring(0, 12)}…
             </div>

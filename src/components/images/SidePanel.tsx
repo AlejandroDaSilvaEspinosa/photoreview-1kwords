@@ -2,17 +2,18 @@
 
 import React from "react";
 import styles from "./SidePanel.module.css";
-import type { Annotation } from "@/types/review";
+import type { AnnotationThread } from "@/types/review";
 
 type Props = {
   filename: string;
   isValidated: boolean;
-  annotations: Annotation[];
+  threads: AnnotationThread[];
   onValidate: () => void;
   onUnvalidate: () => void;
-  onChangeComment: (id: number, comment: string) => void;
-  onDeleteAnnotation: (id: number) => void;
-  onFocusAnnotation: (id: number) => void;
+  onAddMessage: (threadId: number) => void;
+  onChangeMessage: (threadId: number, messageId: number, text: string) => void;
+  onDeleteThread: (threadId: number) => void;
+  onFocusThread: (id: number) => void;
   onSubmit: (e: React.FormEvent) => void;
   submitDisabled: boolean;
   saving: boolean;
@@ -25,12 +26,13 @@ type Props = {
 export default function SidePanel({
   filename,
   isValidated,
-  annotations,
+  threads,
   onValidate,
   onUnvalidate,
-  onChangeComment,
-  onDeleteAnnotation,
-  onFocusAnnotation,
+  onAddMessage,
+  onChangeMessage,
+  onDeleteThread,
+  onFocusThread,
   onSubmit,
   submitDisabled,
   saving,
@@ -51,71 +53,70 @@ export default function SidePanel({
         <form onSubmit={onSubmit}>
           <div className={styles.validationButtons}>
             {!isValidated ? (
-              <button
-                type="button"
-                className={styles.validateButton}
-                onClick={onValidate}
-              >
+              <button type="button" className={styles.validateButton} onClick={onValidate}>
                 ✅ Validar sin correcciones
               </button>
             ) : (
-              <button
-                type="button"
-                className={styles.unvalidateButton}
-                onClick={onUnvalidate}
-              >
+              <button type="button" className={styles.unvalidateButton} onClick={onUnvalidate}>
                 ↩️ Desvalidar imagen
               </button>
             )}
           </div>
 
           <div className={styles.divider}>
-            <span>
-              {isValidated
-                ? "Imagen validada"
-                : "Añadir correcciones (haz clic en la imagen)"}
-            </span>
+            <span>{isValidated ? "Imagen validada" : "Añadir correcciones (haz clic en la imagen)"}</span>
           </div>
 
           <div className={styles.annotationsList}>
-            {annotations.length === 0 && !isValidated && (
+            {threads.length === 0 && !isValidated && (
               <p className={styles.noAnnotations}>
                 Haz clic en un punto de la imagen para añadir una corrección.
               </p>
             )}
 
-            {annotations.map((ann, index) => (
-              <div key={ann.id} className={styles.annotationItem}>
+            {threads.map((th, index) => (
+              <div key={th.id} className={styles.annotationItem}>
                 <div className={styles.annotationHeader}>
                   <span className={styles.annotationNumber}>{index + 1}</span>
                   <button
                     type="button"
-                    onClick={() => onDeleteAnnotation(ann.id)}
+                    onClick={() => onDeleteThread(th.id)}
                     className={styles.deleteAnnotationBtn}
                     aria-label="Eliminar anotación"
                   >
                     ×
                   </button>
                 </div>
-                <textarea
-                  placeholder={`Corrección #${index + 1}...`}
-                  className={styles.commentBox}
-                  value={ann.comment}
-                  onChange={(e) => onChangeComment(ann.id, e.target.value)}
-                  rows={4}
-                  disabled={isValidated}
-                  onFocus={() => onFocusAnnotation(ann.id)}
-                />
+
+                {th.messages?.map((m) => (
+                  <textarea
+                    key={m.id}
+                    placeholder={`Mensaje…`}
+                    className={styles.commentBox}
+                    value={m.text}
+                    onChange={(e) => onChangeMessage(th.id, m.id, e.target.value)}
+                    rows={3}
+                    disabled={isValidated}
+                    onFocus={() => onFocusThread(th.id)}
+                  />
+                ))}
+
+                {!isValidated && (
+                  <button
+                    type="button"
+                    className={styles.validateButton}
+                    style={{ background: "#444", marginTop: 8 }}
+                    onClick={() => onAddMessage(th.id)}
+                  >
+                    ➕ Añadir mensaje
+                  </button>
+                )}
               </div>
             ))}
           </div>
 
           <div className={styles.actionButtons}>
-            <button
-              type="submit"
-              className={styles.submitButton}
-              disabled={submitDisabled || saving}
-            >
+            <button type="submit" className={styles.submitButton} disabled={submitDisabled || saving}>
               {saving ? "Guardando…" : "Guardar Revisión Completa"}
             </button>
             {submitDisabled && !saving && (
@@ -138,9 +139,7 @@ export default function SidePanel({
           </div>
           <div className={styles.progressInfo}>
             <span>Completadas:</span>
-            <strong>
-              {totalCompleted} / {totalImages}
-            </strong>
+            <strong>{totalCompleted} / {totalImages}</strong>
           </div>
         </div>
       </div>

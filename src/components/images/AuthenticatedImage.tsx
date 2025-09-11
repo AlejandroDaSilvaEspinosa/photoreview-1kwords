@@ -12,7 +12,6 @@ type Props = {
   token: string | null;
   lazy?: boolean;
   onLoadRealImage?: () => void;
-  /** Tamaño opcional para placeholders (muy útil en thumbnails) */
   placeholderWidth?: number | string;
   placeholderHeight?: number | string;
 };
@@ -30,14 +29,6 @@ const extractFileId = (url: string): string | null => {
   return null;
 };
 
-/**
- * NOTA IMPORTANTE:
- * Para arreglar el bug de thumbnails que "no entraban en vista" y nunca cargaban,
- * este componente:
- * - Siempre renderiza un contenedor <div ref={hostRef}> con tamaño estable (si se pasa placeholderWidth/Height).
- * - Mantiene el ref durante todos los estados (idle/loading/error/loaded).
- * - Usa IntersectionObserver con rootMargin generoso para lazy thumbnails.
- */
 const AuthenticatedImage = forwardRef<HTMLImageElement, Props>(
   (
     {
@@ -57,19 +48,17 @@ const AuthenticatedImage = forwardRef<HTMLImageElement, Props>(
       lazy ? "idle" : "loading"
     );
     const hostRef = useRef<HTMLDivElement | null>(null);
-    const [inView, setInView] = useState(!lazy); // si no es lazy, se carga directo
+    const [inView, setInView] = useState(!lazy);
 
-    // IntersectionObserver para lazy
     useEffect(() => {
       if (!lazy) return;
       const el = hostRef.current;
       if (!el) return;
-
       const io = new IntersectionObserver(
         ([entry]) => {
           if (entry.isIntersecting) setInView(true);
         },
-        { rootMargin: "300px" } // margen generoso
+        { rootMargin: "300px" }
       );
       io.observe(el);
       return () => io.disconnect();
@@ -84,8 +73,6 @@ const AuthenticatedImage = forwardRef<HTMLImageElement, Props>(
           setStatus("error");
           return;
         }
-
-        // cache
         if (blobCache.has(fileId)) {
           setObjectUrl(blobCache.get(fileId)!);
           setStatus("loaded");
@@ -114,16 +101,12 @@ const AuthenticatedImage = forwardRef<HTMLImageElement, Props>(
       };
 
       if (inView) run();
-
-      return () => {
-        if (controller) controller.abort();
-      };
+      return () => { if (controller) controller.abort(); };
     }, [src, token, inView]);
 
     const boxStyle: React.CSSProperties = {
       width: placeholderWidth,
       height: placeholderHeight,
-      // Si no nos dan tamaño, dejamos que la clase CSS controle el layout.
       display: "block",
       position: "relative",
       overflow: "hidden",
@@ -156,7 +139,6 @@ const AuthenticatedImage = forwardRef<HTMLImageElement, Props>(
             </div>
           </div>
         ) : (
-          // idle o loading
           <div
             aria-busy="true"
             style={{

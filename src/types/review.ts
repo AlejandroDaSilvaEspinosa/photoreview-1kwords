@@ -1,20 +1,42 @@
-export interface Annotation {
-  id: number;
-  x: number; // %
-  y: number; // %
-  comment: string;
+export interface AnnotationMessage {
+  id: number;        // único dentro del thread
+  text: string;
+  createdAt: string; // ISO
+  author?: string;   // opcional
 }
 
-export type AnnotationState = Record<string, Annotation[]>;
+export interface AnnotationThread {
+  id: number;        // id del punto
+  x: number;         // %
+  y: number;         // %
+  messages: AnnotationMessage[];
+}
+
+export type AnnotationState = Record<string, AnnotationThread[]>;
 export type ValidationState = Record<string, boolean>;
 
 export interface ImageItem {
-  url: string;
-  filename: string;
+  sku: string | null;
+  url: string | null;
+  filename: string | null;
 }
 
 export interface SkuData {
   sku: string;
   images: ImageItem[];
   allReviewed?: boolean;
+}
+
+export interface ReviewJSON {
+  revision: number;
+  points: AnnotationThread[];
+}
+
+export interface ReviewsBySkuResponse {
+  sku: string;
+  revision: number; // última revisión encontrada
+  items: Array<{
+    filename: string;
+    points: AnnotationThread[];
+  }>;
 }

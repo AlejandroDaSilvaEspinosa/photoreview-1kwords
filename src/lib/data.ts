@@ -1,129 +1,164 @@
-import { sheets, drive } from './google';
-import { SPREADSHEET_ID, SHEET_NAME_APP, SHEET_NAME_REVIEWS } from './config';
-import { formatAnnotationsText, generateAnnotatedImageBuffer, uploadToCloudinary, generateReviewLink } from './annotations';
+import { sheets, drive  } from "./google";
+import type {
+  AnnotationThread,
+  ReviewJSON,
+  ReviewsBySkuResponse,
+  ImageItem,
+} from "@/types/review";
 
-async function hasPendingReviews(sku: string, allImageData: string[][], reviewedImagesData: string[][]) {
-  const row = allImageData.find(r => r[0] === sku);
-  const url = row?.[1];
-  if (!url) return false;
+const SHEET_ID = process.env.GOOGLE_SHEET_ID!;
+const REVIEW_SHEET = process.env.GOOGLE_REVIEW_SHEET || "01.Revisión";
+const APP_SHEET = process.env.SHEET_NAME_APP || "Revision app";
+// Estructura de la hoja de revisiones:
 
-  const match = url.match(/folders\/([a-zA-Z0-9_-]+)/);
-  const mainFolderId = match?.[1];
-  if (!mainFolderId) return false;
+// Rango de SKUs (columna con SKUs)
+const SKU_RANGE = `${REVIEW_SHEET}!${process.env.SKUS_RANGE}`;
+// Hoja de imágenes: A: SKU | B: Filename | C: URL/DriveID/Link
+const IMAGES_RANGE = `${REVIEW_SHEET}!${process.env.IMAGES_RANGE}`;
+const ANOTATIONS_RANGE = `${APP_SHEET}!${process.env.ANOTATIONS_RANGE}`;
 
-  const subfolder = await drive.files.list({ q: `'${mainFolderId}' in parents and name = '1200px'`, fields: 'files(id)' });
-  const subfolderId = subfolder.data.files?.[0]?.id;
-  if (!subfolderId) return false;
-
-  const imgs = await drive.files.list({ q: `'${subfolderId}' in parents and mimeType contains 'image/'`, fields: 'files(name)' });
-  const total = imgs.data.files?.length || 0;
-  if (!total) return false;
-
-  const reviewed = reviewedImagesData.filter(r => r[0] === sku).length;
-  return total > reviewed;
-}
-
-export async function getAllSkus() {
-  const allSkus = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SHEET_NAME_REVIEWS}!B:C` });
-  const allImageData = allSkus.data.values || [];
-  const potential = allImageData.map(r => r[0]).filter(Boolean) as string[];
-
-  const appSheet = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SHEET_NAME_APP}!A:B` });
-  const reviewedImagesData = appSheet.data.values || [];
-
-  const checks = await Promise.all(potential.map(sku => hasPendingReviews(sku, allImageData, reviewedImagesData)));
-  return potential.filter((_, i) => checks[i]);
-}
-
-export async function getImageData(sku: string) {
-  const sheetResponse = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SHEET_NAME_REVIEWS}!B:C` });
-  const rows = sheetResponse.data.values;
-  const imageDataRow = rows?.find(r => r[0] === sku);
-  if (!imageDataRow) return null;
-
-  const mainUrl = imageDataRow[1];
-  const match = mainUrl?.match(/folders\/([a-zA-Z0-9_-]+)/);
-  const mainFolderId = match?.[1];
-  if (!mainFolderId) return null;
-
-  const sub = await drive.files.list({ q: `'${mainFolderId}' in parents and name = '1200px'`, fields: 'files(id)' });
-  const subfolderId = sub.data.files?.[0]?.id;
-  if (!subfolderId) return null;
-
-  const images = await drive.files.list({
-    q: `'${subfolderId}' in parents and mimeType contains 'image/'`,
-    fields: 'files(id, name)',
-    orderBy: 'name'
+/** Util: lee un rango y devuelve rows */
+async function readRange(range: string): Promise<string[][]> {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range,
   });
-  const allImages = (images.data.files || []).map(f => ({ url: `https://drive.google.com/uc?id=${f.id}`, filename: f.name }));
-
-  const appSheet = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SHEET_NAME_APP}!A:F` });
-  const reviewedRows = appSheet.data.values || [];
-  const reviewedNames = new Set(reviewedRows.filter(r => r[0] === sku).map(r => r[1]));
-  const unreviewed = allImages.filter(i => !reviewedNames.has(i.filename));
-
-  if (!unreviewed.length && allImages.length) return { sku, images: [], allReviewed: true };
-  return { sku, images: unreviewed };
+  return (res.data.values || []) as string[][];
 }
 
-export async function submitReview(data: { sku: string; review: Array<{ filename: string; url: string; validated?: boolean; annotations?: Array<{x:number;y:number;comment:string}> }> }) {
-  const { sku, review } = data;
-
-  // limpiar filas existentes
-  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
-  const sheetId = spreadsheet.data.sheets?.find(s => s.properties?.title === SHEET_NAME_APP)?.properties?.sheetId;
-  const read = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${SHEET_NAME_APP}!A:A` });
-
-  const requests = [];
-  read.data.values?.forEach((row, i) => {
-    if (row[0] === sku) {
-      requests.push({
-        deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: i, endIndex: i + 1 } }
-      });
-    }
-  });
-  if (requests.length) {
-    await sheets.spreadsheets.batchUpdate({ spreadsheetId: SPREADSHEET_ID, requestBody: { requests: requests.reverse() } });
+/** -------------- SKUs ------------------ */
+export async function getAllSkus(): Promise<string[]> {
+  if (!SHEET_ID) {
+    throw new Error("Falta GOOGLE_SHEET_ID en .env.local");
   }
+  const rows = await readRange(SKU_RANGE);
+  const skus = rows
+    .map((r) => (r?.[0] ?? "").toString().trim())
+    .filter(Boolean);
+    
+  return Array.from(new Set(skus));
+}
 
-  const processed = review.filter(it => it.validated || it.annotations?.length);
-  if (!processed.length) return true;
+/** -------------- Imágenes por SKU ------------------ */
+export async function getImagesForSku(sku: string): Promise<[] | null> {
+try {
+    // 1. Buscar SKU en la hoja de revisiones para obtener carpeta principal
 
-  const rows = await Promise.all(processed.map(async (item) => {
-    const hasAnn = !!item.annotations?.length;
-    const status = item.validated ? 'Validada' : 'Corrección';
-    const annotationsText = hasAnn ? formatAnnotationsText(item.annotations) : '';
-    const reviewLink = generateReviewLink(sku, item.filename);
 
-    let annotatedThumb = '';
-    if (hasAnn) {
-      const match = item.url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-      const fileId = match?.[1];
-      if (fileId) {
-        const buf = await generateAnnotatedImageBuffer(fileId, item.annotations!);
-        const upload = await uploadToCloudinary(buf, { public_id: `${sku}_${item.filename.replace(/\.[^/.]+$/, '')}_annotated` });
-        annotatedThumb = `=IMAGE("${upload.secure_url}")`;
+    const rows = await readRange(IMAGES_RANGE);
+    if (!rows || rows.length === 0) return null;
+
+    const imageDataRow = rows.find((row) => row[0] === sku);
+    if (!imageDataRow) return null;
+
+    const mainFolderUrl = imageDataRow[1];
+
+    if (!mainFolderUrl) return null;
+
+    // 2. Extraer folderId de la URL
+    const folderIdMatch = mainFolderUrl.match(/folders\/([a-zA-Z0-9_-]+)/);
+    if (!folderIdMatch || !folderIdMatch[1]) return null;
+
+    const mainFolderId = folderIdMatch[1];
+
+    // 3. Buscar subcarpeta "1200px"
+    const subfolderResponse = await drive.files.list({
+      q: `'${mainFolderId}' in parents and name = '1200px'`,
+      fields: "files(id)",
+    });
+    if (!subfolderResponse.data.files || subfolderResponse.data.files.length === 0) return null;
+
+    const subfolderId = subfolderResponse.data.files[0].id;
+
+    // 4. Listar imágenes de esa subcarpeta
+    const imageFilesResponse = await drive.files.list({
+      q: `'${subfolderId}' in parents and mimeType contains 'image/'`,
+      fields: "files(id, name)",
+      orderBy: "name",
+    });
+    if (!imageFilesResponse.data.files || imageFilesResponse.data.files.length === 0) return null;
+    console.log(imageFilesResponse.data.files)
+
+
+    return imageFilesResponse.data.files
+  } catch (err: any) {
+    console.error("Error en getImageData:", err.message);
+    return null;
+  }
+}
+
+/** -------------- Revisiones (JSON en columna C) ------------------ */
+async function readAllReviewRows(): Promise<string[][]> {
+  return readRange(ANOTATIONS_RANGE);
+}
+
+export async function getLatestRevisionForSku(sku: string): Promise<number> {
+  const rows = await readAllReviewRows();
+  let maxRev = 0;
+  for (const row of rows) {
+    const [rSku, , json] = row;
+    if (rSku !== sku || !json) continue;
+    try {
+      const parsed = JSON.parse(json) as ReviewJSON;
+      if (typeof parsed.revision === "number") {
+        maxRev = Math.max(maxRev, parsed.revision);
       }
+    } catch {
+      // ignorar filas rotas
     }
+  }
+  return maxRev;
+}
 
-    // A:G → SKU | NOMBRE | ANOTACIONES | MINIATURA ANOTADA | MINIATURA | ESTADO | ENLACE
-    return [
-      sku,
-      item.filename,
-      annotationsText,
-      annotatedThumb,
-      `=IMAGE("${item.url}", 1)`,
-      status,
-      reviewLink
-    ];
-  }));
+/** Lee las anotaciones de la última revisión por filename */
+export async function getReviewsBySku(sku: string): Promise<ReviewsBySkuResponse> {
+  const rows = await readAllReviewRows();
+  // 0 => SKU, 1 => filename, 2 => JSON (revision)
+  // {"revision":1,
+  //   "points":[
+  //     {"id":1757515629133,
+  //       "x":47,
+  //       "y":35.41666666666667,
+  //       "messages":[{
+  //         "id":1757515629134,
+  //         "text":"d",
+  //         "createdAt":"2025-09-10T14:47:09.133Z"
+  //       }]
+  //       }
+  //     ]
+  //   }
+
+  const reviewsPerFile = new Map<string, ReviewJSON>();
+  for (const row of rows) {
+    const [rSku, filename, json] = row;
+    if (rSku !== sku || !filename || !json) continue;
+    //create a dictionary wit filename as key and points as value
+    //fill
+    reviewsPerFile.set(filename, JSON.parse(json) as ReviewJSON);
+
+  }
+  console.log(reviewsPerFile)
+  return Object.fromEntries(reviewsPerFile)
+}
+
+/** Guarda filas (una por imagen) para una revisión nueva */
+export async function appendReviewRows(
+  sku: string,
+  revision: number,
+  byFilename: Record<string, AnnotationThread[]>
+) {
+  const now = new Date().toISOString();
+  const values: string[][] = Object.entries(byFilename).map(([filename, points]) => {
+    const json: ReviewJSON = { revision, points };
+    return [sku, filename, JSON.stringify(json), now];
+  });
+
+  if (!values.length) return;
 
   await sheets.spreadsheets.values.append({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME_APP}!A:G`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: rows },
+    spreadsheetId: SHEET_ID,
+    range: ANOTATIONS_RANGE,
+    valueInputOption: "RAW",
+    requestBody: { values },
   });
-
-  return true;
 }
