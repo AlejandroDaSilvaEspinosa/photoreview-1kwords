@@ -35,7 +35,6 @@ export async function getAllSkus(): Promise<string[]> {
   const skus = rows
     .map((r) => (r?.[0] ?? "").toString().trim())
     .filter(Boolean);
-    
   return Array.from(new Set(skus));
 }
 

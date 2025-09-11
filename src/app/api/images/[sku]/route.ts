@@ -13,7 +13,7 @@ export async function GET(_: Request, { params }: { params: { sku: string } }) {
       img.url = `https://drive.google.com/uc?id=${img.id}`
       delete img.name;
     });
-    console.log(images)
+    
     return NextResponse.json( images );
   } catch (e: any) {
     console.error("GET /api/images/[sku] error:", e);

@@ -9,7 +9,7 @@
 
 # Variables de entorno locales
 .env.local
-
+.env
 # Logs
 npm-debug.log*
 yarn-debug.log*
