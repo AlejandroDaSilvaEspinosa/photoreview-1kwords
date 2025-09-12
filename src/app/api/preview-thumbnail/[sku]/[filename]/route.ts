@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { sheets } from '@/lib/google';
 import { SPREADSHEET_ID, SHEET_NAME_APP } from '@/lib/config';
 import { generateAnnotatedImageBuffer } from '@/lib/annotations';
+import { cookies } from "next/headers";
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,6 +10,9 @@ export const dynamic = 'force-dynamic';
 type Params = { params: { sku: string; filename: string } };
 
 export async function GET(_: Request, { params }: Params) {
+  // protege con cookie
+  const session = cookies().get("session");
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
     const sheet = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,

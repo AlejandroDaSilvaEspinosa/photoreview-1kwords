@@ -5,7 +5,7 @@ import styles from "./SidePanel.module.css";
 import type { AnnotationThread } from "@/types/review";
 
 type Props = {
-  filename: string;
+  name: string;
   isValidated: boolean;
   threads: AnnotationThread[];
   onValidate: () => void;
@@ -24,7 +24,7 @@ type Props = {
 };
 
 export default function SidePanel({
-  filename,
+  name,
   isValidated,
   threads,
   onValidate,
@@ -46,7 +46,7 @@ export default function SidePanel({
       <div className={styles.commentSection}>
         <h3>Revisión de:</h3>
         <div className={styles.currentImageInfo}>
-          <span>{filename}</span>
+          <span>{name}</span>
           {isValidated && <span className={styles.validatedBadge}>✅ Validada</span>}
         </div>
 

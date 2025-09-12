@@ -1,10 +1,11 @@
 // Fichero: src/components/Header.tsx
-"use client";
 
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import styles from './Header.module.css';
 
+
+import SkuSearch from './SkuSearch';
 interface HeaderProps {
   skus: string[];
   loading: boolean;
@@ -33,6 +34,7 @@ export default function Header({ skus, loading, clientName, clientProject, onSku
   const handleHeaderMouseLeave = () => {
     setIsVisible(false);
   };
+
 
   return (
     <>
@@ -65,22 +67,15 @@ export default function Header({ skus, loading, clientName, clientProject, onSku
             <h2>Revisión de Productos</h2>
             <p>Selecciona una SKU para comenzar el proceso de revisión.</p>
           </div>
-          {loading ? (
-            <p style={{ color: '#a0a0a0' }}>Cargando SKUs...</p>
-          ) : (
-            <select 
-              onChange={onSkuChange} 
-              defaultValue="" 
-              className={styles.skuSelector}
-            >
-              <option value="" disabled>-- Elige un producto --</option>
-              {skus.map(sku => (
-                <option key={sku} value={sku}>
-                  {sku}
-                </option>
-              ))}
-            </select>
-          )}
+        <SkuSearch
+          skus={skus}
+          onSelect={(sku) => {
+            // setSelectedSku(item.sku) o navegar, etc.
+            // aqyui en on skuChange cambiar para que reciba todo el objeto
+            onSkuChange(sku as any);
+          }}
+        />
+
         </div>
 
         <div className={styles.clientInfo}>

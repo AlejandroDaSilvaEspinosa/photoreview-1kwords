@@ -1,8 +1,9 @@
 // Fichero: src/app/layout.tsx
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
-import { AuthProvider } from '@/contexts/AuthContext';
-import './globals.css';
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import '../globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -11,17 +12,13 @@ export const metadata: Metadata = {
   description: 'Panel de revisión de imágenes de productos para Castejón Joyeros',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
+  const session = cookies().get("session");
+  if (!session) redirect("/login");
   return (
     <html lang="es">
       <body className={inter.className}>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        <>{children}</>
       </body>
     </html>
   );

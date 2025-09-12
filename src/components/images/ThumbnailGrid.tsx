@@ -32,12 +32,12 @@ export default function ThumbnailGrid({
     <div className={styles.thumbnailSelector}>
       {images.map((image, index) => {
         const hasNotes =
-          (annotations[image.filename]?.length || 0) > 0 &&
-          !validatedImages[image.filename];
+          (annotations[image.name]?.length || 0) > 0 &&
+          !validatedImages[image.name];
 
         return (
           <div
-            key={`${image.filename}-${index}`}
+            key={`${image.name}-${index}`}
             className={`${styles.thumbnailWrapper} ${
               index === selectedIndex ? styles.activeThumbnail : ""
             }`}
@@ -45,7 +45,7 @@ export default function ThumbnailGrid({
           >
             <AuthenticatedImage
               src={image.url}
-              alt={image.filename}
+              alt={image.name}
               token={token}
               lazy
               placeholderWidth={thumbSize}
@@ -53,11 +53,11 @@ export default function ThumbnailGrid({
               className={styles.thumbnail}
             />
             <div className={styles.thumbnailName}>
-              {image.filename.split(".")[0].substring(0, 12)}…
+              {image.name.split(".")[0].substring(0, 12)}…
             </div>
 
             {hasNotes && <div className={styles.commentIndicator}>💬</div>}
-            {validatedImages[image.filename] && (
+            {validatedImages[image.name] && (
               <div className={styles.validatedIndicator}>✅</div>
             )}
           </div>

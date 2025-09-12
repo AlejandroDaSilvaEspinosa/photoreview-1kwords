@@ -9,7 +9,6 @@ type Props = {
   src: string;
   alt: string;
   className?: string;
-  token: string | null;
   lazy?: boolean;
   onLoadRealImage?: () => void;
   placeholderWidth?: number | string;
@@ -35,7 +34,6 @@ const AuthenticatedImage = forwardRef<HTMLImageElement, Props>(
       src,
       alt,
       className,
-      token,
       lazy = false,
       onLoadRealImage,
       placeholderWidth,
@@ -69,7 +67,7 @@ const AuthenticatedImage = forwardRef<HTMLImageElement, Props>(
 
       const run = async () => {
         const fileId = extractFileId(src);
-        if (!fileId || !token) {
+        if (!fileId ) {
           setStatus("error");
           return;
         }
@@ -83,7 +81,6 @@ const AuthenticatedImage = forwardRef<HTMLImageElement, Props>(
         controller = new AbortController();
         try {
           const res = await fetch(`/api/image-proxy/${fileId}`, {
-            headers: { Authorization: `Bearer ${token}` },
             signal: controller.signal,
           });
           if (!res.ok) throw new Error(`Proxy request failed: ${res.status}`);
@@ -102,7 +99,7 @@ const AuthenticatedImage = forwardRef<HTMLImageElement, Props>(
 
       if (inView) run();
       return () => { if (controller) controller.abort(); };
-    }, [src, token, inView]);
+    }, [src,  inView]);
 
     const boxStyle: React.CSSProperties = {
       width: placeholderWidth,

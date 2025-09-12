@@ -3,7 +3,6 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
-import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import styles from "./page.module.css";
 
@@ -13,7 +12,6 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const { login } = useAuth();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,10 +48,6 @@ export default function LoginPage() {
         throw new Error(msg);
       }
 
-      const accessToken = payload?.accessToken;
-      if (!accessToken) throw new Error("Respuesta inválida del servidor");
-
-      login(accessToken); // guarda el token en tu AuthContext
       router.replace("/");
     } catch (err: any) {
       if (err?.name === "AbortError") return;

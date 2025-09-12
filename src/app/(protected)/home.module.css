@@ -19,7 +19,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1; /* Ocupa el espacio restante */
+  flex-direction: column;
+  flex: 1;
+  /* Ocupa el espacio restante */
   width: 100%;
   max-width: 1600px;
   margin-bottom: 2rem;
@@ -28,6 +30,7 @@
   border-radius: 12px;
   color: #888;
 }
+
 .fullPageLoader {
   display: flex;
   align-items: center;
@@ -35,4 +38,29 @@
   min-height: 100vh;
   font-size: 1.2rem;
   color: #a0a0a0;
+}
+
+.skuCard {
+  border: 1px solid #E5E5E5;
+  border-radius: 6px;
+  padding: 10px;
+  margin: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 200px;
+}
+
+.skuGrid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+}
+
+.thumbnail {
+  max-width: 100%;
+  aspect-ratio: 1;
+  height: auto;
 }

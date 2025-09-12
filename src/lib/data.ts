@@ -1,4 +1,5 @@
 import { sheets, drive  } from "./google";
+import { unstable_cache } from "next/cache";
 import type {
   AnnotationThread,
   ReviewJSON,
@@ -32,33 +33,30 @@ export async function getAllSkus(): Promise<string[]> {
     throw new Error("Falta GOOGLE_SHEET_ID en .env.local");
   }
   const rows = await readRange(SKU_RANGE);
-  const skus = rows
-    .map((r) => (r?.[0] ?? "").toString().trim())
-    .filter(Boolean);
+  const skus = await Promise.all(rows
+    .map(async (r) =>  (
+      {
+        sku:r?.[0].toString().trim(),
+        images: await getImageUrlThumbnail(r?.[1])
+      } )))
+
+    
   return Array.from(new Set(skus));
 }
+export const getCachedSkus =
+ unstable_cache(
+  async () => getAllSkus(),
+  ["skus-cache-v1"],
+  //cada 15 minutos se actualiza
+  { revalidate: 1 * 15, tags: ["skus"] }
+);
 
-/** -------------- Imágenes por SKU ------------------ */
-export async function getImagesForSku(sku: string): Promise<[] | null> {
-try {
-    // 1. Buscar SKU en la hoja de revisiones para obtener carpeta principal
+export async function  getImageUrlThumbnail(driveMainFolderSKU: string | null) {
 
-
-    const rows = await readRange(IMAGES_RANGE);
-    if (!rows || rows.length === 0) return null;
-
-    const imageDataRow = rows.find((row) => row[0] === sku);
-    if (!imageDataRow) return null;
-
-    const mainFolderUrl = imageDataRow[1];
-
-    if (!mainFolderUrl) return null;
+    if (!driveMainFolderSKU) return null;
 
     // 2. Extraer folderId de la URL
-    const folderIdMatch = mainFolderUrl.match(/folders\/([a-zA-Z0-9_-]+)/);
-    if (!folderIdMatch || !folderIdMatch[1]) return null;
-
-    const mainFolderId = folderIdMatch[1];
+    const mainFolderId = driveMainFolderSKU.match(/(?<=folders\/)[\w-]+/)?.[0] ?? null;
 
     // 3. Buscar subcarpeta "1200px"
     const subfolderResponse = await drive.files.list({
@@ -76,10 +74,33 @@ try {
       orderBy: "name",
     });
     if (!imageFilesResponse.data.files || imageFilesResponse.data.files.length === 0) return null;
-    console.log(imageFilesResponse.data.files)
+    const sizeThumbnail = 60; // tamaño del thumbnail
+    const sizeListing = 600; // tamaño de la imagen en el listado
+    // 5. Construir URLs de vista previa
+    const imageFiles = imageFilesResponse.data.files.map((file) => ({
+      ...file,
+      url: `https://drive.google.com/uc?id=${file.id}`,
+      listingImageUrl: `https://lh3.googleusercontent.com/d/${file.id}=s${sizeListing}-c`,
+      thumbnailUrl: `https://lh3.googleusercontent.com/d/${file.id}=s${sizeThumbnail}-c`,
+    }));
+    console.log(imageFiles)
+    return imageFiles
+}
+/** -------------- Imágenes por SKU ------------------ */
+export async function getImagesForSku(sku: string): Promise<[] | null> {
+try {
+    const rows = await readRange(IMAGES_RANGE);
+    if (!rows || rows.length === 0) return null;
 
+    const imageDataRow = rows.find((row) => row[0] === sku);
+    if (!imageDataRow) return null;
 
-    return imageFilesResponse.data.files
+    const mainFolderUrl = imageDataRow[1];
+
+    const imagesInFolder = await getImageUrlThumbnail(mainFolderUrl);
+    if (!imagesInFolder) return null;
+
+    return imagesInFolder
   } catch (err: any) {
     console.error("Error en getImageData:", err.message);
     return null;

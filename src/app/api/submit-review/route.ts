@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { appendReviewRows, getLatestRevisionForSku } from "@/lib/data";
 import type { AnnotationThread } from "@/types/review";
+import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,9 @@ type IncomingBody = {
 };
 
 export async function POST(req: Request) {
+    // protege con cookie
+  const session = cookies().get("session");
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
     const body = (await req.json()) as IncomingBody;
     const { sku, review } = body;
