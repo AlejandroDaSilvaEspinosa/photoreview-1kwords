@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import AuthenticatedImage from "./AuthenticatedImage";
+import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import styles from "./ThumbnailGrid.module.css";
 import type {
   AnnotationState,
@@ -43,15 +43,17 @@ export default function ThumbnailGrid({
             }`}
             onClick={() => onSelect(index)}
           >
-            <AuthenticatedImage
-              src={image.url}
-              alt={image.name}
-              token={token}
-              lazy
-              placeholderWidth={thumbSize}
-              placeholderHeight={thumbSize}
-              className={styles.thumbnail}
-            />
+             <ImageWithSkeleton
+                src={image.url}
+                alt={image.name}
+                width={100}
+                height={100}
+                className={styles.thumbnail}
+                sizes={`100%`}
+                quality={100}
+                minSkeletonMs={220}      // más notorio
+                fallbackText={image.name.slice(0,2).toUpperCase()}
+              />
             <div className={styles.thumbnailName}>
               {image.name.split(".")[0].substring(0, 12)}…
             </div>

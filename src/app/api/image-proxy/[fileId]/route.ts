@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 
 type Params = { params: { fileId: string } }
 
+//ESTO ES UTIL CUANDO KAS IMAGENES ESTAN PROTEGIDAS EN DRIVE
 export async function GET(_: Request, { params }: Params) {
     // protege con cookie
   const session = cookies().get("session");

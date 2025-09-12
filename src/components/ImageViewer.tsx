@@ -8,7 +8,7 @@ import React, {
   useState,
 } from "react";
 import styles from "./ImageViewer.module.css";
-import Image from 'next/image';
+import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import ThumbnailGrid from "./images/ThumbnailGrid";
 import SidePanel from "./images/SidePanel";
 import type {
@@ -157,15 +157,21 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
     if (!current) return;
     if ((event.target as HTMLElement).closest(`.${styles.annotationNode}`)) return;
     
-
-    const r = event.target.getBoundingClientRect();
+    console.log(event.target)
+    //GET FROM envent target => HTMLIMAGEELEMENT real size and position
+    const imgElement = event.target as HTMLImageElement;
+    if (!imgElement) return;
+    const r = imgElement.getBoundingClientRect();
+    console.log(r)
+    console.log(event.clientX, event.clientY)
     const x = event.clientX - r.left;
     const y = event.clientY - r.top;
+    console.log(x, y);
     if (x < 0 || y < 0 || x > r.width || y > r.height) return;
-    
+    console.log("click coords", { x, y, width: r.width, height: r.height });
     const xPercent = (x / r.width) * 100;
     const yPercent = (y / r.height) * 100;
-    
+    console.log("click percent", { xPercent, yPercent });
     const threadId = Date.now();
     const newThread: AnnotationThread = {
       id: threadId,
@@ -378,7 +384,8 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
               className={styles.mainImageWrapper}
               ref={wrapperRef}
               >
-              <Image
+              <ImageWithSkeleton
+                ref={imgRef}
                 src={currentImage.url}
                 onClick={handleImageClick}
                 alt={currentImage.name}
@@ -387,12 +394,16 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
                 className={styles.mainImage}
                 sizes={`100%`}
                 quality={100}
+                minSkeletonMs={220}      // más notorio
+                fallbackText={currentImage.name.slice(0,2).toUpperCase()}
               />
 
               {threads.map((th, index) => {
                 console.log("render thread", th);
+                console.log("imgBox", imgBox);
                 const topPx = imgBox.offsetTop + (th.y / 100) * imgBox.height;
                 const leftPx = imgBox.offsetLeft + (th.x / 100) * imgBox.width;
+                console.log({ topPx, leftPx });
                 return (
                   <div
                     key={th.id}
