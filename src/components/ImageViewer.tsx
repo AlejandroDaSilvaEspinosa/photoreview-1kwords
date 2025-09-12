@@ -45,7 +45,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
   const [completionMessage, setCompletionMessage] = useState("");
 
 
-  // 👁👓👓👓👓👓👓
+  // 👁👓👓👓👓👓👓 
 
   // ... en el componente:
   const username = "Usuario"; // pásalo real desde el server si puedes
@@ -105,10 +105,10 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
 
     (async () => {
       try {
-        const res = await fetch(`/api/reviews/${sku}`);
+        const res = await fetch(`/api/reviews/${sku.sku}`);
         if (!res.ok) return; // no reviews previas
         const payload: ReviewsPayload = await res.json();
-
+        console.log(payload)
         // Mezcla segura: solo names que existen en las imágenes actuales
         const merged: AnnotationState = {};
         for (const img of images) {
