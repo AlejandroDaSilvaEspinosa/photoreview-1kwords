@@ -1,13 +1,13 @@
 "use client";
-
 import React from "react";
 import styles from "./SidePanel.module.css";
 import type { AnnotationThread } from "@/types/review";
-
+import { format } from "timeago.js";
+import "@/lib/timeago";
 type Props = {
   name: string | null;
   isValidated: boolean;
-  threads: AnnotationThread[];
+  threads: AnnotationThread[]; // cada message puede tener createdByName
   onValidate: () => void;
   onUnvalidate: () => void;
   onAddMessage: (threadId: number) => void;
@@ -21,6 +21,7 @@ type Props = {
   validatedImagesCount: number;
   totalCompleted: number;
   totalImages: number;
+  onlineUsers?: { username: string }[]; // opcional: presencia
 };
 
 export default function SidePanel({
@@ -40,6 +41,7 @@ export default function SidePanel({
   validatedImagesCount,
   totalCompleted,
   totalImages,
+  onlineUsers = [],
 }: Props) {
   return (
     <div className={styles.sidePanel}>
@@ -47,6 +49,12 @@ export default function SidePanel({
         <h3>Revisión de:</h3>
         <div className={styles.currentImageInfo}>
           <span>{name}</span>
+          <div className={styles.presenceWrap}>
+            <span className={styles.presenceDot} />
+            <span className={styles.presenceText}>
+              {onlineUsers.length} en línea
+            </span>
+          </div>
           {isValidated && <span className={styles.validatedBadge}>✅ Validada</span>}
         </div>
 
@@ -89,16 +97,23 @@ export default function SidePanel({
                 </div>
 
                 {th.messages?.map((m) => (
-                  <textarea
-                    key={m.id}
-                    placeholder={`Mensaje…`}
-                    className={styles.commentBox}
-                    value={m.text}
-                    onChange={(e) => onChangeMessage(th.id, m.id, e.target.value)}
-                    rows={3}
-                    disabled={isValidated}
-                    onFocus={() => onFocusThread(th.id)}
-                  />
+                  <div key={m.id} className={styles.messageBlock}>
+                    <div className={styles.messageMeta}>
+                      <span className={styles.author}>
+                        {m as any && (m as any).createdByName ? (m as any).createdByName : "Usuario"}
+                      </span>
+                      <span className={styles.timeago}>{format(m.createdAt, "es")}</span>
+                    </div>
+                    <textarea
+                      placeholder="Mensaje…"
+                      className={styles.commentBox}
+                      value={m.text}
+                      onChange={(e) => onChangeMessage(th.id, m.id, e.target.value)}
+                      rows={3}
+                      disabled={isValidated}
+                      onFocus={() => onFocusThread(th.id)}
+                    />
+                  </div>
                 ))}
 
                 {!isValidated && (

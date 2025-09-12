@@ -18,6 +18,8 @@ import type {
   ImageItem,
 } from "@/types/review";
 
+import { usePresence } from "@/lib/usePresence";
+
 /** Reviews payload: { [name]: { points?: AnnotationThread[] } } */
 type ReviewsPayload = Record<string, { points?: AnnotationThread[] }>;
 
@@ -33,16 +35,24 @@ interface ImageViewerProps {
 export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
 
   // Estado principal
-  const [images, setImages] = useState<ImageItem[]>([]);
+  const [images, setImages] = useState<ImageItem[]>(sku.images || []);
   const [annotations, setAnnotations] = useState<AnnotationState>({});
   const [validatedImages, setValidatedImages] = useState<ValidationState>({});
   const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
 
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
   const [completionMessage, setCompletionMessage] = useState("");
+
+
+  // 👁👓👓👓👓👓👓
+
+  // ... en el componente:
+  const username = "Usuario"; // pásalo real desde el server si puedes
+  const onlineUsers = usePresence(sku.sku, username);
+
+
+
 
   // Geometría
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -88,48 +98,9 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
     requestAnimationFrame(updateImageGeometry);
   }, [selectedImageIndex, updateImageGeometry]);
   // 1) Cargar imágenes
-  useEffect(() => {
-    let alive = true;
-    if (!sku ) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError("");
-    setCompletionMessage("");
-    setImages([]);
-    setAnnotations({});
-    setValidatedImages({});
-    setSelectedImageIndex(0);
-    setActiveThreadId(null);
-
-
-    const initAnns: AnnotationState = {};
-    const initVal: ValidationState = {};
-    for (const img of sku.images) {
-      if (!img.name) continue;
-      initAnns[img.name] = [];
-      initVal[img.name] = false;
-    }
-
-    setImages(sku.images);
-    setAnnotations(initAnns);
-    setValidatedImages(initVal);
-
-    // Selección inicial
-    const initialIndex = targetImage
-      ? Math.max(0, images.findIndex((i) => i.name === targetImage))
-      : 0;
-    setSelectedImageIndex(initialIndex === -1 ? 0 : initialIndex);
-    setLoading(false);
-    return () => {
-      alive = false;
-    };
-  }, [sku,  targetImage]);
 
   // 2) Cargar anotaciones existentes (última revisión)
   useEffect(() => {
-    let alive = true;
     if (!sku || images.length === 0) return;
 
     (async () => {
@@ -146,19 +117,15 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
           merged[img.name] = entry?.points ?? [];
         }
 
-        if (alive) {
           setAnnotations((prev) => ({ ...prev, ...merged }));
           // Tras pintar la imagen con anotaciones, recalcula geometría
           requestAnimationFrame(updateImageGeometry);
-        }
       } catch {
         /* ignorar reviews corruptos */
       }
     })();
 
-    return () => {
-      alive = false;
-    };
+
   }, [sku, images, updateImageGeometry]);
 
   // Handlers de anotaciones
@@ -359,8 +326,6 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
 
 
   // Render
-  if (loading) return <div className={styles.message}>Cargando SKU...</div>;
-  if (error) return <div className={styles.error}>{error}</div>;
   if (completionMessage) return <div className={styles.message}>{completionMessage}</div>;
   if (!images.length || !currentImage) return null;
 
@@ -463,6 +428,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
           validatedImagesCount={validatedImagesCount}
           totalCompleted={totalCompleted}
           totalImages={images.length}
+          onlineUsers={onlineUsers}
         />
       </div>
 

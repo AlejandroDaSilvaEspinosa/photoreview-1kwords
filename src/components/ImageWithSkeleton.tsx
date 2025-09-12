@@ -81,7 +81,7 @@ const ImageWithSkeleton = forwardRef<HTMLImageElement, Props>(function ImageWith
   return (
     <div
       className={`${styles.wrapper} ${wrapperClassName ?? ""}`}
-      style={{ width: w ? `${w}px` : undefined, height: h ? `${h}px` : undefined }}
+      style={imgProps.width && imgProps.height ? { width: w, height: h } : undefined}
       aria-busy={!loaded && !error}
     >
       {!loaded && !error && <div className={styles.skeleton} />}
