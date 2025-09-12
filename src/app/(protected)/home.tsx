@@ -5,9 +5,9 @@ import ImageViewer from "@/components/ImageViewer";
 import Header from "@/components/Header";
 import styles from "./home.module.css";
 import Image from 'next/image';
-import type { ImageItem } from "@/types/review";
+import type { ImageItem,SkuWithImages } from "@/types/review";
 
-export default function Home({ skus, clientInfo }: { skus: [{ sku: string; images: ImageItem[]; }]; clientInfo: {name: string; project: string} }) {
+export default function Home({ skus, clientInfo }: { skus:SkuWithImages[]; clientInfo: {name: string; project: string} }) {
   const [selectedSku, setSelectedSku] = useState<{
       sku: string;
       images: ImageItem[];

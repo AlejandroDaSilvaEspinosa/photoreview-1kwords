@@ -16,12 +16,13 @@ export type AnnotationState = Record<string, AnnotationThread[]>;
 export type ValidationState = Record<string, boolean>;
 
 export interface ImageItem {
-  sku: string | null;
   url: string | null;
   name: string | null;
   listingImageUrl: string;
   thumbnailUrl: string;
 }
+
+export interface SkuWithImages  { sku: string; images: ImageItem[] };
 
 export interface SkuData {
   sku: string;

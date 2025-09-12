@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { verifyToken, SESSION_COOKIE_NAME } from "@/lib/auth";
 import '../globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -13,8 +14,11 @@ export const metadata: Metadata = {
 };
 
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const session = cookies().get("session");
-  if (!session) redirect("/login");
+  const token = cookies().get(SESSION_COOKIE_NAME)?.value;
+  const user = token ? verifyToken(token) : null;
+  if (!user) {
+    redirect("/login");
+  }
   return (
     <html lang="es">
       <body className={inter.className}>

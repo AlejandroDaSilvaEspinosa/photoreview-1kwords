@@ -57,6 +57,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
   const updateImageGeometry = useCallback(() => {
     const wrapper = wrapperRef.current;
     const img = imgRef.current;
+    console.log("updateImageGeometry", { wrapper, img });
     if (!wrapper || !img) return;
     const wRect = wrapper.getBoundingClientRect();
     const iRect = img.getBoundingClientRect();
@@ -158,42 +159,39 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
   }, [sku, images, updateImageGeometry]);
 
   // Handlers de anotaciones
-  const handleImageClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    const current = images[selectedImageIndex];
-    if (!current) return;
-    if ((event.target as HTMLElement).closest(`.${styles.annotationNode}`)) return;
-    
-    console.log(event.target)
-    //GET FROM envent target => HTMLIMAGEELEMENT real size and position
-    const imgElement = event.target as HTMLImageElement;
-    if (!imgElement) return;
-    const r = imgElement.getBoundingClientRect();
-    console.log(r)
-    console.log(event.clientX, event.clientY)
-    const x = event.clientX - r.left;
-    const y = event.clientY - r.top;
-    console.log(x, y);
-    if (x < 0 || y < 0 || x > r.width || y > r.height) return;
-    console.log("click coords", { x, y, width: r.width, height: r.height });
-    const xPercent = (x / r.width) * 100;
-    const yPercent = (y / r.height) * 100;
-    console.log("click percent", { xPercent, yPercent });
-    const threadId = Date.now();
-    const newThread: AnnotationThread = {
-      id: threadId,
-      x: xPercent,
-      y: yPercent,
-      messages: [
-        { id: threadId + 1, text: "", createdAt: new Date().toISOString() },
-      ],
-    };
-    
-    setAnnotations((prev) => ({
-      ...prev,
-      [current.name || ""]: [...(prev[current.name ||""] || []), newThread],
-    }));
-    setActiveThreadId(threadId);
+  const handleImageClick = (event: React.MouseEvent<HTMLDivElement | HTMLImageElement>) => {
+  const current = images[selectedImageIndex];
+  if (!current) return;
+
+  // ignora clic en nodos de anotación
+  if ((event.target as HTMLElement).closest(`.${styles.annotationNode}`)) return;
+
+  const imgEl = imgRef.current;        // <-- NO uses event.target
+  if (!imgEl) return;
+
+  const r = imgEl.getBoundingClientRect();
+  const x = event.clientX - r.left;
+  const y = event.clientY - r.top;
+  if (x < 0 || y < 0 || x > r.width || y > r.height) return;
+
+  const xPercent = (x / r.width) * 100;
+  const yPercent = (y / r.height) * 100;
+
+  const threadId = Date.now();
+  const newThread: AnnotationThread = {
+    id: threadId,
+    x: xPercent,
+    y: yPercent,
+    messages: [{ id: threadId + 1, text: "", createdAt: new Date().toISOString() }],
   };
+
+  setAnnotations((prev) => ({
+    ...prev,
+    [current.name || ""]: [...(prev[current.name || ""] || []), newThread],
+  }));
+  setActiveThreadId(threadId);
+};
+
 
   const onChangeMessage = (threadId: number, messageId: number, text: string) => {
     const img = images[selectedImageIndex];

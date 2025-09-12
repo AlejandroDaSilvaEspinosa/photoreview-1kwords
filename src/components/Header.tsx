@@ -4,10 +4,10 @@ import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import styles from './Header.module.css';
 import type { Dispatch, SetStateAction } from 'react';
-import type { ImageItem } from '@/types/review';
+import type { ImageItem, SkuWithImages } from '@/types/review';
 import SkuSearch from './SkuSearch';
 interface HeaderProps {
-  skus: [{ sku: string; images: ImageItem[]; }];
+  skus: SkuWithImages[];
   loading: boolean;
   clientName: string;
   clientProject: string;

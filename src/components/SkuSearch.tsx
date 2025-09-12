@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import styles from "./SkuSearch.module.css";
-import type { ImageItem } from "@/types/review";
+import type { ImageItem, SkuWithImages} from "@/types/review";
 
 export type SkuItem = {
   sku: string;
@@ -11,8 +11,8 @@ export type SkuItem = {
 };
 
 type Props = {
-  skus: [{ sku: string; images: ImageItem[]; }];
-  onSelect: (item: { sku: string; images: ImageItem[]; }) => void;
+  skus: SkuWithImages[];
+  onSelect: (item: SkuWithImages) => void;
   placeholder?: string;
   maxResults?: number;  // default 20
   minChars?: number;    // default 2

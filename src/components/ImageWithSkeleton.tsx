@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, forwardRef } from "react";
 import Image, { ImageProps } from "next/image";
 import styles from "./ImageWithSkeleton.module.css";
 
@@ -13,24 +13,25 @@ type Props = Omit<ImageProps, "onLoadingComplete" | "onError"> & {
   fallbackText?: string;
   /** Reactivar skeleton cuando cambia src */
   forceSkeletonOnSrcChange?: boolean;
-    ref?: React.Ref<HTMLImageElement>;
 };
 
 function srcToString(src: ImageProps["src"]): string {
   if (typeof src === "string") return src;
-  // @ts-ignore: StaticImport
+  // @ts-ignore StaticImport
   return src?.src ?? "";
 }
 
-export default function ImageWithSkeleton({
-  wrapperClassName,
-  className,                 // <- clase de la IMAGEN (la mantenemos)
-  minSkeletonMs = 180,
-  fallbackText = "×",
-  forceSkeletonOnSrcChange = true,
-  ref,
-  ...imgProps                // <- resto de props de <Image>
-}: Props) {
+const ImageWithSkeleton = forwardRef<HTMLImageElement, Props>(function ImageWithSkeleton(
+  {
+    wrapperClassName,
+    className,                 // clase para la IMG
+    minSkeletonMs = 180,
+    fallbackText = "×",
+    forceSkeletonOnSrcChange = true,
+    ...imgProps                // resto de props de <Image>
+  },
+  ref
+) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [mountedAt, setMountedAt] = useState<number>(() => Date.now());
@@ -81,8 +82,8 @@ export default function ImageWithSkeleton({
 
       {!error ? (
         <Image
-          ref={ref}
           key={srcKey}
+          ref={ref}                 
           {...imgProps}
           onLoadingComplete={handleLoaded}
           onError={() => {
@@ -98,4 +99,6 @@ export default function ImageWithSkeleton({
       )}
     </div>
   );
-}
+});
+
+export default ImageWithSkeleton;
