@@ -5,7 +5,7 @@ import styles from "./SidePanel.module.css";
 import type { AnnotationThread } from "@/types/review";
 
 type Props = {
-  name: string;
+  name: string | null;
   isValidated: boolean;
   threads: AnnotationThread[];
   onValidate: () => void;

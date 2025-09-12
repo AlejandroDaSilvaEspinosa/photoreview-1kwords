@@ -18,7 +18,9 @@ export type ValidationState = Record<string, boolean>;
 export interface ImageItem {
   sku: string | null;
   url: string | null;
-  filename: string | null;
+  name: string | null;
+  listingImageUrl: string;
+  thumbnailUrl: string;
 }
 
 export interface SkuData {

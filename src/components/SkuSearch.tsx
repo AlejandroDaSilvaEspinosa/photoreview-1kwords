@@ -3,15 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import styles from "./SkuSearch.module.css";
+import type { ImageItem } from "@/types/review";
 
 export type SkuItem = {
   sku: string;
-  image: string; // URL ya lista (lh3 o tu proxy)
+  image: ImageItem[];
 };
 
 type Props = {
-  skus: SkuItem[];
-  onSelect: (item: SkuItem) => void;
+  skus: [{ sku: string; images: ImageItem[]; }];
+  onSelect: (item: { sku: string; images: ImageItem[]; }) => void;
   placeholder?: string;
   maxResults?: number;  // default 20
   minChars?: number;    // default 2
@@ -48,7 +49,7 @@ export default function SkuSearch({
     if (!meetsMinChars) return [];
     const q = debouncedQuery.trim().toLowerCase();
     if (!q) return [];
-    const out: SkuItem[] = [];
+    const out:any[] = [];
     for (let i = 0; i < skus.length && out.length < maxResults; i++) {
       const it = skus[i];
       if (it.sku.toLowerCase().includes(q)) out.push(it);
@@ -81,7 +82,7 @@ export default function SkuSearch({
     };
 
 
-  const commitSelection = (item: SkuItem | undefined) => {
+  const commitSelection = (item: { sku: string; images: ImageItem[]; } | undefined) => {
     if (!item) return;
     onSelect(item); 
     setQuery(item.sku);

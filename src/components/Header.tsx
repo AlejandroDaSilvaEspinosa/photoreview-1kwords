@@ -3,15 +3,19 @@
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import styles from './Header.module.css';
-
-
+import type { Dispatch, SetStateAction } from 'react';
+import type { ImageItem } from '@/types/review';
 import SkuSearch from './SkuSearch';
 interface HeaderProps {
-  skus: string[];
+  skus: [{ sku: string; images: ImageItem[]; }];
   loading: boolean;
   clientName: string;
   clientProject: string;
-  onSkuChange: (event: React.ChangeEvent<HTMLSelectElement>) => void;
+  onSkuChange: Dispatch<SetStateAction<{
+    sku: string;
+    images: ImageItem[];
+
+  } | null>>;
 }
 
 export default function Header({ skus, loading, clientName, clientProject, onSkuChange }: HeaderProps) {

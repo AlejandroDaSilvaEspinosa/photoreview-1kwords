@@ -5,9 +5,14 @@ import ImageViewer from "@/components/ImageViewer";
 import Header from "@/components/Header";
 import styles from "./home.module.css";
 import Image from 'next/image';
+import type { ImageItem } from "@/types/review";
 
-export default function Home({ skus, clientInfo }: { skus: string[]; clientInfo: {name: string; project: string} }) {
-  const [selectedSku, setSelectedSku] = useState<string | null>(null);
+export default function Home({ skus, clientInfo }: { skus: [{ sku: string; images: ImageItem[]; }]; clientInfo: {name: string; project: string} }) {
+  const [selectedSku, setSelectedSku] = useState<{
+      sku: string;
+      images: ImageItem[];
+  
+    } | null>(null);
 
   return (
     <main className={styles.main}>
@@ -16,11 +21,11 @@ export default function Home({ skus, clientInfo }: { skus: string[]; clientInfo:
         loading={false}
         clientName={clientInfo.name}
         clientProject={clientInfo.project}
-        onSkuChange={(e) => setSelectedSku(e)}
+        onSkuChange={setSelectedSku} 
       />
       <div className={styles.content}>
         {selectedSku ? (
-          <ImageViewer key={selectedSku} sku={selectedSku} />
+          <ImageViewer key={selectedSku.sku} sku={selectedSku} />
         ) : (
           <div className={styles.placeholder}>
             {/* <p>Por favor, selecciona una SKU para ver sus imágenes.</p> */}
@@ -31,7 +36,7 @@ export default function Home({ skus, clientInfo }: { skus: string[]; clientInfo:
                 skus.map(sku => (
                     <div 
                     onClick={() => setSelectedSku(sku)}
-                    
+                    //solve problem with onClick ARgument of type 'string | null' is not assignable to parameter of type 'SetStateAction<null>'.
                     key={sku.sku} className={styles.skuCard}>
                         <Image
                             src={sku.images[0].listingImageUrl}

@@ -22,7 +22,11 @@ import type {
 type ReviewsPayload = Record<string, { points?: AnnotationThread[] }>;
 
 interface ImageViewerProps {
-  sku: string;
+  sku: {
+    sku: string;
+    images: ImageItem[];
+
+  };
   targetImage?: string;
 }
 
@@ -99,6 +103,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
     const initAnns: AnnotationState = {};
     const initVal: ValidationState = {};
     for (const img of sku.images) {
+      if (!img.name) continue;
       initAnns[img.name] = [];
       initVal[img.name] = false;
     }
@@ -132,6 +137,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
         // Mezcla segura: solo names que existen en las imágenes actuales
         const merged: AnnotationState = {};
         for (const img of images) {
+          if (!img.name) continue;
           const entry = payload[img.name];
           merged[img.name] = entry?.points ?? [];
         }
@@ -184,7 +190,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
     
     setAnnotations((prev) => ({
       ...prev,
-      [current.name]: [...(prev[current.name] || []), newThread],
+      [current.name || ""]: [...(prev[current.name ||""] || []), newThread],
     }));
     setActiveThreadId(threadId);
   };
@@ -194,7 +200,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
     if (!img) return;
     setAnnotations((prev) => ({
       ...prev,
-      [img.name]: (prev[img.name] || []).map((t) =>
+      [img.name ||""]: (prev[img.name||""] || []).map((t) =>
         t.id === threadId
           ? {
               ...t,
@@ -213,7 +219,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
     const newId = Date.now();
     setAnnotations((prev) => ({
       ...prev,
-      [img.name]: (prev[img.name] || []).map((t) =>
+      [img.name ||""]: (prev[img.name||""] || []).map((t) =>
         t.id === threadId
           ? {
               ...t,
@@ -233,7 +239,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
     if (!img) return;
     setAnnotations((prev) => ({
       ...prev,
-      [img.name]: (prev[img.name] || []).filter((t) => t.id !== threadId),
+      [img.name||""]: (prev[img.name||""] || []).filter((t) => t.id !== threadId),
     }));
     if (activeThreadId === threadId) setActiveThreadId(null);
   };
@@ -242,7 +248,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
   const handleValidateImage = () => {
     const img = images[selectedImageIndex];
     if (!img) return;
-    setValidatedImages((prev) => ({ ...prev, [img.name]: true }));
+    setValidatedImages((prev) => ({ ...prev, [img.name||""]: true }));
     if (selectedImageIndex < images.length - 1) {
       setSelectedImageIndex((i) => i + 1);
     }
@@ -251,7 +257,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
   const handleUnvalidateImage = () => {
     const img = images[selectedImageIndex];
     if (!img) return;
-    setValidatedImages((prev) => ({ ...prev, [img.name]: false }));
+    setValidatedImages((prev) => ({ ...prev, [img.name||""]: false }));
   };
 
   // Submit
@@ -262,9 +268,9 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
     try {
       const reviewData = images.map((img) => ({
         name: img.name,
-        validated: validatedImages[img.name] || false,
+        validated: validatedImages[img.name||""] || false,
         url: img.url,
-        annotations: annotations[img.name] || [],
+        annotations: annotations[img.name||""] || [],
       }));
 
       const res = await fetch("/api/submit-review", {
@@ -309,7 +315,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
   console.log("annotations", annotations);
 
   const threads: AnnotationThread[] = useMemo(
-    () => (currentImage ? annotations[currentImage.name] || [] : []),
+    () => (currentImage ? annotations[currentImage.name||""] || [] : []),
     [annotations, currentImage]
   );
 
@@ -323,14 +329,14 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
     () =>
       images.reduce(
         (acc, img) =>
-          acc + (hasAnyText(annotations[img.name] || []) ? 1 : 0),
+          acc + (hasAnyText(annotations[img.name||""] || []) ? 1 : 0),
         0
       ),
     [images, annotations, hasAnyText]
   );
 
   const validatedImagesCount = useMemo(
-    () => images.reduce((acc, img) => acc + (validatedImages[img.name] ? 1 : 0), 0),
+    () => images.reduce((acc, img) => acc + (validatedImages[img.name||""] ? 1 : 0), 0),
     [images, validatedImages]
   );
 
@@ -339,8 +345,8 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
       images.reduce(
         (acc, img) =>
           acc +
-          (validatedImages[img.name] ||
-          hasAnyText(annotations[img.name] || [])
+          (validatedImages[img.name||""] ||
+          hasAnyText(annotations[img.name||""] || [])
             ? 1
             : 0),
         0
@@ -357,7 +363,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
   if (completionMessage) return <div className={styles.message}>{completionMessage}</div>;
   if (!images.length || !currentImage) return null;
 
-  const isCurrentImageValidated = !!validatedImages[currentImage.name];
+  const isCurrentImageValidated = !!validatedImages[currentImage.name||""];
 
   return (
     <>
@@ -386,16 +392,16 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
               >
               <ImageWithSkeleton
                 ref={imgRef}
-                src={currentImage.url}
+                src={currentImage.url || ''}
                 onClick={handleImageClick}
-                alt={currentImage.name}
+                alt={currentImage.name || ''}
                 width={600}
                 height={600}
                 className={styles.mainImage}
                 sizes={`100%`}
                 quality={100}
                 minSkeletonMs={220}      // más notorio
-                fallbackText={currentImage.name.slice(0,2).toUpperCase()}
+                fallbackText={currentImage.name?.slice(0,2).toUpperCase()}
               />
 
               {threads.map((th, index) => {
@@ -439,7 +445,6 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
             annotations={annotations}
             validatedImages={validatedImages}
 
-            thumbSize={112}
           />
         </div>
 

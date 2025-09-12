@@ -15,8 +15,6 @@ type Props = {
   onSelect: (index: number) => void;
   annotations: AnnotationState;
   validatedImages: ValidationState;
-  token: string | null;
-  thumbSize?: number;
 };
 
 export default function ThumbnailGrid({
@@ -24,14 +22,13 @@ export default function ThumbnailGrid({
   selectedIndex,
   onSelect,
   annotations,
-  validatedImages,
-  token,
-  thumbSize = 112,
+  validatedImages
 }: Props) {
   return (
     <div className={styles.thumbnailSelector}>
       {images.map((image, index) => {
         const hasNotes =
+          image.name &&
           (annotations[image.name]?.length || 0) > 0 &&
           !validatedImages[image.name];
 
@@ -44,22 +41,22 @@ export default function ThumbnailGrid({
             onClick={() => onSelect(index)}
           >
              <ImageWithSkeleton
-                src={image.url}
-                alt={image.name}
+                src={image.url || ''}
+                alt={image.name || ''}
                 width={100}
                 height={100}
                 className={styles.thumbnail}
                 sizes={`100%`}
                 quality={100}
                 minSkeletonMs={220}      // más notorio
-                fallbackText={image.name.slice(0,2).toUpperCase()}
+                fallbackText={image.name?.slice(0,2).toUpperCase()}
               />
             <div className={styles.thumbnailName}>
-              {image.name.split(".")[0].substring(0, 12)}…
+              {image.name?.split(".")[0].substring(0, 12)}…
             </div>
 
             {hasNotes && <div className={styles.commentIndicator}>💬</div>}
-            {validatedImages[image.name] && (
+            {validatedImages[image.name || '' ] && (
               <div className={styles.validatedIndicator}>✅</div>
             )}
           </div>
