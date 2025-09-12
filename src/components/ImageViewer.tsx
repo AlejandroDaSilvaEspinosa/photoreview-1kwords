@@ -83,7 +83,10 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
     ro.observe(wrapperRef.current);
     return () => ro.disconnect();
   }, [updateImageGeometry]);
-
+  useEffect(() => {
+    // recalcula al montar/cambiar de imagen
+    requestAnimationFrame(updateImageGeometry);
+  }, [selectedImageIndex, updateImageGeometry]);
   // 1) Cargar imágenes
   useEffect(() => {
     let alive = true;
@@ -362,7 +365,6 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
   if (!images.length || !currentImage) return null;
 
   const isCurrentImageValidated = !!validatedImages[currentImage.name||""];
-  console.log(images)
   return (
     <>
       <div className={styles.viewerContainer}>
@@ -399,15 +401,13 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
                 sizes={`100%`}
                 quality={100}
                 minSkeletonMs={220}      // más notorio
+                onReady={updateImageGeometry} 
                 fallbackText={currentImage.name?.slice(0,2).toUpperCase()}
               />
 
               {threads.map((th, index) => {
-                console.log("render thread", th);
-                console.log("imgBox", imgBox);
                 const topPx = imgBox.offsetTop + (th.y / 100) * imgBox.height;
                 const leftPx = imgBox.offsetLeft + (th.x / 100) * imgBox.width;
-                console.log({ topPx, leftPx });
                 return (
                   <div
                     key={th.id}

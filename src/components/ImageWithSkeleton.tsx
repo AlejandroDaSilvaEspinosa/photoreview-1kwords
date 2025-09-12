@@ -13,6 +13,7 @@ type Props = Omit<ImageProps, "onLoadingComplete" | "onError"> & {
   fallbackText?: string;
   /** Reactivar skeleton cuando cambia src */
   forceSkeletonOnSrcChange?: boolean;
+  onReady?: () => void; 
 };
 
 function srcToString(src: ImageProps["src"]): string {
@@ -28,6 +29,7 @@ const ImageWithSkeleton = forwardRef<HTMLImageElement, Props>(function ImageWith
     minSkeletonMs = 180,
     fallbackText = "×",
     forceSkeletonOnSrcChange = true,
+    onReady,
     ...imgProps                // resto de props de <Image>
   },
   ref
@@ -38,7 +40,11 @@ const ImageWithSkeleton = forwardRef<HTMLImageElement, Props>(function ImageWith
   const doneTimer = useRef<number | null>(null);
 
   const srcKey = useMemo(() => srcToString(imgProps.src), [imgProps.src]);
-
+  const finishLoad = () => {
+    setLoaded(true);
+    // Llamamos en el siguiente frame para asegurar layout final
+    requestAnimationFrame(() => onReady?.());
+  };
   useEffect(() => {
     if (!forceSkeletonOnSrcChange) return;
     setLoaded(false);
@@ -60,7 +66,7 @@ const ImageWithSkeleton = forwardRef<HTMLImageElement, Props>(function ImageWith
     if (error) return;
     const elapsed = Date.now() - mountedAt;
     const remaining = Math.max(0, minSkeletonMs - elapsed);
-    if (remaining === 0) setLoaded(true);
+    if (remaining === 0) finishLoad();
     else {
       doneTimer.current = window.setTimeout(() => {
         setLoaded(true);
