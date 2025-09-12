@@ -106,12 +106,12 @@ export async function getImageUrlThumbnail(
     const name = file.name ?? id;
 
     // ⚠️ ADAPTA este objeto a TU ImageItem:
-    // si tu ImageItem usa `filename`, usa `filename: name`
+    // si tu ImageItem usa `name`, usa `name: name`
     // si usa `name`, usa `name`
     const obj = {
-      // si tu tipo es { filename: string; ... } 👉 filename: name,
+      // si tu tipo es { name: string; ... } 👉 name: name,
       // si tu tipo es { name: string; ... }     👉 name,
-      filename: name, // <— cámbialo a 'name' si tu ImageItem lo exige
+      name: name, // <— cámbialo a 'name' si tu ImageItem lo exige
       url: `https://drive.google.com/uc?id=${id}`,
       listingImageUrl: `https://lh3.googleusercontent.com/d/${id}=s${sizeListing}-c`,
       thumbnailUrl: `https://lh3.googleusercontent.com/d/${id}=s${sizeThumbnail}-c`,
@@ -159,7 +159,7 @@ export async function getLatestRevisionForSku(sku: string): Promise<number> {
   return maxRev;
 }
 
-/** Lee las anotaciones de la última revisión por filename */
+/** Lee las anotaciones de la última revisión por name */
 export type ReviewsByFile = Record<string, ReviewJSON>;
 
 export async function getReviewsBySku(sku: string): Promise<ReviewsByFile> {
@@ -167,10 +167,10 @@ export async function getReviewsBySku(sku: string): Promise<ReviewsByFile> {
   const out: ReviewsByFile = {};
 
   for (const row of rows) {
-    const [rSku, filename, json] = row;
-    if (rSku !== sku || !filename || !json) continue;
+    const [rSku, name, json] = row;
+    if (rSku !== sku || !name || !json) continue;
     try {
-      out[filename] = JSON.parse(json) as ReviewJSON;
+      out[name] = JSON.parse(json) as ReviewJSON;
     } catch {
       // fila rota -> ignorar
     }
@@ -182,13 +182,13 @@ export async function getReviewsBySku(sku: string): Promise<ReviewsByFile> {
 export async function appendReviewRows(
   sku: string,
   revision: number,
-  byFilename: Record<string, AnnotationThread[]>
+  byname: Record<string, AnnotationThread[]>
 ) {
   const now = new Date().toISOString();
-  const values: string[][] = Object.entries(byFilename).map(
-    ([filename, points]) => {
+  const values: string[][] = Object.entries(byname).map(
+    ([name, points]) => {
       const json: ReviewJSON = { revision, points };
-      return [sku, filename, JSON.stringify(json), now];
+      return [sku, name, JSON.stringify(json), now];
     }
   );
 

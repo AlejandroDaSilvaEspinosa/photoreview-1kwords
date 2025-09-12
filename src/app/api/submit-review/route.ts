@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 type IncomingBody = {
   sku: string;
   review: Array<{
-    filename: string;
+    name: string;
     validated: boolean; // opcional
     url: string;
     annotations: AnnotationThread[]; // threads con messages[]
@@ -26,12 +26,12 @@ export async function POST(req: Request) {
     const last = await getLatestRevisionForSku(sku);
     const nextRevision = last + 1;
 
-    const byFilename: Record<string, AnnotationThread[]> = {};
+    const byname: Record<string, AnnotationThread[]> = {};
     for (const item of review) {
-      byFilename[item.filename] = item.annotations || [];
+      byname[item.name] = item.annotations || [];
     }
 
-    await appendReviewRows(sku, nextRevision, byFilename);
+    await appendReviewRows(sku, nextRevision, byname);
     return NextResponse.json({ ok: true, revision: nextRevision });
   } catch (e: any) {
     console.error("POST /api/submit-review error:", e);

@@ -39,7 +39,7 @@ export interface ReviewsBySkuResponse {
   sku: string;
   revision: number; // última revisión encontrada
   items: Array<{
-    filename: string;
+    name: string;
     points: AnnotationThread[];
   }>;
 }

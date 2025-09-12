@@ -362,7 +362,7 @@ export default function ImageViewer({ sku, targetImage }: ImageViewerProps) {
   if (!images.length || !currentImage) return null;
 
   const isCurrentImageValidated = !!validatedImages[currentImage.name||""];
-
+  console.log(images)
   return (
     <>
       <div className={styles.viewerContainer}>
