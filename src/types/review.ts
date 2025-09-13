@@ -10,8 +10,10 @@ export interface AnnotationThread {
   x: number;         // %
   y: number;         // %
   messages: AnnotationMessage[];
+  status: ThreadStatus;
 }
 
+export type ThreadStatus = "pending" | "corrected" | "reopened";
 export type AnnotationState = Record<string, AnnotationThread[]>;
 export type ValidationState = Record<string, boolean>;
 

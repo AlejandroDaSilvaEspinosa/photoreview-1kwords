@@ -9,7 +9,11 @@ import type {
 } from "@/types/review";
 
 type ReviewsPayload = Record<string, { points?: AnnotationThread[] }>;
-
+const ThreadStatus = {
+  pending: "pending" as ThreadStatus,
+  corrected: "corrected" as ThreadStatus,
+  reopened: "reopened" as ThreadStatus,
+};
 export function useThreads(sku: string, images: ImageItem[]) {
   const [annotations, setAnnotations] = useState<AnnotationState>({});
 
@@ -32,7 +36,7 @@ export function useThreads(sku: string, images: ImageItem[]) {
         id: tempId,
         x,
         y,
-        status: "pending",
+        status: ThreadStatus.pending,
         messages: [],
       };
       setAnnotations((p) => ({

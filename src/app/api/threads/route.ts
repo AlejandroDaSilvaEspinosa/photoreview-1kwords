@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   const { data, error } = await sb
     .from("review_threads")
     .insert({
-      sku,
+      sku : sku,
       image_name: imageName,
       x,
       y,

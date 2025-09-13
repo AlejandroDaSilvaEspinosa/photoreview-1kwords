@@ -40,7 +40,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
         const res = await fetch(`/api/reviews/${sku.sku}`);
         if (!res.ok) return;
         const payload: ReviewsPayload = await res.json();
-
+        console.log(payload)
         const merged: AnnotationState = {};
         for (const img of images) {
           if (!img.name) continue;
@@ -210,14 +210,11 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
         name={selectedImage?.name || ""}
         isValidated={false}
         threads={threads}
-        onValidate={() => {}}
-        onUnvalidate={() => {}}
+        onValidateSku={() => {}}
+        onUnvalidateSku={() => {}}
         onAddMessage={onAddMessage}
-        onChangeMessage={() => {}}
         onDeleteThread={() => {}}
         onFocusThread={(id) => setActiveThreadId(id)}
-        submitDisabled={false}
-        saving={false}
         withCorrectionsCount={0}
         validatedImagesCount={0}
         totalCompleted={0}

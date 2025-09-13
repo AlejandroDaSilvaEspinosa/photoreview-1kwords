@@ -1,25 +1,63 @@
 "use client";
+
 import React, { useEffect, useRef, useState } from "react";
 import styles from "./SidePanel.module.css";
-import type { AnnotationThread } from "@/types/review";
 import { format } from "timeago.js";
 import "@/lib/timeago";
 
+// Tipos mínimos que usamos aquí
+export type ThreadStatus = "pending" | "corrected" | "reopened";
+export type Message = {
+  id: number;
+  text: string;
+  createdAt: string;
+  createdByName?: string | null;
+};
+export type Thread = {
+  id: number;
+  x: number;
+  y: number;
+  status: ThreadStatus;
+  messages: Message[];
+};
+
 type Props = {
   name: string | null;
-  threads: AnnotationThread[];
-  onAddMessage: (threadId: number, text: string) => void;
-  onDeleteThread: (threadId: number) => void;
-  onFocusThread: (id: number) => void;
-  onToggleThreadStatus: (threadId: number, next: "pending" | "corrected" | "reopened") => void;
+  /** Habilita/oculta badge de validada; la validación real la gestiona el padre */
+  isValidated: boolean;
 
-  // SKU
-  canCloseSku: boolean;
+  /** Hilos (puntos) de la imagen actual con sus mensajes */
+  threads: Thread[];
+
+  /** Marcar todo el SKU como validado (solo se habilita cuando no hay hilos abiertos) */
   onValidateSku: () => void;
 
-  // presencia
+  /** Quitar estado de validado del SKU */
+  onUnvalidateSku: () => void;
+
+  /** Añadir mensaje a un hilo (auto-guardado en el padre) */
+  onAddMessage: (threadId: number, text: string) => Promise<void> | void;
+
+  /** Eliminar un hilo completo */
+  onDeleteThread: (threadId: number) => void;
+
+  /** Foco/scroll visual a un hilo */
+  onFocusThread: (id: number) => void;
+
+  /** Cambiar estado de un hilo */
+  onToggleThreadStatus: (threadId: number, next: ThreadStatus) => Promise<void> | void;
+
+  /** Presencia */
   onlineUsers?: { username: string }[];
+
+  /** Nombre de usuario actual para pintar mis mensajes a la derecha */
   currentUsername?: string;
+
+  /** Métricas del progreso global (para el resumen) */
+  withCorrectionsCount: number;
+  validatedImagesCount: number;
+  totalCompleted: number;
+  totalImages: number;
 };
 
 function normalize(s?: string | null) {
@@ -28,60 +66,108 @@ function normalize(s?: string | null) {
 
 export default function SidePanel({
   name,
+  isValidated,
   threads,
+  onValidateSku,
+  onUnvalidateSku,
   onAddMessage,
   onDeleteThread,
   onFocusThread,
   onToggleThreadStatus,
-  canCloseSku,
-  onValidateSku,
   onlineUsers = [],
   currentUsername,
+  withCorrectionsCount,
+  validatedImagesCount,
+  totalCompleted,
+  totalImages,
 }: Props) {
+  // borradores por hilo (input del chat)
   const [drafts, setDrafts] = useState<Record<number, string>>({});
-  const listRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const listsRef = useRef<Map<number, HTMLDivElement>>(new Map());
 
-  const setListRef = (threadId: number) => (el: HTMLDivElement | null) => {
-    if (!el) listRefs.current.delete(threadId);
-    else listRefs.current.set(threadId, el);
-  };
+  const setListRef =
+    (threadId: number) => (el: HTMLDivElement | null) => {
+      if (!el) listsRef.current.delete(threadId);
+      else listsRef.current.set(threadId, el);
+    };
 
+  // auto-scroll cada vez que cambian los mensajes
   useEffect(() => {
-    threads.forEach((th) => {
-      const box = listRefs.current.get(th.id);
-      if (box) requestAnimationFrame(() => (box.scrollTop = box.scrollHeight));
-    });
+    for (const [, box] of listsRef.current) {
+      requestAnimationFrame(() => {
+        box.scrollTop = box.scrollHeight;
+      });
+    }
   }, [threads]);
 
   const isMine = (author?: string | null) => {
-    const a = normalize(author);
     const me = normalize(currentUsername);
+    const a = normalize(author);
     return !a || (!!me && a === me);
   };
+
+  // un hilo está "abierto" si no está corregido
+  const hasOpenThreads = threads.some(
+    (t) => t.status === "pending" || t.status === "reopened"
+  );
+
+  const handleSend = async (threadId: number) => {
+    const text = (drafts[threadId] ?? "").trim();
+    if (!text) return;
+    await onAddMessage(threadId, text);
+    setDrafts((d) => ({ ...d, [threadId]: "" }));
+  };
+
+  const nextStatus = (s: ThreadStatus): ThreadStatus =>
+    s === "corrected" ? "reopened" : "corrected";
 
   return (
     <div className={styles.sidePanel}>
       <div className={styles.commentSection}>
         <h3>Revisión de:</h3>
         <div className={styles.currentImageInfo}>
-          <span className={styles.fileName}>{name}</span>
+          <span>{name}</span>
 
           <div className={styles.presenceWrap}>
             <span className={styles.presenceDot} />
             <span className={styles.presenceText}>{onlineUsers.length} en línea</span>
           </div>
 
-          <button
-            className={styles.validateSkuButton}
-            onClick={onValidateSku}
-            disabled={!canCloseSku}
-            title={canCloseSku ? "Cerrar revisión del SKU" : "Hay hilos abiertos"}
-          >
-            Validar SKU
-          </button>
+          {isValidated && (
+            <span className={styles.validatedBadge}>✅ Validada</span>
+          )}
         </div>
 
-        <div className={styles.divider}><span>Chat por punto</span></div>
+        {/* Botón principal de validación de SKU */}
+        <div className={styles.validationButtons}>
+          {!isValidated ? (
+            <button
+              type="button"
+              className={styles.validateButton}
+              onClick={onValidateSku}
+              disabled={hasOpenThreads} // solo habilitado si TODO está corregido
+              title={
+                hasOpenThreads
+                  ? "Hay hilos pendientes o reabiertos. Resuélvelos para validar el SKU."
+                  : "Validar SKU"
+              }
+            >
+              ✅ Validar SKU
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={styles.unvalidateButton}
+              onClick={onUnvalidateSku}
+            >
+              ↩️ Quitar validación del SKU
+            </button>
+          )}
+        </div>
+
+        <div className={styles.divider}>
+          <span>Chat de correcciones por punto</span>
+        </div>
 
         <div className={styles.annotationsList}>
           {threads.length === 0 && (
@@ -90,24 +176,48 @@ export default function SidePanel({
             </p>
           )}
 
-          {threads.map((th, index) => {
-            const nextStatus =
-              th.status === "pending" ? "corrected" : th.status === "corrected" ? "reopened" : "corrected";
+          {threads.map((th, idx) => {
+            const pillText =
+              th.status === "pending"
+                ? "Pendiente"
+                : th.status === "reopened"
+                ? "Reabierto"
+                : "Corregido";
+
+            const toggleLabel =
+              th.status === "corrected" ? "Reabrir" : "Marcar corregido";
 
             return (
               <div key={th.id} className={styles.annotationItem}>
                 <div className={styles.annotationHeader}>
-                  <span className={styles.annotationNumber}>{index + 1}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className={styles.annotationNumber}>{idx + 1}</span>
+                    {/* Pill de estado */}
+                    <span
+                      className={styles.validatedBadge}
+                      style={{
+                        background:
+                          th.status === "corrected"
+                            ? "#00AA00"
+                            : th.status === "reopened"
+                            ? "#FFB000"
+                            : "#FF0040",
+                      }}
+                    >
+                      {pillText}
+                    </span>
+                  </div>
 
-                  <div className={styles.threadActions}>
-                    <span className={`${styles.badge} ${styles[th.status]}`}>{th.status}</span>
+                  <div style={{ display: "flex", gap: 8 }}>
                     <button
                       type="button"
-                      className={styles.statusButton}
-                      onClick={() => onToggleThreadStatus(th.id, nextStatus)}
+                      className={styles.validateButton}
+                      style={{
+                        background: th.status === "corrected" ? "#FF6600" : "#00AA00",
+                      }}
+                      onClick={() => onToggleThreadStatus(th.id, nextStatus(th.status))}
                     >
-                      {th.status === "pending" ? "Marcar corregido" :
-                       th.status === "corrected" ? "Reabrir" : "Marcar corregido"}
+                      {toggleLabel}
                     </button>
 
                     <button
@@ -122,29 +232,36 @@ export default function SidePanel({
                   </div>
                 </div>
 
+                {/* Lista de mensajes (chat) */}
                 <div
                   className={styles.chatList}
                   ref={setListRef(th.id)}
                   onFocus={() => onFocusThread(th.id)}
                 >
                   {(th.messages ?? []).map((m) => {
-                    const author = (m as any)?.createdByName || "Usuario";
-                    const mine = isMine((m as any)?.createdByName);
+                    const mine = isMine(m.createdByName);
                     return (
                       <div
                         key={m.id}
-                        className={`${styles.bubble} ${mine ? styles.mine : styles.theirs}`}
+                        className={`${styles.bubble} ${
+                          mine ? styles.mine : styles.theirs
+                        }`}
                       >
                         <div className={styles.bubbleText}>{m.text}</div>
                         <div className={styles.bubbleMeta}>
-                          <span className={styles.author}>{author}</span>
-                          <span className={styles.timeago}>{format(m.createdAt, "es")}</span>
+                          <span className={styles.author}>
+                            {m.createdByName || "Usuario"}
+                          </span>
+                          <span className={styles.timeago}>
+                            {format(m.createdAt, "es")}
+                          </span>
                         </div>
                       </div>
                     );
                   })}
                 </div>
 
+                {/* Composer (enviar mensaje) */}
                 <div className={styles.chatComposer}>
                   <input
                     type="text"
@@ -157,23 +274,14 @@ export default function SidePanel({
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
-                        const text = (drafts[th.id] ?? "").trim();
-                        if (text) {
-                          onAddMessage(th.id, text);
-                          setDrafts((d) => ({ ...d, [th.id]: "" }));
-                        }
+                        handleSend(th.id);
                       }
                     }}
                   />
                   <button
                     type="button"
                     className={styles.sendButton}
-                    onClick={() => {
-                      const text = (drafts[th.id] ?? "").trim();
-                      if (!text) return;
-                      onAddMessage(th.id, text);
-                      setDrafts((d) => ({ ...d, [th.id]: "" }));
-                    }}
+                    onClick={() => handleSend(th.id)}
                   >
                     Enviar
                   </button>
@@ -181,6 +289,25 @@ export default function SidePanel({
               </div>
             );
           })}
+        </div>
+
+        {/* Resumen de progreso */}
+        <div className={styles.reviewSummary}>
+          <h4>Progreso:</h4>
+          <div className={styles.progressInfo}>
+            <span>Con correcciones:</span>
+            <strong className={styles.commentCount}>{withCorrectionsCount}</strong>
+          </div>
+          <div className={styles.progressInfo}>
+            <span>Validadas:</span>
+            <strong className={styles.validatedCount}>{validatedImagesCount}</strong>
+          </div>
+          <div className={styles.progressInfo}>
+            <span>Completadas:</span>
+            <strong>
+              {totalCompleted} / {totalImages}
+            </strong>
+          </div>
         </div>
       </div>
     </div>

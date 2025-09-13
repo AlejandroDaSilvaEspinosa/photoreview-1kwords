@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-
+import { unstable_noStore as noStore } from "next/cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,20 +11,20 @@ type Payload = Record<string, { points: Thread[] }>; // points = threads por ima
 
 export async function GET(_req: Request, { params }: { params: { sku: string } }
 ) {
+  noStore();
   const {sku} = params
   const sb = supabaseAdmin();
 
   // Trae todos los threads del SKU
+  console.log(sku)
   const { data: threads, error: e1 } = await sb
     .from("review_threads")
-    .select("id,sku,  image_name, x, y, status")
-    .eq("sku", sku)
+    .select("id, sku, image_name, x, y, status")
+    .eq('sku::text', sku) // Comparación case-insensitive y trim
     .order("id", { ascending: true });
-
-  if (e1) return NextResponse.json({ error: e1.message }, { status: 500 });
-
-  if (!threads?.length) return NextResponse.json({}, { status: 200 });
   console.log(threads)
+  if (e1) return NextResponse.json({ error: e1.message }, { status: 500 });
+  if (!threads?.length) return NextResponse.json({}, { status: 200 });
   // Trae todos los mensajes de esos threads
   const threadIds = threads.map(t => t.id);
   const { data: messages, error: e2 } = await sb
@@ -32,7 +32,7 @@ export async function GET(_req: Request, { params }: { params: { sku: string } }
     .select("id, thread_id, text, created_at, created_by:app_users(username, display_name)")
     .in("thread_id", threadIds)
     .order("created_at", { ascending: true });
-
+  console.log(messages)
   if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
 
   const msgsByThread = new Map<number, Msg[]>();
