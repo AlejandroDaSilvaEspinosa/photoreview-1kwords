@@ -7,7 +7,7 @@ import styles from "./home.module.css";
 import Image from 'next/image';
 import type { ImageItem,SkuWithImages } from "@/types/review";
 
-export default function Home({ skus, clientInfo }: { skus:SkuWithImages[]; clientInfo: {name: string; project: string} }) {
+export default function Home({ username, skus, clientInfo }: { username: string; skus:SkuWithImages[]; clientInfo: {name: string; project: string} }) {
   const [selectedSku, setSelectedSku] = useState<{
       sku: string;
       images: ImageItem[];
@@ -25,7 +25,7 @@ export default function Home({ skus, clientInfo }: { skus:SkuWithImages[]; clien
       />
       <div className={styles.content}>
         {selectedSku ? (
-          <ImageViewer key={selectedSku.sku} sku={selectedSku} />
+          <ImageViewer username={username} key={selectedSku.sku} sku={selectedSku} />
         ) : (
           <div className={styles.placeholder}>
             {/* <p>Por favor, selecciona una SKU para ver sus imágenes.</p> */}

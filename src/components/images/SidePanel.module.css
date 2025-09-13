@@ -28,56 +28,35 @@
     font-size: 14px;
     margin-bottom: 15px;
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 8px;
 }
 
-.validatedBadge {
-    background-color: #00AA00;
-    color: #fff;
-    padding: 3px 8px;
-    border-radius: 12px;
-    font-size: 11px;
+.fileName {
     font-weight: 600;
+    color: #eee;
 }
 
-.validationButtons {
-    margin-bottom: 15px;
-}
-
-.validateButton,
-.unvalidateButton {
-    width: 100%;
-    padding: 12px;
-    border: none;
+.validateSkuButton {
+    margin-left: auto;
+    background: #FF0040;
+    color: #fff;
+    border: 0;
+    padding: 8px 10px;
     border-radius: 6px;
-    font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background .2s ease;
 }
 
-.validateButton {
-    background-color: #00AA00;
-    color: #fff;
-}
-
-.validateButton:hover {
-    background-color: #00CC00;
-}
-
-.unvalidateButton {
-    background-color: #FF6600;
-    color: #fff;
-}
-
-.unvalidateButton:hover {
-    background-color: #FF8800;
+.validateSkuButton:disabled {
+    background: #555;
+    cursor: not-allowed;
 }
 
 .divider {
     text-align: center;
-    margin: 15px 0;
+    margin: 12px 0;
     position: relative;
 }
 
@@ -102,9 +81,9 @@
 .annotationsList {
     display: flex;
     flex-direction: column;
-    gap: 15px;
-    margin-bottom: 20px;
-    max-height: 300px;
+    gap: 12px;
+    margin-bottom: 16px;
+    max-height: 60vh;
     overflow-y: auto;
     flex: 1;
 }
@@ -113,7 +92,7 @@
     font-size: 14px;
     color: #888;
     text-align: center;
-    padding: 20px;
+    padding: 16px;
     background-color: #333;
     border-radius: 6px;
     font-style: italic;
@@ -122,24 +101,19 @@
 .annotationItem {
     background-color: #333;
     border-radius: 6px;
-    padding: 12px;
+    padding: 10px;
     border: 1px solid #444;
-    transition: border-color 0.2s ease;
-}
-
-.activeAnnotationItem {
-    border-color: #FF0040;
 }
 
 .annotationHeader {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 8px;
     margin-bottom: 8px;
 }
 
 .annotationNumber {
-    font-weight: bold;
+    font-weight: 700;
     font-size: 12px;
     background-color: #FF0040;
     color: #fff;
@@ -149,18 +123,57 @@
     text-align: center;
 }
 
+.threadActions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.badge {
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+}
+
+.badge.pending {
+    background: #3a2a2a;
+    color: #ffaaaa;
+    border-color: #553;
+}
+
+.badge.corrected {
+    background: #243a24;
+    color: #bde6bd;
+    border-color: #353;
+}
+
+.badge.reopened {
+    background: #3a3524;
+    color: #f0d38a;
+    border-color: #665;
+}
+
+.statusButton {
+    background: #444;
+    color: #eee;
+    border: 0;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
 .deleteAnnotationBtn {
     background: none;
     border: none;
     color: #888;
     font-size: 18px;
     cursor: pointer;
-    transition: color 0.2s ease;
     width: 24px;
     height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: grid;
+    place-items: center;
     border-radius: 50%;
 }
 
@@ -169,113 +182,85 @@
     background-color: rgba(255, 0, 64, 0.1);
 }
 
-.commentBox {
-    width: 100%;
-    background-color: #2a2a2a;
-    border: 1px solid #555;
-    border-radius: 4px;
-    padding: 8px;
-    color: #fff;
-    font-size: 13px;
-    resize: vertical;
-    min-height: 60px;
-    font-family: inherit;
-}
-
-.commentBox:focus {
-    outline: none;
-    border-color: #FF0040;
-}
-
-.commentBox:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-.actionButtons {
-    margin-top: auto;
-    padding-top: 15px;
-}
-
-.submitButton {
-    width: 100%;
-    padding: 15px;
-    background-color: #FF0040;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.submitButton:hover:not(:disabled) {
-    background-color: #CC0030;
-}
-
-.submitButton:disabled {
-    background-color: #555;
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-
-.submitDisabledMessage {
-    font-size: 12px;
-    text-align: center;
-    color: #888;
-    margin-top: 8px;
-    font-style: italic;
-}
-
-.reviewSummary {
-    background-color: #333;
-    border-radius: 6px;
-    padding: 15px;
-    margin-top: 20px;
-}
-
-.reviewSummary h4 {
-    margin: 0 0 10px 0;
-    font-size: 14px;
-    color: #FF0040;
-}
-
-.progressInfo {
+.chatList {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 8px;
+}
+
+.bubble {
+    max-width: 85%;
+    padding: 8px 10px;
+    border-radius: 10px;
     font-size: 13px;
+    line-height: 1.35;
+    display: inline-block;
 }
 
-.commentCount {
-    color: #FFB000;
+.mine {
+    background: #2c3e50;
+    color: #eaf2f8;
+    margin-left: auto;
+    border-top-right-radius: 2px;
 }
 
-.validatedCount {
-    color: #00AA00;
+.theirs {
+    background: #3a3a3a;
+    color: #f0f0f0;
+    margin-right: auto;
+    border-top-left-radius: 2px;
 }
 
-@media (max-width: 1200px) {
-    .sidePanel {
-        width: 320px;
-    }
+.bubbleMeta {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 11px;
+    color: #aaa;
 }
 
-@media (max-width: 768px) {
-    .sidePanel {
-        width: 100%;
-        max-height: 50vh;
-    }
+.author {
+    color: #ddd;
+}
+
+.timeago {
+    color: #999;
+}
+
+.chatComposer {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.chatInput {
+    flex: 1;
+    background: #2a2a2a;
+    color: #fff;
+    border: 1px solid #555;
+    border-radius: 6px;
+    padding: 8px;
+}
+
+.sendButton {
+    background: #FF0040;
+    color: #fff;
+    border: 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
 }
 
 .presenceWrap {
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-left: auto;
-    margin-right: 8px;
 }
 
 .presenceDot {
@@ -291,24 +276,15 @@
     color: #8dd98d;
 }
 
-.messageBlock {
-    margin-bottom: 8px;
+@media (max-width: 1200px) {
+    .sidePanel {
+        width: 320px;
+    }
 }
 
-.messageMeta {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 6px;
-    font-size: 12px;
-    color: #aaa;
-}
-
-.author {
-    font-weight: 600;
-    color: #ddd;
-}
-
-.timeago {
-    color: #999;
+@media (max-width: 768px) {
+    .sidePanel {
+        width: 100%;
+        max-height: 50vh;
+    }
 }

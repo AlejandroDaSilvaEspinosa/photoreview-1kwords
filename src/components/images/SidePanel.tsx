@@ -1,161 +1,186 @@
 "use client";
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import styles from "./SidePanel.module.css";
 import type { AnnotationThread } from "@/types/review";
 import { format } from "timeago.js";
 import "@/lib/timeago";
+
 type Props = {
   name: string | null;
-  isValidated: boolean;
-  threads: AnnotationThread[]; // cada message puede tener createdByName
-  onValidate: () => void;
-  onUnvalidate: () => void;
-  onAddMessage: (threadId: number) => void;
-  onChangeMessage: (threadId: number, messageId: number, text: string) => void;
+  threads: AnnotationThread[];
+  onAddMessage: (threadId: number, text: string) => void;
   onDeleteThread: (threadId: number) => void;
   onFocusThread: (id: number) => void;
-  onSubmit: (e: React.FormEvent) => void;
-  submitDisabled: boolean;
-  saving: boolean;
-  withCorrectionsCount: number;
-  validatedImagesCount: number;
-  totalCompleted: number;
-  totalImages: number;
-  onlineUsers?: { username: string }[]; // opcional: presencia
+  onToggleThreadStatus: (threadId: number, next: "pending" | "corrected" | "reopened") => void;
+
+  // SKU
+  canCloseSku: boolean;
+  onValidateSku: () => void;
+
+  // presencia
+  onlineUsers?: { username: string }[];
+  currentUsername?: string;
 };
+
+function normalize(s?: string | null) {
+  return (s ?? "").trim().toLowerCase();
+}
 
 export default function SidePanel({
   name,
-  isValidated,
   threads,
-  onValidate,
-  onUnvalidate,
   onAddMessage,
-  onChangeMessage,
   onDeleteThread,
   onFocusThread,
-  onSubmit,
-  submitDisabled,
-  saving,
-  withCorrectionsCount,
-  validatedImagesCount,
-  totalCompleted,
-  totalImages,
+  onToggleThreadStatus,
+  canCloseSku,
+  onValidateSku,
   onlineUsers = [],
+  currentUsername,
 }: Props) {
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const listRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  const setListRef = (threadId: number) => (el: HTMLDivElement | null) => {
+    if (!el) listRefs.current.delete(threadId);
+    else listRefs.current.set(threadId, el);
+  };
+
+  useEffect(() => {
+    threads.forEach((th) => {
+      const box = listRefs.current.get(th.id);
+      if (box) requestAnimationFrame(() => (box.scrollTop = box.scrollHeight));
+    });
+  }, [threads]);
+
+  const isMine = (author?: string | null) => {
+    const a = normalize(author);
+    const me = normalize(currentUsername);
+    return !a || (!!me && a === me);
+  };
+
   return (
     <div className={styles.sidePanel}>
       <div className={styles.commentSection}>
         <h3>Revisión de:</h3>
         <div className={styles.currentImageInfo}>
-          <span>{name}</span>
+          <span className={styles.fileName}>{name}</span>
+
           <div className={styles.presenceWrap}>
             <span className={styles.presenceDot} />
-            <span className={styles.presenceText}>
-              {onlineUsers.length} en línea
-            </span>
+            <span className={styles.presenceText}>{onlineUsers.length} en línea</span>
           </div>
-          {isValidated && <span className={styles.validatedBadge}>✅ Validada</span>}
+
+          <button
+            className={styles.validateSkuButton}
+            onClick={onValidateSku}
+            disabled={!canCloseSku}
+            title={canCloseSku ? "Cerrar revisión del SKU" : "Hay hilos abiertos"}
+          >
+            Validar SKU
+          </button>
         </div>
 
-        <form onSubmit={onSubmit}>
-          <div className={styles.validationButtons}>
-            {!isValidated ? (
-              <button type="button" className={styles.validateButton} onClick={onValidate}>
-                ✅ Validar sin correcciones
-              </button>
-            ) : (
-              <button type="button" className={styles.unvalidateButton} onClick={onUnvalidate}>
-                ↩️ Desvalidar imagen
-              </button>
-            )}
-          </div>
+        <div className={styles.divider}><span>Chat por punto</span></div>
 
-          <div className={styles.divider}>
-            <span>{isValidated ? "Imagen validada" : "Añadir correcciones (haz clic en la imagen)"}</span>
-          </div>
+        <div className={styles.annotationsList}>
+          {threads.length === 0 && (
+            <p className={styles.noAnnotations}>
+              Haz clic en un punto de la imagen para iniciar un hilo de chat.
+            </p>
+          )}
 
-          <div className={styles.annotationsList}>
-            {threads.length === 0 && !isValidated && (
-              <p className={styles.noAnnotations}>
-                Haz clic en un punto de la imagen para añadir una corrección.
-              </p>
-            )}
+          {threads.map((th, index) => {
+            const nextStatus =
+              th.status === "pending" ? "corrected" : th.status === "corrected" ? "reopened" : "corrected";
 
-            {threads.map((th, index) => (
+            return (
               <div key={th.id} className={styles.annotationItem}>
                 <div className={styles.annotationHeader}>
                   <span className={styles.annotationNumber}>{index + 1}</span>
-                  <button
-                    type="button"
-                    onClick={() => onDeleteThread(th.id)}
-                    className={styles.deleteAnnotationBtn}
-                    aria-label="Eliminar anotación"
-                  >
-                    ×
-                  </button>
+
+                  <div className={styles.threadActions}>
+                    <span className={`${styles.badge} ${styles[th.status]}`}>{th.status}</span>
+                    <button
+                      type="button"
+                      className={styles.statusButton}
+                      onClick={() => onToggleThreadStatus(th.id, nextStatus)}
+                    >
+                      {th.status === "pending" ? "Marcar corregido" :
+                       th.status === "corrected" ? "Reabrir" : "Marcar corregido"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onDeleteThread(th.id)}
+                      className={styles.deleteAnnotationBtn}
+                      aria-label="Eliminar hilo"
+                      title="Eliminar hilo"
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
 
-                {th.messages?.map((m) => (
-                  <div key={m.id} className={styles.messageBlock}>
-                    <div className={styles.messageMeta}>
-                      <span className={styles.author}>
-                        {m as any && (m as any).createdByName ? (m as any).createdByName : "Usuario"}
-                      </span>
-                      <span className={styles.timeago}>{format(m.createdAt, "es")}</span>
-                    </div>
-                    <textarea
-                      placeholder="Mensaje…"
-                      className={styles.commentBox}
-                      value={m.text}
-                      onChange={(e) => onChangeMessage(th.id, m.id, e.target.value)}
-                      rows={3}
-                      disabled={isValidated}
-                      onFocus={() => onFocusThread(th.id)}
-                    />
-                  </div>
-                ))}
+                <div
+                  className={styles.chatList}
+                  ref={setListRef(th.id)}
+                  onFocus={() => onFocusThread(th.id)}
+                >
+                  {(th.messages ?? []).map((m) => {
+                    const author = (m as any)?.createdByName || "Usuario";
+                    const mine = isMine((m as any)?.createdByName);
+                    return (
+                      <div
+                        key={m.id}
+                        className={`${styles.bubble} ${mine ? styles.mine : styles.theirs}`}
+                      >
+                        <div className={styles.bubbleText}>{m.text}</div>
+                        <div className={styles.bubbleMeta}>
+                          <span className={styles.author}>{author}</span>
+                          <span className={styles.timeago}>{format(m.createdAt, "es")}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
 
-                {!isValidated && (
+                <div className={styles.chatComposer}>
+                  <input
+                    type="text"
+                    className={styles.chatInput}
+                    placeholder="Escribe un mensaje…"
+                    value={drafts[th.id] ?? ""}
+                    onChange={(e) =>
+                      setDrafts((d) => ({ ...d, [th.id]: e.target.value }))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        const text = (drafts[th.id] ?? "").trim();
+                        if (text) {
+                          onAddMessage(th.id, text);
+                          setDrafts((d) => ({ ...d, [th.id]: "" }));
+                        }
+                      }
+                    }}
+                  />
                   <button
                     type="button"
-                    className={styles.validateButton}
-                    style={{ background: "#444", marginTop: 8 }}
-                    onClick={() => onAddMessage(th.id)}
+                    className={styles.sendButton}
+                    onClick={() => {
+                      const text = (drafts[th.id] ?? "").trim();
+                      if (!text) return;
+                      onAddMessage(th.id, text);
+                      setDrafts((d) => ({ ...d, [th.id]: "" }));
+                    }}
                   >
-                    ➕ Añadir mensaje
+                    Enviar
                   </button>
-                )}
+                </div>
               </div>
-            ))}
-          </div>
-
-          <div className={styles.actionButtons}>
-            <button type="submit" className={styles.submitButton} disabled={submitDisabled || saving}>
-              {saving ? "Guardando…" : "Guardar Revisión Completa"}
-            </button>
-            {submitDisabled && !saving && (
-              <p className={styles.submitDisabledMessage}>
-                Debes revisar todas las imágenes para poder guardar.
-              </p>
-            )}
-          </div>
-        </form>
-
-        <div className={styles.reviewSummary}>
-          <h4>Progreso:</h4>
-          <div className={styles.progressInfo}>
-            <span>Con correcciones:</span>
-            <strong className={styles.commentCount}>{withCorrectionsCount}</strong>
-          </div>
-          <div className={styles.progressInfo}>
-            <span>Validadas:</span>
-            <strong className={styles.validatedCount}>{validatedImagesCount}</strong>
-          </div>
-          <div className={styles.progressInfo}>
-            <span>Completadas:</span>
-            <strong>{totalCompleted} / {totalImages}</strong>
-          </div>
+            );
+          })}
         </div>
       </div>
     </div>
