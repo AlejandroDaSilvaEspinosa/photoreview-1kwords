@@ -12,13 +12,24 @@ export async function POST(req: Request) {
   if (!user) return new NextResponse("Unauthorized", { status: 401 });
 
   const sb = supabaseAdmin();
+    // Obtener el ID del usuario desde la tabla app_users basado en el nombre de usuario del JWT [32]
+  const { data: appUser, error: userError } = await sb
+    .from("app_users")
+    .select("id")
+    .eq("username", user.name)
+    .single();
+  if (userError || !appUser) {
+    console.error("Error obteniendo el ID del usuario:", userError);
+    return NextResponse.json({ error: "Fallo al autenticar al usuario" }, { status: 500 });
+  }
 
+  const authorId = appUser.id; // ID del usuario de la base de datos
   const { data, error } = await sb
     .from("review_messages")
     .insert({
       thread_id: threadId,
       text,
-      created_by: user.id,
+      created_by: appUser.id,
     })
     .select()
     .single();

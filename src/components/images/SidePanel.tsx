@@ -22,7 +22,7 @@ export type Thread = {
 };
 
 type Props = {
-  name: string | null;
+  name: string;
   /** Habilita/oculta badge de validada; la validación real la gestiona el padre */
   isValidated: boolean;
 
@@ -39,7 +39,7 @@ type Props = {
   onAddMessage: (threadId: number, text: string) => Promise<void> | void;
 
   /** Eliminar un hilo completo */
-  onDeleteThread: (threadId: number) => void;
+  onDeleteThread: (imgName: string, id: number) => void;
 
   /** Foco/scroll visual a un hilo */
   onFocusThread: (id: number) => void;
@@ -222,7 +222,7 @@ export default function SidePanel({
 
                     <button
                       type="button"
-                      onClick={() => onDeleteThread(th.id)}
+                      onClick={() => onDeleteThread(name,th.id)}
                       className={styles.deleteAnnotationBtn}
                       aria-label="Eliminar hilo"
                       title="Eliminar hilo"

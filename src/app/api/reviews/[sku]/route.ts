@@ -16,13 +16,11 @@ export async function GET(_req: Request, { params }: { params: { sku: string } }
   const sb = supabaseAdmin();
 
   // Trae todos los threads del SKU
-  console.log(sku)
   const { data: threads, error: e1 } = await sb
-    .from("review_threads")
-    .select("id, sku, image_name, x, y, status")
+    .from("review_threads")    
+    .select("id, sku, image_name, x, y, status, created_by (username, display_name)")
     .eq('sku::text', sku) // Comparación case-insensitive y trim
     .order("id", { ascending: true });
-  console.log(threads)
   if (e1) return NextResponse.json({ error: e1.message }, { status: 500 });
   if (!threads?.length) return NextResponse.json({}, { status: 200 });
   // Trae todos los mensajes de esos threads

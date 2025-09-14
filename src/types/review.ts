@@ -18,8 +18,8 @@ export type AnnotationState = Record<string, AnnotationThread[]>;
 export type ValidationState = Record<string, boolean>;
 
 export interface ImageItem {
-  url: string | null;
-  name: string | null;
+  url: string;
+  name: string;
   listingImageUrl: string;
   thumbnailUrl: string;
 }

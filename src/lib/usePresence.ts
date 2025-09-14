@@ -35,33 +35,3 @@ export function usePresence(room: string, username: string | undefined) {
   return online;
 }
 
-export function useSkuChannel(sku: string) {
-  useEffect(() => {
-    const sb = supabaseBrowser();
-    const channel = sb.channel(`threads-${sku}`);
-    channel
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "review_threads", filter: `sku=eq.${sku}` },
-        (payload:any) => {
-          console.log("Change received!", payload);
-          // refetch GET o aplicar diff
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "review_messages" },
-        (payload:any) => {
-          console.log("Message change received!", payload);
-          // si thread_id pertenece al SKU → actualizar chat
-        }
-      )
-      .subscribe();
-    return () => {
-      channel.unsubscribe();
-    };
-  }, [sku]);
-  return null;
-}
-// Ejemplo de uso:
-
