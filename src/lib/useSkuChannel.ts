@@ -18,6 +18,9 @@ type MessageRow = {
   text: string;
   created_at: string;
   created_by?: string | null;
+  created_by_username: string | null;
+  created_by_display_name: string | null;
+  is_system: boolean | null;
 };
 
 type Handlers = {
@@ -71,6 +74,7 @@ export function useSkuChannel(sku: string, handlers: Handlers) {
         table: "review_messages",
       },
       (payload) => {
+          
         if (payload.eventType === "INSERT") {
           hRef.current.onMessageInsert?.(payload.new as MessageRow);
         } else if (payload.eventType === "UPDATE") {

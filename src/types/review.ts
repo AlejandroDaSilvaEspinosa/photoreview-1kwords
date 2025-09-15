@@ -3,6 +3,7 @@ export interface AnnotationMessage {
   text: string;
   createdAt: string; // ISO
   author?: string;   // opcional
+  isSystem?: boolean;
 }
 
 export interface AnnotationThread {
