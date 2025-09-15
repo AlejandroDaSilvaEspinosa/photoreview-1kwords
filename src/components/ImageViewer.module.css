@@ -210,9 +210,9 @@
   height: 42px;
   border-radius: 50%;
   border: 3px solid transparent;
-  border-top-color: var(--iv-accent, #7c3aed);
+  border-top-color: var(--iv-accent, #FF0040);
   /* color primario */
-  border-right-color: var(--iv-accent, #7c3aed);
+  border-right-color: var(--iv-accent, #FF0040);
   animation: iv-spin .8s linear infinite;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, .15) inset;
 }
