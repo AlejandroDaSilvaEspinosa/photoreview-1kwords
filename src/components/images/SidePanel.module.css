@@ -201,9 +201,39 @@
     font-size: 13px;
     line-height: 1.35;
     display: inline-block;
+    /* --- anti overflow de palabras largas --- */
+    white-space: pre-wrap;
+    /* respeta saltos \n y permite auto wrap */
+    overflow-wrap: anywhere;
+    /* lo “moderno”: corta en cualquier punto */
+    word-break: break-word;
+    /* fallback para navegadores antiguos */
+    hyphens: auto;
+    /* guiones automáticos si hay diccionario */
 }
 
-.bubble p {
+.bubbleText {
+    white-space: inherit;
+    /* hereda el pre-wrap */
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
+}
+
+/* links muy largos */
+.bubbleText a {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+/* bloques de código (si usas ReactMarkdown) — mejor scroll horizontal */
+.bubbleText :global(pre) {
+    white-space: pre;
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.bubble * {
     margin: 0px;
 }
 
@@ -448,6 +478,7 @@
     padding: 12px;
     border: 1px solid #444;
     transition: border-color 0.2s ease;
+    min-height: fit-content;
 }
 
 .activeAnnotationItem {
@@ -701,6 +732,7 @@
     max-height: 300px;
     overflow-y: auto;
     flex: 1;
+    min-height: fit-content;
 }
 
 .noAnnotations {

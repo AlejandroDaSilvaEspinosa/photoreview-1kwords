@@ -258,7 +258,7 @@ export default function SidePanel({
                             : `${styles.bubble} ${mine ? styles.mine : styles.theirs}`
                         }
                       >
-                        <div className={styles.bubbleText}><ReactMarkDown>{m.text}</ReactMarkDown></div>
+                        <div lang="es" className={styles.bubbleText}><ReactMarkDown>{m.text}</ReactMarkDown></div>
                         <div className={styles.bubbleMeta}>
                           <span className={styles.author}>
                             {sys ? "Sistema" : m.createdByName || "Usuario"}
