@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   const { data: sysUpsert, error: sysErr } = await sb
     .from("app_users")
     .upsert(
-      { username: "system", display_name: "Sistema" },
+      { username: "system", display_name: "system"},
       { onConflict: "username" }
     )
     .select("id, username")
@@ -50,6 +50,7 @@ export async function POST(req: Request) {
     thread_id: threadId,
     text,
     created_by: sysUpsert.id, // authored by 'system'
+    is_system: true
   });
 
   if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });

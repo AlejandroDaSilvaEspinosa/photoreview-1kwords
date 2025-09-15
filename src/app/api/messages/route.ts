@@ -5,7 +5,7 @@ import { verifyToken, SESSION_COOKIE_NAME } from "@/lib/auth";
 
 export async function POST(req: Request) {
   const body = await req.json();
-  const { threadId, text } = body;
+  const { threadId, text, isSystem } = body;
 
   const token = cookies().get(SESSION_COOKIE_NAME)?.value;
   const user = token ? verifyToken(token) : null;
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   const { data: appUser, error: userError } = await sb
     .from("app_users")
     .select("id")
-    .eq("username", user.name)
+    .eq("username", isSystem ? "system" : user.name)
     .single();
 
   if (userError || !appUser) {
@@ -34,6 +34,7 @@ export async function POST(req: Request) {
       thread_id: threadId,
       text,
       created_by: appUser.id,
+      is_system: isSystem
     })
     .select()
     .single();

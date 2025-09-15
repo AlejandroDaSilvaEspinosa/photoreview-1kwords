@@ -8,6 +8,7 @@ export const supabaseBrowser = () =>
     { 
       auth: { persistSession: false },
       global: { headers: { 'cache-control': 'no-cache' }  }
+      
     },
     
   );
