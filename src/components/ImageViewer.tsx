@@ -26,9 +26,13 @@ interface ImageViewerProps {
 export default function ImageViewer({ sku, username }: ImageViewerProps) {
   const { images } = sku;
 
-  // Estado base
+  // ====== ESTADO BASE ======
   const [annotations, setAnnotations] = useState<AnnotationState>({});
   const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
+
+  // Clave estable para “pegar” la selección aunque cambie el id
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const selectedImage = images[selectedImageIndex] ?? null;
 
@@ -125,7 +129,10 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
       ...prev,
       [imgName]: [...(prev[imgName] || []), tempThread],
     }));
+
+    // Selecciona por id y guarda la clave estable
     setActiveThreadId(tempId);
+    setActiveKey(key);
     pendingThreads.current.set(key, { tempId, imgName });
 
     // 2) Persistir hilo
@@ -142,7 +149,11 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
       const realId = created.threadId;
       threadToImage.current.set(realId, imgName);
 
-      // Sustituir id temporal por real (o eliminar temp si ya entró por realtime)
+      // 👇 1º remapea selección para evitar el frame “en blanco”
+      setActiveThreadId((prev) => (prev === tempId ? realId : prev));
+      // (mantenemos activeKey = key)
+
+      // 2º sustituye en annotations
       setAnnotations((prev) => {
         const list = prev[imgName] || [];
         const alreadyReal = list.some((t) => t.id === realId);
@@ -153,7 +164,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
         return { ...prev, [imgName]: next };
       });
 
-      // Persistir el mensaje system real (para que todos los clientes lo reciban)
+      // 3º Persistir el mensaje system real
       const sysSaved = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -162,26 +173,28 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
         .then((r) => r.json())
         .catch(() => null);
 
-      // Reconciliar mensaje system optimista con el real
       if (sysSaved?.id) {
         setAnnotations((prev) => {
           const list = prev[imgName] || [];
           const next = list.map((t) => {
             if (t.id !== realId) return t;
-            // si ya entró por realtime, no duplicar
             const exists = t.messages.some((m) => m.id === sysSaved.id);
             const msgsBase = exists
               ? t.messages
-              : [...t.messages, {
-                  id: sysSaved.id,
-                  text: sysSaved.text ?? sysText,
-                  createdAt: sysSaved.createdAt ?? new Date().toISOString(),
-                  createdByName: sysSaved.createdByName || "system",
-                  isSystem: true,
-                }];
+              : [
+                  ...t.messages,
+                  {
+                    id: sysSaved.id,
+                    text: sysSaved.text ?? sysText,
+                    createdAt: sysSaved.createdAt ?? new Date().toISOString(),
+                    createdByName: sysSaved.createdByName || "system",
+                    isSystem: true,
+                  },
+                ];
 
-            // elimina solo el mensaje optimista que coincide en texto y es negativo
-            const msgs = msgsBase.filter((m) => !(m.id < 0 && m.isSystem && m.text === sysText));
+            const msgs = msgsBase.filter(
+              (m) => !(m.id < 0 && m.isSystem && m.text === sysText)
+            );
 
             return { ...t, messages: msgs };
           });
@@ -190,7 +203,6 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
       }
 
       pendingThreads.current.delete(key);
-      setActiveThreadId(realId);
     } else {
       // Fallback si falla crear el hilo
       setAnnotations((prev) => {
@@ -198,7 +210,9 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
         return { ...prev, [imgName]: list.filter((t) => t.id !== tempId) };
       });
       pendingThreads.current.delete(key);
-      setActiveThreadId(null);
+      // Si el seleccionado era el temporal, límpialo
+      setActiveThreadId((prev) => (prev === tempId ? null : prev));
+      setActiveKey((prev) => (prev === key ? null : prev));
     }
   };
 
@@ -239,10 +253,8 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
           if (t.id !== threadId) return t;
           const already = t.messages.some((m) => m.id === created.id);
           if (already) {
-            // solo borra el tempId que acabamos de crear
             return { ...t, messages: t.messages.filter((m) => m.id !== tempId) };
           }
-          // convierte ese temp en real
           return {
             ...t,
             messages: t.messages.map((m) =>
@@ -271,12 +283,10 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     const imgName = selectedImage?.name;
     if (!imgName) return;
 
-    // Guardar estado previo para posible revert
     const prevStatus =
       (annotations[imgName]?.find((t) => t.id === threadId)?.status as AnnotationThread["status"]) ??
       "pending";
 
-    // Optimista
     setAnnotations((prev) => ({
       ...prev,
       [imgName]: (prev[imgName] || []).map((t) =>
@@ -291,7 +301,6 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     });
 
     if (!res.ok) {
-      // revertir correctamente al estado previo
       setAnnotations((prev) => ({
         ...prev,
         [imgName]: (prev[imgName] || []).map((t) =>
@@ -307,7 +316,6 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
       | undefined;
 
     if (sys?.id) {
-      // Inserta mensaje system confirmado
       setAnnotations((prev) => {
         const list = prev[imgName] || [];
         const nextList = list.map((t) =>
@@ -334,7 +342,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     }
   };
 
-  // ====== ELIMINAR THREAD ======
+  // ====== ELIMINAR THREAD (acción local del usuario) ======
   const removeThread = useCallback(
     async (imgName: string, id: number) => {
       // Optimista
@@ -342,21 +350,30 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
         const curr = prev[imgName] || [];
         return { ...prev, [imgName]: curr.filter((t) => t.id !== id) };
       });
-      if (activeThreadId === id) setActiveThreadId(null);
+      setActiveThreadId((prev) => (prev === id ? null : prev));
+      setActiveKey((prev) => {
+        // si eliminamos el seleccionado, limpiamos también la clave
+        if (!selectedImage?.name) return prev;
+        const list = annotations[selectedImage.name] || [];
+        const wasSelected = list.some((t) => t.id === id);
+        return wasSelected ? null : prev;
+      });
 
+      // Persistir
       const res = await fetch(`/api/threads/${id}`, { method: "DELETE" });
       if (!res.ok) {
-        console.warn("No se pudo eliminar el hilo en el servidor");
         // (opcional) recargar desde GET si quieres consistencia estricta
+        console.warn("No se pudo eliminar el hilo en el servidor");
       }
     },
-    [activeThreadId]
+    [annotations, selectedImage]
   );
 
   // ====== NAV ======
   const selectImage = (index: number) => {
     setSelectedImageIndex(index);
     setActiveThreadId(null);
+    setActiveKey(null);
     requestAnimationFrame(update);
   };
 
@@ -366,27 +383,35 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
       const key = fp(imgName, row.x, row.y);
       const pending = pendingThreads.current.get(key);
 
+      if (pending) {
+        // 1) remapea la selección primero (evita frame vacío)
+        setActiveThreadId((prev) => (prev === pending.tempId ? row.id : prev));
+        // mantenemos activeKey = key
+
+        // 2) muta annotations
+        setAnnotations((prev) => {
+          const curr = prev[imgName] || [];
+          const next = curr.map((t) =>
+            t.id === pending.tempId
+              ? { ...t, id: row.id, x: row.x, y: row.y, status: row.status }
+              : t
+          );
+          return { ...prev, [imgName]: next };
+        });
+
+        pendingThreads.current.delete(key);
+        return;
+      }
+
+      // upsert normal
       setAnnotations((prev) => {
         const curr = prev[imgName] || [];
-
-        // Si hay un temporal con esa huella, conviértelo en real
-        if (pending && curr.some((t) => t.id === pending.tempId)) {
-          const next = curr.map((t) =>
-            t.id === pending.tempId ? { ...t, id: row.id, x: row.x, y: row.y, status: row.status } : t
-          );
-          pendingThreads.current.delete(key);
-          return { ...prev, [imgName]: next };
-        }
-
-        // Si ya existe el real, actualiza
         if (curr.some((t) => t.id === row.id)) {
           const next = curr.map((t) =>
             t.id === row.id ? { ...t, x: row.x, y: row.y, status: row.status } : t
           );
           return { ...prev, [imgName]: next };
         }
-
-        // De lo contrario, insértalo
         const next = [...curr, { id: row.id, x: row.x, y: row.y, status: row.status, messages: [] }];
         return { ...prev, [imgName]: next };
       });
@@ -395,13 +420,17 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
   );
 
   const upsertMessage = useCallback(
-    (imgName: string, threadId: number, msg: { id: number; text: string; createdAt: string; createdByName?: string; isSystem?: boolean }) => {
+    (
+      imgName: string,
+      threadId: number,
+      msg: { id: number; text: string; createdAt: string; createdByName?: string; isSystem?: boolean }
+    ) => {
       setAnnotations((prev) => {
         const curr = prev[imgName] || [];
         const next = curr.map((t) => {
           if (t.id !== threadId) return t;
 
-          // eliminar duplicado optimista de system (mismo texto, id<0)
+          // elimina duplicado optimista de system (mismo texto, id<0)
           const cleaned = (t.messages || []).filter(
             (m) => !(m.id < 0 && m.isSystem && msg.isSystem && m.text === msg.text)
           );
@@ -425,61 +454,93 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     });
   }, []);
 
-  useSkuChannel(sku.sku, {
-    onThreadInsert: (t) => {
-      threadToImage.current.set(t.id, t.image_name);
-      upsertThread(t.image_name, t);
-    },
-    onThreadUpdate: (t) => {
-      threadToImage.current.set(t.id, t.image_name);
-      upsertThread(t.image_name, t);
-    },
-    onThreadDelete: (t) => {
-      const imgName = threadToImage.current.get(t.id) || t.image_name;
-      if (!imgName) return;
-      threadToImage.current.delete(t.id);
-      setAnnotations((prev) => {
-        const curr = prev[imgName] || [];
-        return { ...prev, [imgName]: curr.filter((x) => x.id !== t.id) };
-      });
-      if (activeThreadId === t.id) setActiveThreadId(null);
-    },
-    onMessageInsert: async (m: any) => {
-      const imgName = threadToImage.current.get(m.thread_id);
-      if (!imgName) return;
-      const createdByName = m.created_by_display_name || m.created_by_username || "Usuario";
-      upsertMessage(imgName, m.thread_id, {
-        id: m.id,
-        text: m.text,
-        createdAt: m.created_at,
-        createdByName,
-        isSystem: !!m.is_system,
-      });
-    },
-    onMessageUpdate: async (m: any) => {
-      const imgName = threadToImage.current.get(m.thread_id);
-      if (!imgName) return;
-      const createdByName = m.created_by_display_name || m.created_by_username || "Usuario";
-      upsertMessage(imgName, m.thread_id, {
-        id: m.id,
-        text: m.text,
-        createdAt: m.created_at,
-        createdByName,
-        isSystem: !!m.is_system,
-      });
-    },
-    onMessageDelete: (m) => {
-      const imgName = threadToImage.current.get(m.thread_id);
-      if (!imgName) return;
-      removeMessage(imgName, m.thread_id, m.id);
-    },
-  });
+  // ====== SUSCRIPCIÓN REALTIME (memoizada) ======
+  const channelHandlers = useMemo(() => {
+    return {
+      onThreadInsert: (t: any) => {
+        // asegúrate de guardar el mapeo
+        if (t?.id && t?.image_name) threadToImage.current.set(t.id, t.image_name);
+        upsertThread(t.image_name, t);
+      },
+      onThreadUpdate: (t: any) => {
+        if (t?.id && t?.image_name) threadToImage.current.set(t.id, t.image_name);
+        upsertThread(t.image_name, t);
+      },
+      onThreadDelete: (t: any) => {
+        // t debería traer al menos { id, image_name }.
+        const imgName = threadToImage.current.get(t.id) || t.image_name;
+        if (!imgName) return;
+
+        // borra del mapa
+        threadToImage.current.delete(t.id);
+
+        // elimina del estado
+        setAnnotations((prev) => {
+          const curr = prev[imgName] || [];
+          const exists = curr.some((x) => x.id === t.id);
+          if (!exists) return prev; // ya estaba borrado
+          return { ...prev, [imgName]: curr.filter((x) => x.id !== t.id) };
+        });
+
+        // limpia selección si era el activo
+        setActiveThreadId((prev) => (prev === t.id ? null : prev));
+        // Nota: no conocemos x/y aquí; si el seleccionado era por clave, lo limpiamos si coincide el id
+        setActiveKey((prev) => (activeThreadId === t.id ? null : prev));
+      },
+      onMessageInsert: (m: any) => {
+        const imgName = threadToImage.current.get(m.thread_id);
+        if (!imgName) return;
+        const createdByName = m.created_by_display_name || m.created_by_username || "Usuario";
+        upsertMessage(imgName, m.thread_id, {
+          id: m.id,
+          text: m.text,
+          createdAt: m.created_at,
+          createdByName,
+          isSystem: !!m.is_system,
+        });
+      },
+      onMessageUpdate: (m: any) => {
+        const imgName = threadToImage.current.get(m.thread_id);
+        if (!imgName) return;
+        const createdByName = m.created_by_display_name || m.created_by_username || "Usuario";
+        upsertMessage(imgName, m.thread_id, {
+          id: m.id,
+          text: m.text,
+          createdAt: m.created_at,
+          createdByName,
+          isSystem: !!m.is_system,
+        });
+      },
+      onMessageDelete: (m: any) => {
+        const imgName = threadToImage.current.get(m.thread_id);
+        if (!imgName) return;
+        removeMessage(imgName, m.thread_id, m.id);
+      },
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upsertThread, upsertMessage, removeMessage, activeThreadId]);
+
+  useSkuChannel(sku.sku, channelHandlers);
 
   // ====== DERIVADOS ======
   const threads: AnnotationThread[] = useMemo(
     () => (selectedImage ? annotations[selectedImage.name] || [] : []),
     [annotations, selectedImage]
   );
+
+  // Resuelve el id activo considerando la clave estable
+  const resolvedActiveThreadId: number | null = useMemo(() => {
+    if (!selectedImage) return null;
+    const list = annotations[selectedImage.name] || [];
+    if (activeThreadId != null && list.some((t) => t.id === activeThreadId)) {
+      return activeThreadId;
+    }
+    if (activeKey) {
+      const th = list.find((t) => fp(selectedImage.name!, t.x, t.y) === activeKey);
+      if (th) return th.id;
+    }
+    return null;
+  }, [annotations, selectedImage, activeThreadId, activeKey]);
 
   const colorByStatus = (status: AnnotationThread["status"]) => {
     switch (status) {
@@ -542,24 +603,23 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
               const topPx = imgBox.offsetTop + (th.y / 100) * imgBox.height;
               const leftPx = imgBox.offsetLeft + (th.x / 100) * imgBox.width;
               const bg = colorByStatus(th.status);
+              const isActive = resolvedActiveThreadId === th.id;
               return (
                 <div
                   key={th.id}
-                  className={`${styles.annotationNode} ${
-                    activeThreadId === th.id ? "activeNode" : ""
-                  }`}
+                  className={`${styles.annotationNode} ${isActive ? "activeNode" : ""}`}
                   style={{
                     top: `${topPx}px`,
                     left: `${leftPx}px`,
                     background: bg,
-                    boxShadow:
-                      activeThreadId === th.id
-                        ? `0 0 0 3px rgba(255,255,255,.35), 0 0 10px ${bg}`
-                        : "none",
+                    boxShadow: isActive
+                      ? `0 0 0 3px rgba(255,255,255,.35), 0 0 10px ${bg}`
+                      : "none",
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
                     setActiveThreadId(th.id);
+                    if (selectedImage?.name) setActiveKey(fp(selectedImage.name, th.x, th.y));
                   }}
                   title={
                     th.status === "corrected"
@@ -598,12 +658,19 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
         name={selectedImage?.name || ""}
         isValidated={false}
         threads={threads}
-        activeThreadId={activeThreadId}
+        activeThreadId={resolvedActiveThreadId}
         onValidateSku={() => {}}
         onUnvalidateSku={() => {}}
         onAddMessage={onAddMessage}
         onDeleteThread={removeThread}
-        onFocusThread={(id) => setActiveThreadId(id)}
+        onFocusThread={(id) => {
+          setActiveThreadId(id);
+          // cuando enfocas desde el panel, recalculamos la clave estable
+          if (selectedImage?.name) {
+            const t = (annotations[selectedImage.name] || []).find((x) => x.id === id);
+            if (t) setActiveKey(fp(selectedImage.name, t.x, t.y));
+          }
+        }}
         withCorrectionsCount={0}
         validatedImagesCount={0}
         totalCompleted={0}

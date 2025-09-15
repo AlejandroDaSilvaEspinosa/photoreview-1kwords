@@ -185,3 +185,62 @@
     height: 50vh;
   }
 }
+
+/* --- Overlay loader sobre la imagen --- */
+.overlayLoader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .75rem;
+  background: color-mix(in oklab, #000 35%, transparent);
+  backdrop-filter: blur(2px);
+  border-radius: inherit;
+  z-index: 3;
+  /* por encima de los puntos */
+  pointer-events: none;
+  /* deja pasar clics cuando quieras */
+}
+
+/* --- Spinner --- */
+.loaderSpinner {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-top-color: var(--iv-accent, #7c3aed);
+  /* color primario */
+  border-right-color: var(--iv-accent, #7c3aed);
+  animation: iv-spin .8s linear infinite;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .15) inset;
+}
+
+@keyframes iv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- Texto del loader --- */
+.loaderText {
+  font-size: .95rem;
+  font-weight: 500;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  letter-spacing: .2px;
+}
+
+/* Accesibilidad: respetar reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .loaderSpinner {
+    animation: none;
+  }
+}
+
+/* Si tu wrapper de imagen no es relativo, habilítalo para posicionar el overlay */
+.mainImageWrapper {
+  position: relative;
+  /* asegúrate de tener esto en tu hoja ya existente */
+}
