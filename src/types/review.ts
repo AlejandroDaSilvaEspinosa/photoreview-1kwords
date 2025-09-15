@@ -14,7 +14,7 @@ export interface AnnotationThread {
   status: ThreadStatus;
 }
 
-export type ThreadStatus = "pending" | "corrected" | "reopened";
+export type ThreadStatus = "pending" | "corrected" | "reopened" | "deleted";
 export type AnnotationState = Record<string, AnnotationThread[]>;
 export type ValidationState = Record<string, boolean>;
 

@@ -16,7 +16,7 @@ type Thread = {
   id: number;
   x: number;
   y: number;
-  status: "pending" | "corrected" | "reopened";
+  status: "pending" | "corrected" | "reopened" | "deleted";
   messages: Msg[];
 };
 type Payload = Record<string, { points: Thread[] }>;

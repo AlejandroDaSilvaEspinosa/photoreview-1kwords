@@ -4,8 +4,10 @@ import React, { useEffect, useRef, useState } from "react";
 import styles from "./SidePanel.module.css";
 import { format } from "timeago.js";
 import "@/lib/timeago";
+import ReactMarkDown from "react-markdown"
+import AutoGrowTextarea from "../AutoGrowTextarea"
 
-export type ThreadStatus = "pending" | "corrected" | "reopened";
+export type ThreadStatus = "pending" | "corrected" | "reopened" | "deleted";
 export type Message = {
   id: number;
   text: string;
@@ -75,9 +77,27 @@ export default function SidePanel({
   const selectedIndex =
     selected ? Math.max(0, threads.findIndex((t) => t.id === selected.id)) : -1;
 
-  const [draft, setDraft] = useState("");
+    // estado
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+
+  // const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement | null>(null);
 
+  const setDraft = (threadId: number, value: string | ((prev: string) => string)) => {
+    setDrafts(prev => ({
+        ...prev,
+        [threadId]:
+          typeof value === "function" ? value(prev[threadId] ?? "") : value,
+      }));
+  };
+  const getDraft = (threadId: number) => drafts[threadId] ?? "";
+
+  const clearDraft = (threadId: number) => {
+    setDrafts(prev => {
+      const { [threadId]: _omit, ...rest } = prev;
+      return rest; // elimina la clave para no crecer sin límite
+    });
+  };
   useEffect(() => {
     if (!selected) return;
     requestAnimationFrame(() => {
@@ -86,7 +106,9 @@ export default function SidePanel({
   }, [selected?.messages, selected?.id]);
 
   useEffect(() => {
-    setDraft("");
+    if(activeThreadId){
+      getDraft(activeThreadId);
+    }
   }, [activeThreadId]);
 
   const isMine = (author?: string | null) => {
@@ -100,9 +122,12 @@ export default function SidePanel({
   );
 
   const handleSend = async () => {
-    if (!selected || !draft.trim()) return;
-    setDraft("");
-    await onAddMessage(selected.id, draft.trim());
+    if(activeThreadId){
+      const draft =  getDraft(activeThreadId)
+      if (!selected || !draft.trim()) return;
+      clearDraft(activeThreadId)
+      await onAddMessage(selected.id, draft.trim());
+    }
   };
 
   const nextStatus = (s: ThreadStatus): ThreadStatus =>
@@ -233,7 +258,7 @@ export default function SidePanel({
                             : `${styles.bubble} ${mine ? styles.mine : styles.theirs}`
                         }
                       >
-                        <div className={styles.bubbleText}>{m.text}</div>
+                        <div className={styles.bubbleText}><ReactMarkDown>{m.text}</ReactMarkDown></div>
                         <div className={styles.bubbleMeta}>
                           <span className={styles.author}>
                             {sys ? "Sistema" : m.createdByName || "Usuario"}
@@ -244,25 +269,27 @@ export default function SidePanel({
                     );
                   })}
                 </div>
+                    <div className={styles.chatComposer}>
+                      <AutoGrowTextarea               
+                        value={activeThreadId ? getDraft(activeThreadId):""}
+                        onChange={(v:string) => activeThreadId &&  setDraft(activeThreadId, v)}
+                        placeholder="Escribe un mensaje…"
+                        minRows={1}
+                        maxRows={5}
+                        growsUp
+                        onEnter={handleSend}                        
+                      />
+                      <button
+                        type="button"
+                        className={styles.sendButton}
+                        onClick={handleSend}
+                        aria-label="Enviar"
+                        title="Enviar"
+                      >
+                        Enviar
+                      </button>
+                    </div>
 
-                <div className={styles.chatComposer}>
-                  <input
-                    type="text"
-                    className={styles.chatInput}
-                    placeholder="Escribe un mensaje…"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSend();
-                      }
-                    }}
-                  />
-                  <button type="button" className={styles.sendButton} onClick={handleSend}>
-                    Enviar
-                  </button>
-                </div>
               </div>
             )}
           </div>

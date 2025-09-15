@@ -23,6 +23,9 @@ interface ImageViewerProps {
   username?: string;
 }
 
+// 👇 Estado adicional lógico soportado sin tocar tus tipos importados
+type AnyStatus = AnnotationThread["status"] ;
+
 export default function ImageViewer({ sku, username }: ImageViewerProps) {
   const { images } = sku;
 
@@ -109,7 +112,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     const key = fp(imgName, x, y);
 
     // 1) UI optimista: añadir hilo + mensaje system optimista
-    const sysText = `@${username ?? "usuario"} ha creado un nuevo hilo de revisión.`;
+    const sysText = `**@${username ?? "usuario"}** ha creado un nuevo hilo de revisión.`;
     const sysOptimisticMsg = {
       id: tempId,
       text: sysText,
@@ -278,7 +281,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
   // ====== CAMBIAR ESTADO THREAD (optimista + mensaje system devuelto) ======
   const onToggleThreadStatus = async (
     threadId: number,
-    next: "pending" | "corrected" | "reopened"
+    next: "pending" | "corrected" | "reopened" | "deleted"
   ) => {
     const imgName = selectedImage?.name;
     if (!imgName) return;
@@ -342,31 +345,31 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     }
   };
 
-  // ====== ELIMINAR THREAD (acción local del usuario) ======
+  // ====== ELIMINAR THREAD (borrado lógico) ======
   const removeThread = useCallback(
     async (imgName: string, id: number) => {
-      // Optimista
+      // Optimista: lo quitamos del estado (no se muestra y desaparece de contadores)
       setAnnotations((prev) => {
         const curr = prev[imgName] || [];
         return { ...prev, [imgName]: curr.filter((t) => t.id !== id) };
       });
-      setActiveThreadId((prev) => (prev === id ? null : prev));
-      setActiveKey((prev) => {
-        // si eliminamos el seleccionado, limpiamos también la clave
-        if (!selectedImage?.name) return prev;
-        const list = annotations[selectedImage.name] || [];
-        const wasSelected = list.some((t) => t.id === id);
-        return wasSelected ? null : prev;
-      });
 
-      // Persistir
-      const res = await fetch(`/api/threads/${id}`, { method: "DELETE" });
+      // Si estaba seleccionado, deseleccionar
+      setActiveThreadId((prev) => (prev === id ? null : prev));
+      setActiveKey((prev) => prev); // la key ya no hará match al no existir el hilo
+
+      // Persistir como "deleted" (borrado lógico)
+      const res = await fetch(`/api/threads/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: id, status: "deleted" }),
+      });
       if (!res.ok) {
-        // (opcional) recargar desde GET si quieres consistencia estricta
-        console.warn("No se pudo eliminar el hilo en el servidor");
+        console.warn("No se pudo marcar el hilo como deleted en el servidor");
+        // (opcional) podrías restaurar el hilo si quieres consistencia estricta
       }
     },
-    [annotations, selectedImage]
+    []
   );
 
   // ====== NAV ======
@@ -377,9 +380,24 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     requestAnimationFrame(update);
   };
 
-  // ====== REALTIME: helpers (con reconciliación de temporales) ======
+  // ====== REALTIME: helpers (con reconciliación de temporales y deleted) ======
   const upsertThread = useCallback(
-    (imgName: string, row: { id: number; x: number; y: number; status: AnnotationThread["status"] }) => {
+    (
+      imgName: string,
+      row: { id: number; x: number; y: number; status: AnyStatus }
+    ) => {
+      // Si llega como 'deleted' por RT: elimínalo del estado y limpia selección si aplica
+      if (row.status === "deleted") {
+        setAnnotations((prev) => {
+          const curr = prev[imgName] || [];
+          if (!curr.some((t) => t.id === row.id)) return prev;
+          return { ...prev, [imgName]: curr.filter((t) => t.id !== row.id) };
+        });
+        setActiveThreadId((prev) => (prev === row.id ? null : prev));
+        // Si guardas keys por (image|x|y) y las conoces, puedes limpiar aquí si quieres
+        return;
+      }
+
       const key = fp(imgName, row.x, row.y);
       const pending = pendingThreads.current.get(key);
 
@@ -393,7 +411,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
           const curr = prev[imgName] || [];
           const next = curr.map((t) =>
             t.id === pending.tempId
-              ? { ...t, id: row.id, x: row.x, y: row.y, status: row.status }
+              ? { ...t, id: row.id, x: row.x, y: row.y, status: row.status as AnnotationThread["status"] }
               : t
           );
           return { ...prev, [imgName]: next };
@@ -408,11 +426,16 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
         const curr = prev[imgName] || [];
         if (curr.some((t) => t.id === row.id)) {
           const next = curr.map((t) =>
-            t.id === row.id ? { ...t, x: row.x, y: row.y, status: row.status } : t
+            t.id === row.id
+              ? { ...t, x: row.x, y: row.y, status: row.status as AnnotationThread["status"] }
+              : t
           );
           return { ...prev, [imgName]: next };
         }
-        const next = [...curr, { id: row.id, x: row.x, y: row.y, status: row.status, messages: [] }];
+        const next = [
+          ...curr,
+          { id: row.id, x: row.x, y: row.y, status: row.status as AnnotationThread["status"], messages: [] },
+        ];
         return { ...prev, [imgName]: next };
       });
     },
@@ -458,34 +481,22 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
   const channelHandlers = useMemo(() => {
     return {
       onThreadInsert: (t: any) => {
-        // asegúrate de guardar el mapeo
         if (t?.id && t?.image_name) threadToImage.current.set(t.id, t.image_name);
-        upsertThread(t.image_name, t);
+        upsertThread(t.image_name, t as { id: number; x: number; y: number; status: AnyStatus });
       },
       onThreadUpdate: (t: any) => {
         if (t?.id && t?.image_name) threadToImage.current.set(t.id, t.image_name);
-        upsertThread(t.image_name, t);
+        upsertThread(t.image_name, t as { id: number; x: number; y: number; status: AnyStatus });
       },
       onThreadDelete: (t: any) => {
-        // t debería traer al menos { id, image_name }.
+        // Si aún tuvieras deletes físicos, mantenemos compatibilidad:
         const imgName = threadToImage.current.get(t.id) || t.image_name;
         if (!imgName) return;
-
-        // borra del mapa
-        threadToImage.current.delete(t.id);
-
-        // elimina del estado
         setAnnotations((prev) => {
           const curr = prev[imgName] || [];
-          const exists = curr.some((x) => x.id === t.id);
-          if (!exists) return prev; // ya estaba borrado
           return { ...prev, [imgName]: curr.filter((x) => x.id !== t.id) };
         });
-
-        // limpia selección si era el activo
         setActiveThreadId((prev) => (prev === t.id ? null : prev));
-        // Nota: no conocemos x/y aquí; si el seleccionado era por clave, lo limpiamos si coincide el id
-        setActiveKey((prev) => (activeThreadId === t.id ? null : prev));
       },
       onMessageInsert: (m: any) => {
         const imgName = threadToImage.current.get(m.thread_id);
@@ -524,7 +535,10 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
 
   // ====== DERIVADOS ======
   const threads: AnnotationThread[] = useMemo(
-    () => (selectedImage ? annotations[selectedImage.name] || [] : []),
+    () =>
+      selectedImage
+        ? (annotations[selectedImage.name] || []).filter((t) => (t as any).status !== "deleted")
+        : [],
     [annotations, selectedImage]
   );
 

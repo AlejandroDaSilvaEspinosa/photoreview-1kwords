@@ -203,6 +203,10 @@
     display: inline-block;
 }
 
+.bubble p {
+    margin: 0px;
+}
+
 .mine {
     background: #2c3e50;
     color: #eaf2f8;
@@ -233,11 +237,43 @@
     color: #999;
 }
 
+/* SidePanel.module.css - añade o ajusta */
 .chatComposer {
     display: flex;
+    align-items: flex-end;
+    /* ancla ambos al fondo -> textarea crece hacia arriba */
     gap: 8px;
-    margin-top: 8px;
+    padding-top: 8px;
 }
+
+.chatComposer p {
+    margin: 0px;
+}
+
+.sendButton {
+    height: 36px;
+    /* tamaño fijo del botón */
+    min-width: 88px;
+    /* ancho consistente */
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 1px solid #3a3a3a;
+    background: #ff0f44;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform .05s ease, opacity .2s ease;
+}
+
+.sendButton:active {
+    transform: translateY(1px);
+}
+
+.sendButton:disabled {
+    opacity: .5;
+    cursor: default;
+}
+
 
 .chatInput {
     flex: 1;
@@ -248,14 +284,6 @@
     padding: 8px;
 }
 
-.sendButton {
-    background: #FF0040;
-    color: #fff;
-    border: 0;
-    padding: 8px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-}
 
 .presenceWrap {
     display: flex;

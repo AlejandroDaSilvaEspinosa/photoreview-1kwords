@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { cookies } from "next/headers";
 import { verifyToken, SESSION_COOKIE_NAME } from "@/lib/auth";
 
-type NextStatus = "pending" | "corrected" | "reopened";
+type NextStatus = "pending" | "corrected" | "reopened" | "deleted";
 
 export async function POST(req: Request) {
   const body = await req.json();
@@ -45,7 +45,10 @@ export async function POST(req: Request) {
   }
 
   // Insertar mensaje de sistema con el cambio y autor real
-  const text = `@${user.name} cambió el estado del hilo a "${status}".`;
+  const text = `**@${user.name}** cambió el estado del hilo a "**${status === "corrected"
+                      ? "Corregido"
+                      : status === "reopened"
+                      ? "Reabierto": ""}**".`;
   const { error: e2 } = await sb.from("review_messages").insert({
     thread_id: threadId,
     text,

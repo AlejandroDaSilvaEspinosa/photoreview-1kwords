@@ -9,7 +9,7 @@ type ThreadRow = {
   image_name: string;
   x: number;
   y: number;
-  status: "pending" | "corrected" | "reopened";
+  status: "pending" | "corrected" | "reopened" | "deleted";
 };
 
 type MessageRow = {
@@ -59,9 +59,7 @@ export function useSkuChannel(sku: string, handlers: Handlers) {
           hRef.current.onThreadInsert?.(payload.new as ThreadRow);
         } else if (payload.eventType === "UPDATE") {
           hRef.current.onThreadUpdate?.(payload.new as ThreadRow);
-        } else if (payload.eventType === "DELETE") {
-          hRef.current.onThreadDelete?.(payload.old as ThreadRow);
-        }
+        } 
       }
     );
 
@@ -79,9 +77,7 @@ export function useSkuChannel(sku: string, handlers: Handlers) {
           hRef.current.onMessageInsert?.(payload.new as MessageRow);
         } else if (payload.eventType === "UPDATE") {
           hRef.current.onMessageUpdate?.(payload.new as MessageRow);
-        } else if (payload.eventType === "DELETE") {
-          hRef.current.onMessageDelete?.(payload.old as MessageRow);
-        }
+        } 
       }
     );
 

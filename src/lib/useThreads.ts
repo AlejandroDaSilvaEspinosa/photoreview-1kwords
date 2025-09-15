@@ -13,6 +13,7 @@ const ThreadStatus = {
   pending: "pending" as ThreadStatus,
   corrected: "corrected" as ThreadStatus,
   reopened: "reopened" as ThreadStatus,
+  deleted: "deleted" as ThreadStatus
 };
 export function useThreads(sku: string, images: ImageItem[]) {
   const [annotations, setAnnotations] = useState<AnnotationState>({});
