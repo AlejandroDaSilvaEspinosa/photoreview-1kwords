@@ -542,7 +542,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
           onAddMessage={onAddMessage}
           onToggleThreadStatus={onToggleThreadStatus}
           onClose={() => setZoomOverlay(null)}
-          initial={{ xPct: zoomOverlay.x, yPct: zoomOverlay.y, zoom: 3 }}
+          initial={{ xPct: zoomOverlay.x, yPct: zoomOverlay.y, zoom: 1 }}
         />
       )}
     </div>
