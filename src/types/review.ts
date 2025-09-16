@@ -23,6 +23,7 @@ export interface ImageItem {
   name: string;
   listingImageUrl: string;
   thumbnailUrl: string;
+  bigImgUrl: string;
 }
 
 export interface SkuWithImages  { sku: string; images: ImageItem[] };

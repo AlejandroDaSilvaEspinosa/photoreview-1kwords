@@ -15,6 +15,7 @@ import type { AnnotationThread, AnnotationState, ImageItem } from "@/types/revie
 import { usePresence } from "@/lib/usePresence";
 import { useImageGeometry } from "@/lib/useImageGeometry";
 import { useSkuChannel } from "@/lib/useSkuChannel";
+import ZoomOverlay from "@/components/images/ZoomOverlay";
 
 type ReviewsPayload = Record<string, { points?: AnnotationThread[] }>;
 
@@ -33,12 +34,15 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
   const [annotations, setAnnotations] = useState<AnnotationState>({});
   const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
 
+  const [isHoveringImage, setIsHoveringImage] = useState(false);
+  const [isShiftDown, setIsShiftDown] = useState(false);
+
   // Clave estable para “pegar” la selección aunque cambie el id
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const selectedImage = images[selectedImageIndex] ?? null;
-
+  const [zoomOverlay, setZoomOverlay] = useState<null | { x: number; y: number }>(null);
   // Loading feedback
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -59,6 +63,27 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
   // Huella estable para reconciliar temp vs real
   const fp = (image: string, x: number, y: number) =>
     `${image}|${Math.round(x * 1000) / 1000}|${Math.round(y * 1000) / 1000}`;
+
+  const onImageDoubleClick = (e: React.MouseEvent) => {
+  const r = imgRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const xPct = ((e.clientX - r.left) / r.width) * 100;
+    const yPct = ((e.clientY - r.top) / r.height) * 100;
+    setZoomOverlay({ x: xPct, y: yPct });
+  };
+
+  // escuchar Shift globalmente
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => e.key === "Shift" && setIsShiftDown(true);
+    const onKeyUp   = (e: KeyboardEvent) => e.key === "Shift" && setIsShiftDown(false);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+    
 
   // ====== CARGA INICIAL ======
   useEffect(() => {
@@ -97,8 +122,20 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     };
   }, [sku, images, update]);
 
+  // abre zoom en la posición del click
+  const openZoomAtEvent = (e: React.MouseEvent) => {
+    const r = imgRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const xPct = ((e.clientX - r.left) / r.width) * 100;
+    const yPct = ((e.clientY - r.top) / r.height) * 100;
+    setZoomOverlay({ x: xPct, y: yPct });
+  };
   // ====== CREAR THREAD (optimista + reconciliación) ======
   const handleImageClick = async (e: React.MouseEvent) => {
+    if (e.shiftKey) {
+      openZoomAtEvent(e);
+      return;
+    }
     if (!selectedImage?.name) return;
 
     const r = imgRef.current?.getBoundingClientRect();
@@ -598,6 +635,13 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
               <div className={styles.overlayError}>{loadError}</div>
             )}
 
+          <div
+            className={styles.mainImageWrapper}
+            ref={wrapperRef}
+            onMouseEnter={() => setIsHoveringImage(true)}
+            onMouseLeave={() => setIsHoveringImage(false)}
+            style={{ cursor: isHoveringImage && isShiftDown ? "zoom-in" : undefined }}
+          >
             <ImageWithSkeleton
               ref={imgRef}
               src={selectedImage?.url}
@@ -648,25 +692,26 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
               );
             })}
           </div>
-
-          <button
-            className={`${styles.navButton} ${styles.navRight}`}
-            onClick={() => selectImage(selectedImageIndex + 1)}
-            disabled={selectedImageIndex === images.length - 1}
-            aria-label="Imagen siguiente"
-          >
-            ›
-          </button>
         </div>
 
-        <ThumbnailGrid
-          images={images}
-          selectedIndex={selectedImageIndex}
-          onSelect={selectImage}
-          annotations={annotations}
-          validatedImages={{}}
-        />
+        <button
+          className={`${styles.navButton} ${styles.navRight}`}
+          onClick={() => selectImage(selectedImageIndex + 1)}
+          disabled={selectedImageIndex === images.length - 1}
+          aria-label="Imagen siguiente"
+        >
+          ›
+        </button>
       </div>
+
+      <ThumbnailGrid
+        images={images}
+        selectedIndex={selectedImageIndex}
+        onSelect={selectImage}
+        annotations={annotations}
+        validatedImages={{}}
+      />
+    </div>
 
       <SidePanel
         name={selectedImage?.name || ""}
@@ -694,6 +739,19 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
         onToggleThreadStatus={onToggleThreadStatus}
         loading={loading}
       />
+
+    {zoomOverlay && selectedImage?.url && (
+      <ZoomOverlay
+        src={selectedImage.bigImgUrl}
+        threads={threads}                // hilos de la imagen seleccionada
+        activeThreadId={activeThreadId}  // hilo activo si quieres resaltar uno
+        onFocusThread={(id) => setActiveThreadId(id)}
+        onAddMessage={onAddMessage}
+        onClose={() => setZoomOverlay(null)}
+        initial={{ xPct: zoomOverlay.x, yPct: zoomOverlay.y, zoom: 3 }}
+      />
+    )}
+
     </div>
   );
 }

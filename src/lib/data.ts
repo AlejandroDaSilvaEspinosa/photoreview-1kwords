@@ -66,7 +66,7 @@ export const getCachedSkus = unstable_cache(
   { revalidate: 60 * 15, tags: ["skus"] } // 15 min
 );
 
-/** Devuelve las imágenes (thumbnails + url) de la subcarpeta 1200px */
+/** Devuelve las imágenes (thumbnails + url) de la subcarpeta 1200px y 3000*/
 export async function getImageUrlThumbnail(
   driveMainFolderSKU: string | null
 ): Promise<ImageItem[] | null> {
@@ -88,6 +88,14 @@ export async function getImageUrlThumbnail(
   const subfolderId = subfolderResponse.data.files?.[0]?.id;
   if (!subfolderId) return null;
 
+  const subfolderBigImageResponse = await drive.files.list({
+    q: `'${mainFolderId}' in parents and name = '3000px'`,
+    fields: "files(id)",
+  });
+  const subfolderBigImageId = subfolderBigImageResponse.data.files?.[0]?.id ?? subfolderId ;
+
+
+
   // 3) Listar imágenes
   const imageFilesResponse = await drive.files.list({
     q: `'${subfolderId}' in parents and mimeType contains 'image/'`,
@@ -97,13 +105,26 @@ export async function getImageUrlThumbnail(
   const files = imageFilesResponse.data.files ?? [];
   if (!files.length) return null;
 
+  const bigImageFilesResponse = await drive.files.list({
+    q: `'${subfolderBigImageId}' in parents and mimeType contains 'image/'`,
+    fields: "files(id,name)",
+    orderBy: "name",
+  });
+
+  const bigFiles = bigImageFilesResponse.data.files ?? files;
+
+
   const sizeThumbnail = 60;
-  const sizeListing = 600;
+  const sizeListing = 800;
+  const sizeZoom = 3000;
 
   // 4) Construir objetos ImageItem
   const images: ImageItem[] = files.map((file) => {
     const id = file.id!;
     const name = file.name ?? id;
+
+    const {id :idBigFile} = bigFiles.filter(bf => bf.name == name)[0];
+
 
     // ⚠️ ADAPTA este objeto a TU ImageItem:
     // si tu ImageItem usa `name`, usa `name: name`
@@ -115,6 +136,7 @@ export async function getImageUrlThumbnail(
       url: `https://drive.google.com/uc?id=${id}`,
       listingImageUrl: `https://lh3.googleusercontent.com/d/${id}=s${sizeListing}-c`,
       thumbnailUrl: `https://lh3.googleusercontent.com/d/${id}=s${sizeThumbnail}-c`,
+      bigImgUrl: `https://lh3.googleusercontent.com/d/${idBigFile}=s${sizeZoom}-c`,      
     } as unknown as ImageItem;
 
     return obj;
