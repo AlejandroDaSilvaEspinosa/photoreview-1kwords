@@ -238,3 +238,84 @@
     font-size: 12px;
     color: #9aa;
 }
+
+.threadList {
+    background: #151515;
+    color: #ddd;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 10px;
+    overflow: auto;
+}
+
+.threadList ul {
+    padding: 0px;
+}
+
+.threadListTitle {
+    font-weight: 600;
+    margin: 4px 2px 8px;
+    color: #cfd3dc;
+}
+
+.threadRow {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 6px;
+    padding: 6px;
+    border-radius: 8px;
+}
+
+.threadRow+.threadRow {
+    margin-top: 4px;
+}
+
+.threadRowActive {
+    background: #1c1c1c;
+}
+
+.threadRowMain {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+}
+
+.threadRowMain:hover {
+    background: #1f1f1f;
+}
+
+.dotMini {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, .8);
+}
+
+.threadName {
+    font-weight: 600;
+}
+
+.threadCoords {
+    color: #9aa;
+    font-size: 12px;
+}
+
+.stateBtn {
+    padding: 6px 10px;
+    background: #222;
+    border: 1px solid #333;
+    border-radius: 8px;
+    color: #eee;
+    cursor: pointer;
+}
+
+.stateBtn:hover {
+    background: #2a2a2a;
+}

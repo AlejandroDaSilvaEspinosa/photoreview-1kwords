@@ -23,6 +23,7 @@ type Props = {
   activeThreadId: number | null;
   onFocusThread: (id: number) => void;
   onAddMessage: (threadId: number, text: string) => void;
+  onToggleThreadStatus: (threadId: number, next: ZoomThread["status"]) => void;
   onClose: () => void;
   initial?: { xPct: number; yPct: number; zoom?: number }; // 0..100
 };
@@ -34,15 +35,26 @@ function clamp(n: number, min: number, max: number) {
 const colorByStatus = (s: ZoomThread["status"]) =>
   s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : s === "deleted" ? "#666" : "#FF0040";
 
+
+const toggleLabel = (s: ZoomThread["status"]) => (s === "corrected" ? "Reabrir" : "Marcar corregido");
+const nextStatus = (s: ZoomThread["status"]): ZoomThread["status"] =>
+    s === "corrected" ? "reopened" : "corrected";
+
+
+
 export default function ZoomOverlay({
   src,
   threads,
   activeThreadId,
   onFocusThread,
   onAddMessage,
+  onToggleThreadStatus,
   onClose,
   initial,
 }: Props) {
+    // dimensiones reales de la imagen
+  const [imgW, setImgW] = useState(0);
+  const [imgH, setImgH] = useState(0);
   // centro en % de la imagen (0..100)
   const [cx, setCx] = useState(initial?.xPct ?? 50);
   const [cy, setCy] = useState(initial?.yPct ?? 50);
@@ -58,6 +70,45 @@ export default function ZoomOverlay({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+   const view = (() => {
+    const rect = mainRef.current?.getBoundingClientRect();
+    return { vw: rect?.width ?? 1, vh: rect?.height ?? 1 };
+  })();
+    // tamaño del viewport respecto a la imagen (en px y %)
+  const visWpx = view.vw / zoom;
+  const visHpx = view.vh / zoom;
+  
+  const setCenterToPx = useCallback(
+    (nx: number, ny: number) => {
+      // clamp para no sacar el viewport
+      const halfW = visWpx / 2;
+      const halfH = visHpx / 2;
+      const clampedX = clamp(nx, halfW, imgW - halfW);
+      const clampedY = clamp(ny, halfH, imgH - halfH);
+      setCx((clampedX / imgW) * 100);
+      setCy((clampedY / imgH) * 100);
+    },
+    [imgW, imgH, visWpx, visHpx]
+  );
+
+    useEffect(() => {
+    const im = new Image();
+    im.onload = () => {
+      setImgW(im.naturalWidth);
+      setImgH(im.naturalHeight);
+    };
+    im.src = src;
+  }, [src]);
+
+    // ir a un hilo concreto
+  const centerToThread = (t: ZoomThread) => {
+    const px = (t.x / 100) * imgW;
+    const py = (t.y / 100) * imgH;
+    setCenterToPx(px, py);
+    onFocusThread(t.id);
+  };
+
 
   // tamaño del viewport relativo (en %) según el zoom
   const viewW = 100 / zoom; // ancho visible (% de la imagen)
@@ -269,6 +320,30 @@ export default function ZoomOverlay({
           <div className={css.hint}>
             Arrastra para mover · Rueda para zoom · Esc para cerrar
           </div>
+
+        <div className={css.threadList}>
+        <div className={css.threadListTitle}>Hilos</div>
+        <ul>
+            {threads.map((t, i) => (
+            <li key={t.id} className={`${css.threadRow} ${activeThreadId === t.id ? css.threadRowActive : ""}`}>
+                <button className={css.threadRowMain} onClick={() => centerToThread(t)}>
+                <span className={css.dotMini} style={{ background: colorByStatus(t.status) }} />
+                <span className={css.threadName}>#{i + 1}</span>
+                <span className={css.threadCoords}>
+                    ({t.x.toFixed(1)}%, {t.y.toFixed(1)}%)
+                </span>
+                </button>
+                <button
+                className={css.stateBtn}
+                onClick={() => onToggleThreadStatus(t.id, nextStatus(t.status))}
+                title={toggleLabel(t.status)}
+                >
+                {toggleLabel(t.status)}
+                </button>
+            </li>
+            ))}
+        </ul>
+        </div>
         </div>
       </div>
     </div>

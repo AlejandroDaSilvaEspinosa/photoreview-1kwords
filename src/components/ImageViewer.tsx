@@ -647,8 +647,8 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
               src={selectedImage?.url}
               onClick={handleImageClick}
               alt={selectedImage?.name}
-              width={600}
-              height={600}
+              width={100}
+              height={100}
               className={styles.mainImage}
               sizes="100%"
               quality={100}
@@ -740,17 +740,18 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
         loading={loading}
       />
 
-    {zoomOverlay && selectedImage?.url && (
-      <ZoomOverlay
-        src={selectedImage.bigImgUrl}
-        threads={threads}                // hilos de la imagen seleccionada
-        activeThreadId={activeThreadId}  // hilo activo si quieres resaltar uno
-        onFocusThread={(id) => setActiveThreadId(id)}
-        onAddMessage={onAddMessage}
-        onClose={() => setZoomOverlay(null)}
-        initial={{ xPct: zoomOverlay.x, yPct: zoomOverlay.y, zoom: 3 }}
-      />
-    )}
+      {zoomOverlay && selectedImage?.url && (
+        <ZoomOverlay
+          src={selectedImage.bigImgUrl}
+          threads={threads}
+          activeThreadId={activeThreadId}
+          onFocusThread={(id:any) => setActiveThreadId(id)}
+          onAddMessage={onAddMessage}
+          onToggleThreadStatus={onToggleThreadStatus}
+          onClose={() => setZoomOverlay(null)}
+          initial={{ xPct: zoomOverlay.x, yPct: zoomOverlay.y, zoom: 3 }}
+        />
+      )}  
 
     </div>
   );
