@@ -65,6 +65,17 @@ export default function ZoomOverlay({
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; y: number; cxPx: number; cyPx: number } | null>(null);
 
+  // Minimap
+  const miniRef = useRef<HTMLDivElement>(null);
+  const [miniDims, setMiniDims] = useState({
+    mw: 1, // ancho del contenedor minimapa
+    mh: 1, // alto del contenedor minimapa
+    dW: 1, // ancho renderizado de la imagen (contain)
+    dH: 1, // alto renderizado de la imagen (contain)
+    offX: 0, // offset x (letterbox)
+    offY: 0, // offset y (letterbox)
+  });
+
   // Cerrar con ESC
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -72,28 +83,30 @@ export default function ZoomOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // Tamaño del viewport principal
   const view = (() => {
     const rect = wrapRef.current?.getBoundingClientRect();
     return { vw: rect?.width ?? 1, vh: rect?.height ?? 1 };
   })();
 
-  // Centro en px de imagen
+  // Centro en px de imagen (no del DOM)
   const cxPx = (cx / 100) * imgW;
   const cyPx = (cy / 100) * imgH;
 
-  // Transform del stage para centrar (cx,cy) en el viewport
+  // Translate para centrar (cx,cy) y escalar
   const tx = view.vw / 2 - cxPx * zoom;
   const ty = view.vh / 2 - cyPx * zoom;
 
-  // Tamaño visible en px (útil para clamp)
+  // Tamaño visible en px de imagen (útil para clamp)
   const visWpx = view.vw / zoom;
   const visHpx = view.vh / zoom;
 
-  // Centrar en coordenadas px de imagen
+  // Centrar en coordenadas px de imagen — con clamp compatible si la imagen es más pequeña que el viewport
   const setCenterToPx = useCallback(
     (nx: number, ny: number) => {
-      const halfW = visWpx / 2;
-      const halfH = visHpx / 2;
+      // Si el viewport “cabe” más que la imagen, la mitad efectiva se reduce a imgW/2 o imgH/2
+      const halfW = Math.min(visWpx / 2, imgW / 2);
+      const halfH = Math.min(visHpx / 2, imgH / 2);
       const clampedX = clamp(nx, halfW, imgW - halfW);
       const clampedY = clamp(ny, halfH, imgH - halfH);
       setCx((clampedX / imgW) * 100);
@@ -102,11 +115,11 @@ export default function ZoomOverlay({
     [imgW, imgH, visWpx, visHpx]
   );
 
-  // Porcentaje visible (para minimapa)
+  // Porcentaje visible (para viewport del minimapa)
   const viewW = 100 / zoom;
   const viewH = 100 / zoom;
 
-  // Clamp en %
+  // Clamp en % (se usa para click al minimapa)
   const setCenterClamped = useCallback(
     (nxPct: number, nyPct: number) => {
       const halfW = viewW / 2;
@@ -117,7 +130,7 @@ export default function ZoomOverlay({
     [viewW, viewH]
   );
 
-  // Zoom con rueda anclando al cursor (en coords de imagen)
+  // Zoom con rueda anclando al cursor (cursor → coords imagen)
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault();
@@ -148,29 +161,64 @@ export default function ZoomOverlay({
     dragRef.current = null;
   };
 
-  // Minimap: click/drag para centrar (en %)
+  // Medir minimapa y calcular letterboxing (contain)
+  const measureMini = useCallback(() => {
+    if (!miniRef.current || !imgW || !imgH) return;
+    const rect = miniRef.current.getBoundingClientRect();
+    const mw = rect.width;
+    const mh = rect.height;
+    const s = Math.min(mw / imgW, mh / imgH);
+    const dW = imgW * s;
+    const dH = imgH * s;
+    const offX = (mw - dW) / 2;
+    const offY = (mh - dH) / 2;
+    setMiniDims({ mw, mh, dW, dH, offX, offY });
+  }, [imgW, imgH]);
+
+  useEffect(() => {
+    measureMini();
+  }, [measureMini]);
+
+  useEffect(() => {
+    const ro = new ResizeObserver(() => measureMini());
+    if (miniRef.current) ro.observe(miniRef.current);
+    return () => ro.disconnect();
+  }, [measureMini]);
+
+  // Minimap: click / drag (coordenadas dentro de la imagen renderizada, no del contenedor)
   const onMiniClickOrDrag = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-      const px = ((e.clientX - rect.left) / rect.width) * 100;
-      const py = ((e.clientY - rect.top) / rect.height) * 100;
-      setCenterClamped(px, py);
+      const rect = miniRef.current?.getBoundingClientRect();
+      if (!rect || !miniDims.dW || !miniDims.dH) return;
+
+      const xIn = e.clientX - rect.left - miniDims.offX;
+      const yIn = e.clientY - rect.top - miniDims.offY;
+
+      const nx = clamp(xIn / miniDims.dW, 0, 1) * 100;
+      const ny = clamp(yIn / miniDims.dH, 0, 1) * 100;
+
+      setCenterClamped(nx, ny);
     },
-    [setCenterClamped]
+    [miniDims, setCenterClamped]
   );
 
-  // Estilo del viewport en el minimapa
-  const vpStyle = useMemo(
-    () => ({
-      width: `${viewW}%`,
-      height: `${viewH}%`,
-      left: `${cx - viewW / 2}%`,
-      top: `${cy - viewH / 2}%`,
-    }),
-    [cx, cy, viewW, viewH]
-  );
+  // Estilo del viewport en el minimapa (en px para respetar letterboxing)
+  const vpStyle = useMemo(() => {
+    const vpWpx = miniDims.dW * (viewW / 100);
+    const vpHpx = miniDims.dH * (viewH / 100);
+    const left =
+      miniDims.offX + miniDims.dW * ((cx - viewW / 2) / 100);
+    const top =
+      miniDims.offY + miniDims.dH * ((cy - viewH / 2) / 100);
+    return {
+      width: `${vpWpx}px`,
+      height: `${vpHpx}px`,
+      left: `${left}px`,
+      top: `${top}px`,
+    };
+  }, [miniDims, viewW, viewH, cx, cy]);
 
-  // Dots (dentro del stage → no hace falta recalcular con zoom/pan)
+  // Dots (puestos en el "stage" con % → no hace falta recalcular por zoom/pan)
   const dots = useMemo(
     () =>
       threads.map((t) => ({
@@ -196,7 +244,7 @@ export default function ZoomOverlay({
     setDraft("");
   }, [draft, activeThread, onAddMessage]);
 
-  // Ir a un hilo desde la lista
+  // Ir a un hilo desde la lista (centra en px de imagen)
   const centerToThread = (t: ZoomThread) => {
     const px = (t.x / 100) * imgW;
     const py = (t.y / 100) * imgH;
@@ -226,7 +274,7 @@ export default function ZoomOverlay({
             transform: `translate(${tx}px, ${ty}px) scale(${zoom})`,
           }}
         >
-          {/* Imagen Next (cacheable por Next) */}
+          {/* Imagen Next (cacheable) */}
           <div className={css.imgWrap}>
             <Image
               src={src}
@@ -238,8 +286,12 @@ export default function ZoomOverlay({
               className={css.img}
               onLoadingComplete={(el) => {
                 // naturalWidth/Height fiables para coord % exactas
-                setImgW(el.naturalWidth || 1);
-                setImgH(el.naturalHeight || 1);
+                const w = el.naturalWidth || 1;
+                const h = el.naturalHeight || 1;
+                setImgW(w);
+                setImgH(h);
+                // re-medimos minimapa con las nuevas dimensiones
+                setTimeout(() => measureMini(), 0);
               }}
             />
           </div>
@@ -298,16 +350,33 @@ export default function ZoomOverlay({
         )}
       </div>
 
-      {/* Sidebar con MINIMAPA + controles + lista de hilos */}
+      {/* Sidebar con MINIMAPA (Next/Image) + controles + lista de hilos */}
       <div className={css.sidebar}>
         <div
           className={css.minimap}
-          style={{ backgroundImage: `url(${src})` }}
+          ref={miniRef}
           onMouseDown={onMiniClickOrDrag}
           onMouseMove={(e) => e.buttons === 1 && onMiniClickOrDrag(e)}
         >
-          <div className={css.veil} />
+          {/* Imagen del minimapa con Next/Image (contain) */}
+          <div className={css.miniImgWrap}>
+            <Image
+              src={src}
+              alt=""
+              fill
+              sizes="320px"
+              priority
+              draggable={false}
+              className={css.miniImg}
+              onLoadingComplete={() => measureMini()}
+            />
+          </div>
+
+          {/* Viewport (en píxeles para respetar letterboxing) */}
           <div className={css.viewport} style={vpStyle} />
+
+          {/* opcional: velo sutil encima del minimapa */}
+          <div className={css.veil} />
         </div>
 
         <div className={css.controls}>
