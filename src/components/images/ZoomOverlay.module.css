@@ -212,10 +212,10 @@
     object-fit: contain;
     user-select: none;
     pointer-events: none;
-    /* para que los clicks los reciba el contenedor */
+    /* los clicks los maneja el contenedor */
 }
 
-/* Viewport: velar el resto con box-shadow gigante; se posiciona en px */
+/* Viewport: mismo aspect ratio que la vista principal; se posiciona en px */
 .viewport {
     position: absolute;
     border: 2px solid #58a6ff;
@@ -224,7 +224,7 @@
     pointer-events: none;
 }
 
-/* velo sutil extra (opcional) */
+/* velo sutil extra */
 .veil {
     position: absolute;
     inset: 0;

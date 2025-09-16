@@ -452,8 +452,8 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
               src={selectedImage?.url}
               onClick={handleImageClick}
               alt={selectedImage?.name}
-              width={600}
-              height={600}
+              width={100}
+              height={100}
               className={styles.mainImage}
               sizes="100%"
               quality={100}
