@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import css from "./ZoomOverlay.module.css";
 
 export type ZoomThread = {
   id: number;
-  x: number; // %
-  y: number; // %
+  x: number; // porcentaje 0..100 relativo a la imagen
+  y: number; // porcentaje 0..100 relativo a la imagen
   status: "pending" | "corrected" | "reopened" | "deleted";
   messages: Array<{
     id: number;
@@ -25,7 +26,7 @@ type Props = {
   onAddMessage: (threadId: number, text: string) => void;
   onToggleThreadStatus: (threadId: number, next: ZoomThread["status"]) => void;
   onClose: () => void;
-  initial?: { xPct: number; yPct: number; zoom?: number }; // 0..100
+  initial?: { xPct: number; yPct: number; zoom?: number };
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -35,12 +36,9 @@ function clamp(n: number, min: number, max: number) {
 const colorByStatus = (s: ZoomThread["status"]) =>
   s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : s === "deleted" ? "#666" : "#FF0040";
 
-
 const toggleLabel = (s: ZoomThread["status"]) => (s === "corrected" ? "Reabrir" : "Marcar corregido");
 const nextStatus = (s: ZoomThread["status"]): ZoomThread["status"] =>
-    s === "corrected" ? "reopened" : "corrected";
-
-
+  s === "corrected" ? "reopened" : "corrected";
 
 export default function ZoomOverlay({
   src,
@@ -52,36 +50,48 @@ export default function ZoomOverlay({
   onClose,
   initial,
 }: Props) {
-    // dimensiones reales de la imagen
-  const [imgW, setImgW] = useState(0);
-  const [imgH, setImgH] = useState(0);
-  // centro en % de la imagen (0..100)
+  // Tamaño real de la imagen
+  const [imgW, setImgW] = useState(1);
+  const [imgH, setImgH] = useState(1);
+
+  // Centro (en %) y zoom
   const [cx, setCx] = useState(initial?.xPct ?? 50);
   const [cy, setCy] = useState(initial?.yPct ?? 50);
-  const [zoom, setZoom] = useState(initial?.zoom ?? 3); // 1..10
+  const [zoom, setZoom] = useState(initial?.zoom ?? 3);
+
   const [draft, setDraft] = useState("");
 
-  const mainRef = useRef<HTMLDivElement>(null);
-  const dragging = useRef<{ active: boolean; startX: number; startY: number; startCx: number; startCy: number } | null>(null);
+  // Viewport principal
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ x: number; y: number; cxPx: number; cyPx: number } | null>(null);
 
-  // cerrar con ESC
+  // Cerrar con ESC
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-   const view = (() => {
-    const rect = mainRef.current?.getBoundingClientRect();
+  const view = (() => {
+    const rect = wrapRef.current?.getBoundingClientRect();
     return { vw: rect?.width ?? 1, vh: rect?.height ?? 1 };
   })();
-    // tamaño del viewport respecto a la imagen (en px y %)
+
+  // Centro en px de imagen
+  const cxPx = (cx / 100) * imgW;
+  const cyPx = (cy / 100) * imgH;
+
+  // Transform del stage para centrar (cx,cy) en el viewport
+  const tx = view.vw / 2 - cxPx * zoom;
+  const ty = view.vh / 2 - cyPx * zoom;
+
+  // Tamaño visible en px (útil para clamp)
   const visWpx = view.vw / zoom;
   const visHpx = view.vh / zoom;
-  
+
+  // Centrar en coordenadas px de imagen
   const setCenterToPx = useCallback(
     (nx: number, ny: number) => {
-      // clamp para no sacar el viewport
       const halfW = visWpx / 2;
       const halfH = visHpx / 2;
       const clampedX = clamp(nx, halfW, imgW - halfW);
@@ -92,88 +102,53 @@ export default function ZoomOverlay({
     [imgW, imgH, visWpx, visHpx]
   );
 
-    useEffect(() => {
-    const im = new Image();
-    im.onload = () => {
-      setImgW(im.naturalWidth);
-      setImgH(im.naturalHeight);
-    };
-    im.src = src;
-  }, [src]);
-
-    // ir a un hilo concreto
-  const centerToThread = (t: ZoomThread) => {
-    const px = (t.x / 100) * imgW;
-    const py = (t.y / 100) * imgH;
-    setCenterToPx(px, py);
-    onFocusThread(t.id);
-  };
-
-
-  // tamaño del viewport relativo (en %) según el zoom
-  const viewW = 100 / zoom; // ancho visible (% de la imagen)
+  // Porcentaje visible (para minimapa)
+  const viewW = 100 / zoom;
   const viewH = 100 / zoom;
 
-  // clamp del centro para que el viewport no se salga
+  // Clamp en %
   const setCenterClamped = useCallback(
-    (nx: number, ny: number) => {
+    (nxPct: number, nyPct: number) => {
       const halfW = viewW / 2;
       const halfH = viewH / 2;
-      setCx(clamp(nx, halfW, 100 - halfW));
-      setCy(clamp(ny, halfH, 100 - halfH));
+      setCx(clamp(nxPct, halfW, 100 - halfW));
+      setCy(clamp(nyPct, halfH, 100 - halfH));
     },
     [viewW, viewH]
   );
 
-  // zoom con rueda (centrado en el cursor)
+  // Zoom con rueda anclando al cursor (en coords de imagen)
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault();
-      const rect = mainRef.current?.getBoundingClientRect();
-      const px = rect ? ((e.clientX - rect.left) / rect.width) * 100 : 50;
-      const py = rect ? ((e.clientY - rect.top) / rect.height) * 100 : 50;
+      const rect = wrapRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const curXpx = (e.clientX - rect.left - tx) / zoom;
+      const curYpx = (e.clientY - rect.top - ty) / zoom;
+
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
       const nz = clamp(zoom * factor, 1, 10);
       setZoom(nz);
-      setCenterClamped(px, py);
+      setCenterToPx(curXpx, curYpx);
     },
-    [zoom, setCenterClamped]
+    [tx, ty, zoom, setCenterToPx]
   );
 
-  // pan (arrastrar)
-  const onMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      const rect = mainRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      dragging.current = {
-        active: true,
-        startX: e.clientX,
-        startY: e.clientY,
-        startCx: cx,
-        startCy: cy,
-      };
-    },
-    [cx, cy]
-  );
+  // Pan (arrastrar)
+  const onMouseDown = (e: React.MouseEvent) => {
+    dragRef.current = { x: e.clientX, y: e.clientY, cxPx, cyPx };
+  };
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!dragRef.current) return;
+    const dx = (e.clientX - dragRef.current.x) / zoom; // en px de imagen
+    const dy = (e.clientY - dragRef.current.y) / zoom;
+    setCenterToPx(dragRef.current.cxPx - dx, dragRef.current.cyPx - dy);
+  };
+  const endDrag = () => {
+    dragRef.current = null;
+  };
 
-  const onMouseMove = useCallback(
-    (e: React.MouseEvent) => {
-      if (!dragging.current?.active || !mainRef.current) return;
-      const rect = mainRef.current.getBoundingClientRect();
-      const dxPx = e.clientX - dragging.current.startX;
-      const dyPx = e.clientY - dragging.current.startY;
-      const nx = dragging.current.startCx - (dxPx / rect.width) * viewW;
-      const ny = dragging.current.startCy - (dyPx / rect.height) * viewH;
-      setCenterClamped(nx, ny);
-    },
-    [setCenterClamped, viewW, viewH]
-  );
-
-  const endDrag = useCallback(() => {
-    if (dragging.current) dragging.current.active = false;
-  }, []);
-
-  // click en minimapa
+  // Minimap: click/drag para centrar (en %)
   const onMiniClickOrDrag = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
@@ -184,7 +159,7 @@ export default function ZoomOverlay({
     [setCenterClamped]
   );
 
-  // estilos del viewport para el minimapa
+  // Estilo del viewport en el minimapa
   const vpStyle = useMemo(
     () => ({
       width: `${viewW}%`,
@@ -195,19 +170,20 @@ export default function ZoomOverlay({
     [cx, cy, viewW, viewH]
   );
 
-  // Coordenadas de anotaciones dentro del viewport actual
-  const dots = useMemo(() => {
-    const left = cx - viewW / 2;
-    const top = cy - viewH / 2;
-    return threads
-      .map((t) => {
-        const relX = (t.x - left) / viewW; // 0..1
-        const relY = (t.y - top) / viewH;  // 0..1
-        return { t, relX, relY };
-      })
-      .filter(({ relX, relY }) => relX >= 0 && relX <= 1 && relY >= 0 && relY <= 1);
-  }, [threads, cx, cy, viewW, viewH]);
+  // Dots (dentro del stage → no hace falta recalcular con zoom/pan)
+  const dots = useMemo(
+    () =>
+      threads.map((t) => ({
+        id: t.id,
+        left: `${t.x}%`,
+        top: `${t.y}%`,
+        status: t.status,
+        num: 1 + threads.findIndex((x) => x.id === t.id),
+      })),
+    [threads]
+  );
 
+  // Thread activo + envío
   const activeThread = useMemo(
     () => threads.find((t) => t.id === activeThreadId) || null,
     [threads, activeThreadId]
@@ -220,86 +196,109 @@ export default function ZoomOverlay({
     setDraft("");
   }, [draft, activeThread, onAddMessage]);
 
+  // Ir a un hilo desde la lista
+  const centerToThread = (t: ZoomThread) => {
+    const px = (t.x / 100) * imgW;
+    const py = (t.y / 100) * imgH;
+    setCenterToPx(px, py);
+    onFocusThread(t.id);
+  };
+
   return (
     <div className={css.overlay} role="dialog" aria-label="Zoom">
       <button className={css.close} onClick={onClose} aria-label="Cerrar">×</button>
 
-      {/* Panel principal (imagen + dots + chat dock) */}
-      <div className={css.mainWrap}>
+      {/* Viewport principal con stage */}
+      <div
+        className={css.mainWrap}
+        ref={wrapRef}
+        onWheel={onWheel}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={endDrag}
+        onMouseLeave={endDrag}
+      >
         <div
-          ref={mainRef}
-          className={css.main}
+          className={css.stage}
           style={{
-            backgroundImage: `url(${src})`,
-            backgroundSize: `${zoom * 100}% auto`,
-            backgroundPosition: `${cx}% ${cy}%`,
+            width: imgW || 1,
+            height: imgH || 1,
+            transform: `translate(${tx}px, ${ty}px) scale(${zoom})`,
           }}
-          onWheel={onWheel}
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={endDrag}
-          onMouseLeave={endDrag}
         >
-          {/* Dots sobre la imagen */}
-          {dots.map(({ t, relX, relY }, idx) => (
-            <button
-              key={t.id}
-              className={`${css.dot} ${activeThreadId === t.id ? css.dotActive : ""}`}
-              style={{
-                left: `${relX * 100}%`,
-                top: `${relY * 100}%`,
-                background: colorByStatus(t.status),
+          {/* Imagen Next (cacheable por Next) */}
+          <div className={css.imgWrap}>
+            <Image
+              src={src}
+              alt=""
+              fill
+              sizes="100vw"
+              priority
+              draggable={false}
+              className={css.img}
+              onLoadingComplete={(el) => {
+                // naturalWidth/Height fiables para coord % exactas
+                setImgW(el.naturalWidth || 1);
+                setImgH(el.naturalHeight || 1);
               }}
-              title={`#${idx + 1}`}
+            />
+          </div>
+
+          {/* Puntos */}
+          {dots.map((d) => (
+            <button
+              key={d.id}
+              className={`${css.dot} ${activeThreadId === d.id ? css.dotActive : ""}`}
+              style={{ left: d.left, top: d.top, background: colorByStatus(d.status) }}
+              title={`Hilo #${d.num}`}
               onClick={(e) => {
                 e.stopPropagation();
-                onFocusThread(t.id);
+                onFocusThread(d.id);
               }}
             >
-              {/* opcional número */}
-              <span className={css.dotNum}>{idx + 1}</span>
+              <span className={css.dotNum}>{d.num}</span>
             </button>
           ))}
-
-          {/* Chat acoplado */}
-          {activeThread && (
-            <div className={css.chatDock}>
-              <div className={css.chatHeader}>
-                Hilo #{threads.findIndex((x) => x.id === activeThread.id) + 1}
-              </div>
-              <div className={css.chatList}>
-                {activeThread.messages.map((m) => (
-                  <div
-                    key={m.id}
-                    className={`${css.bubble} ${m.isSystem ? css.sys : ""}`}
-                    title={m.createdByName || "Usuario"}
-                  >
-                    <div className={css.bubbleText}>{m.text}</div>
-                    <div className={css.meta}>{m.createdByName || "Usuario"}</div>
-                  </div>
-                ))}
-              </div>
-              <div className={css.composer}>
-                <textarea
-                  rows={1}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      send();
-                    }
-                  }}
-                  placeholder="Escribe un mensaje…"
-                />
-                <button onClick={send}>Enviar</button>
-              </div>
-            </div>
-          )}
         </div>
+
+        {/* Chat acoplado (no escala) */}
+        {activeThread && (
+          <div className={css.chatDock}>
+            <div className={css.chatHeader}>
+              Hilo #{threads.findIndex((x) => x.id === activeThread.id) + 1}
+            </div>
+            <div className={css.chatList}>
+              {activeThread.messages.map((m) => (
+                <div
+                  key={m.id}
+                  className={`${css.bubble} ${m.isSystem ? css.sys : ""}`}
+                  title={m.createdByName || "Usuario"}
+                >
+                  <div className={css.bubbleText}>{m.text}</div>
+                  <div className={css.meta}>{m.createdByName || "Usuario"}</div>
+                </div>
+              ))}
+            </div>
+            <div className={css.composer}>
+              <textarea
+                rows={1}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+                placeholder="Escribe un mensaje…"
+              />
+              <button onClick={send}>Enviar</button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Sidebar (minimapa + controles) */}
+      {/* Sidebar con MINIMAPA + controles + lista de hilos */}
       <div className={css.sidebar}>
         <div
           className={css.minimap}
@@ -317,33 +316,34 @@ export default function ZoomOverlay({
             <span className={css.zoomLabel}>{zoom.toFixed(2)}×</span>
             <button onClick={() => setZoom((z) => clamp(z * 1.1, 1, 10))}>+</button>
           </div>
-          <div className={css.hint}>
-            Arrastra para mover · Rueda para zoom · Esc para cerrar
-          </div>
+          <div className={css.hint}>Arrastra para mover · Rueda para zoom · Esc para cerrar</div>
 
-        <div className={css.threadList}>
-        <div className={css.threadListTitle}>Hilos</div>
-        <ul>
-            {threads.map((t, i) => (
-            <li key={t.id} className={`${css.threadRow} ${activeThreadId === t.id ? css.threadRowActive : ""}`}>
-                <button className={css.threadRowMain} onClick={() => centerToThread(t)}>
-                <span className={css.dotMini} style={{ background: colorByStatus(t.status) }} />
-                <span className={css.threadName}>#{i + 1}</span>
-                <span className={css.threadCoords}>
-                    ({t.x.toFixed(1)}%, {t.y.toFixed(1)}%)
-                </span>
-                </button>
-                <button
-                className={css.stateBtn}
-                onClick={() => onToggleThreadStatus(t.id, nextStatus(t.status))}
-                title={toggleLabel(t.status)}
+          <div className={css.threadList}>
+            <div className={css.threadListTitle}>Hilos</div>
+            <ul>
+              {threads.map((t, i) => (
+                <li
+                  key={t.id}
+                  className={`${css.threadRow} ${activeThreadId === t.id ? css.threadRowActive : ""}`}
                 >
-                {toggleLabel(t.status)}
-                </button>
-            </li>
-            ))}
-        </ul>
-        </div>
+                  <button className={css.threadRowMain} onClick={() => centerToThread(t)}>
+                    <span className={css.dotMini} style={{ background: colorByStatus(t.status) }} />
+                    <span className={css.threadName}>#{i + 1}</span>
+                    <span className={css.threadCoords}>
+                      ({t.x.toFixed(1)}%, {t.y.toFixed(1)}%)
+                    </span>
+                  </button>
+                  <button
+                    className={css.stateBtn}
+                    onClick={() => onToggleThreadStatus(t.id, nextStatus(t.status))}
+                    title={toggleLabel(t.status)}
+                  >
+                    {toggleLabel(t.status)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </div>
     </div>
