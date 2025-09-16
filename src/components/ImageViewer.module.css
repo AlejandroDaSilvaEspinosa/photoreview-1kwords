@@ -56,6 +56,7 @@
   cursor: crosshair;
   padding: 20px;
   box-sizing: border-box;
+  max-width: 100%;
 }
 
 .mainImage {
@@ -175,14 +176,20 @@
   color: #FF0040;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1200px) {
   .viewerContainer {
     flex-direction: column;
     height: auto;
   }
 
   .mainViewer {
-    height: 50vh;
+    height: 85vh;
+  }
+
+  .mainImageWrapper {
+    height: 80vh;
+    padding: 10px 0;
+    max-height: fit-content;
   }
 }
 

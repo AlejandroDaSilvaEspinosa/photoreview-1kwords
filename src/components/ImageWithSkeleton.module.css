@@ -4,6 +4,7 @@
     justify-content: center;
     overflow: hidden;
     border-radius: 6px;
+    max-height: fit-content;
 }
 
 /* Skeleton oscuro con shimmer marcado */

@@ -35,6 +35,7 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
     const [error, setError] = useState(false);
     const [mountedAt, setMountedAt] = useState<number>(() => Date.now());
     const doneTimer = useRef<number | null>(null);
+    const [ratio, setRatio] = useState<number | null>(null);
 
     const srcKey = useMemo(() => srcToString(imgProps.src), [imgProps.src]);
 
@@ -77,7 +78,11 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
     return (
       <div
         className={`${styles.wrapper} ${wrapperClassName ?? ""}`}
-        style={{ width: w ? `${w}%` : undefined, height: h ? `${h}%` : undefined }}
+        style={{
+          aspectRatio: ratio ? `${ratio}` : "1 / 1", // fallback cuadrado
+          // width: "100%",
+          height: "100%",
+        }}
         aria-busy={!loaded && !error}
       >
         {!loaded && !error && <div className={styles.skeleton} />}
@@ -87,11 +92,15 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
             ref={ref as any}
             key={srcKey}
             {...imgProps}
-            onLoadingComplete={handleLoaded}
+            onLoadingComplete={(img) => {
+              setRatio(img.naturalWidth / img.naturalHeight);
+              handleLoaded();
+            }}
             onError={() => {
               setError(true);
               setLoaded(false);
             }}
+            
             className={`${styles.image} ${loaded ? styles.imageVisible : ""} ${className ?? ""}`}
           />
         ) : (
