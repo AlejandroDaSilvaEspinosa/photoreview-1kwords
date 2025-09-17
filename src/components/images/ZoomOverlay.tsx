@@ -6,7 +6,7 @@ import css from "./ZoomOverlay.module.css";
 
 export type ZoomThread = {
   id: number;
-  x: number; // porcentaje 0..100 (coords de la imagen)
+  x: number; // porcentaje 0..100
   y: number; // porcentaje 0..100
   status: "pending" | "corrected" | "reopened" | "deleted";
   messages: Array<{
@@ -25,9 +25,12 @@ type Props = {
   onFocusThread: (id: number) => void;
   onAddMessage: (threadId: number, text: string) => void;
   onToggleThreadStatus: (threadId: number, next: ZoomThread["status"]) => void;
+  onCreateThreadAt: (xPct: number, yPct: number) => void; // <—— NUEVO USO
   onClose: () => void;
   initial?: { xPct: number; yPct: number; zoom?: number };
 };
+
+type ToolMode = "pan" | "pin";
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -47,6 +50,7 @@ export default function ZoomOverlay({
   onFocusThread,
   onAddMessage,
   onToggleThreadStatus,
+  onCreateThreadAt,
   onClose,
   initial,
 }: Props) {
@@ -59,18 +63,21 @@ export default function ZoomOverlay({
   const [cy, setCy] = useState(initial?.yPct ?? 50);
   const [zoom, setZoom] = useState(initial?.zoom ?? 3);
 
+  // Herramienta activa
+  const [tool, setTool] = useState<ToolMode>("pan");
+
+  // chat
   const [draft, setDraft] = useState("");
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; y: number; cxPx: number; cyPx: number } | null>(null);
+  const movedRef = useRef(false);
 
-  // Minimap (medidas con letterboxing)
+  // minimapa
   const miniRef = useRef<HTMLDivElement>(null);
-  const [miniDims, setMiniDims] = useState({
-    mw: 1, mh: 1, dW: 1, dH: 1, offX: 0, offY: 0,
-  });
+  const [miniDims, setMiniDims] = useState({ mw: 1, mh: 1, dW: 1, dH: 1, offX: 0, offY: 0 });
 
-  // Re-render en resize
+  // re-render en resize
   const [, force] = useState(0);
   useEffect(() => {
     const ro = new ResizeObserver(() => force((n) => n + 1));
@@ -78,97 +85,88 @@ export default function ZoomOverlay({
     return () => ro.disconnect();
   }, []);
 
-  // Esc para cerrar
+  // cerrar con ESC
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Tamaño del viewport principal
+  // tamaño del viewport principal
   const view = (() => {
     const rect = wrapRef.current?.getBoundingClientRect();
     return { vw: rect?.width ?? 1, vh: rect?.height ?? 1 };
   })();
 
-  // minZoom = ver toda la imagen
+  // min zoom = ver toda la imagen
   const getMinZoom = useCallback(() => {
     if (!imgW || !imgH) return 1;
     return Math.min(view.vw / imgW, view.vh / imgH);
   }, [imgW, imgH, view.vw, view.vh]);
 
-  // Centro actual en px de imagen
+  // centro actual en px de imagen
   const cxPx = (cx / 100) * imgW;
   const cyPx = (cy / 100) * imgH;
 
-  // Transform para centrar + escalar
+  // transform para centrar + escalar
   const tx = view.vw / 2 - cxPx * zoom;
   const ty = view.vh / 2 - cyPx * zoom;
 
-  // Tamaño visible en px de imagen
+  // tamaño visible (px) de imagen
   const visWpx = view.vw / zoom;
   const visHpx = view.vh / zoom;
 
-  // Centrar a (nx,ny) px de imagen, con clamp robusto si viewport > imagen
   const setCenterToPx = useCallback(
     (nx: number, ny: number) => {
       const halfW = Math.min(visWpx / 2, imgW / 2);
       const halfH = Math.min(visHpx / 2, imgH / 2);
-      const clampedX = clamp(nx, halfW, imgW - halfW);
-      const clampedY = clamp(ny, halfH, imgH - halfH);
-      setCx((clampedX / imgW) * 100);
-      setCy((clampedY / imgH) * 100);
+      setCx(((clamp(nx, halfW, imgW - halfW)) / imgW) * 100);
+      setCy(((clamp(ny, halfH, imgH - halfH)) / imgH) * 100);
     },
     [imgW, imgH, visWpx, visHpx]
   );
 
-  // % visible respecto a la imagen (puede ser >100 si viewport es más grande)
+  // % visible respecto a la imagen
   const viewWPercent = (view.vw / (imgW * zoom)) * 100;
   const viewHPercent = (view.vh / (imgH * zoom)) * 100;
 
-  // ✅ FIX: clamp en % robusto cuando el viewport supera el 100%
   const setCenterClamped = useCallback(
     (nxPct: number, nyPct: number) => {
       const effW = Math.min(viewWPercent, 100);
       const effH = Math.min(viewHPercent, 100);
       const halfW = effW / 2;
       const halfH = effH / 2;
-
-      const cxTarget = viewWPercent >= 100 ? 50 : clamp(nxPct, halfW, 100 - halfW);
-      const cyTarget = viewHPercent >= 100 ? 50 : clamp(nyPct, halfH, 100 - halfH);
-
-      setCx(cxTarget);
-      setCy(cyTarget);
+      setCx(viewWPercent >= 100 ? 50 : clamp(nxPct, halfW, 100 - halfW));
+      setCy(viewHPercent >= 100 ? 50 : clamp(nyPct, halfH, 100 - halfH));
     },
     [viewWPercent, viewHPercent]
   );
 
-  // Zoom con rueda (anclado al cursor)
+  // rueda → zoom
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault();
       const rect = wrapRef.current?.getBoundingClientRect();
       if (!rect) return;
-
       const curXpx = (e.clientX - rect.left - tx) / zoom;
       const curYpx = (e.clientY - rect.top - ty) / zoom;
-
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
       const minZ = getMinZoom();
       const nz = clamp(zoom * factor, minZ, 10);
       setZoom(nz);
-
       setCenterToPx(curXpx, curYpx);
     },
     [tx, ty, zoom, getMinZoom, setCenterToPx]
   );
 
-  // Pan (arrastrar)
+  // drag sólo en modo pan
   const onMouseDown = (e: React.MouseEvent) => {
+    if (tool !== "pan") return;
+    movedRef.current = false;
     dragRef.current = { x: e.clientX, y: e.clientY, cxPx, cyPx };
   };
   const onMouseMove = (e: React.MouseEvent) => {
-    if (!dragRef.current) return;
+    if (tool !== "pan" || !dragRef.current) return;
     const dx = (e.clientX - dragRef.current.x) / zoom;
     const dy = (e.clientY - dragRef.current.y) / zoom;
     setCenterToPx(dragRef.current.cxPx - dx, dragRef.current.cyPx - dy);
@@ -177,7 +175,25 @@ export default function ZoomOverlay({
     dragRef.current = null;
   };
 
-  // Medir minimapa (letterboxing de contain)
+  // click principal: crea hilo si herramienta = pin o si viene con Shift
+  const onClickMain = (e: React.MouseEvent) => {
+    const wantsPin = tool === "pin" || e.shiftKey;
+    if (!wantsPin) return;
+    if (dragRef.current) return; // si estabas arrastrando, ignora
+
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const xImgPx = (e.clientX - rect.left - tx) / zoom;
+    const yImgPx = (e.clientY - rect.top - ty) / zoom;
+
+    const xPct = clamp((xImgPx / imgW) * 100, 0, 100);
+    const yPct = clamp((yImgPx / imgH) * 100, 0, 100);
+
+    onCreateThreadAt(xPct, yPct);
+  };
+
+  // medir minimapa (contain con letterbox)
   const measureMini = useCallback(() => {
     if (!miniRef.current || !imgW || !imgH) return;
     const rect = miniRef.current.getBoundingClientRect();
@@ -201,47 +217,33 @@ export default function ZoomOverlay({
     return () => ro.disconnect();
   }, [measureMini]);
 
-  // Minimap: click/drag → centra
+  // viewport minimapa
+  const vpStyle = useMemo(() => {
+    const effW = Math.min(viewWPercent, 100);
+    const effH = Math.min(viewHPercent, 100);
+    const vpWpx = miniDims.dW * (effW / 100);
+    const vpHpx = miniDims.dH * (effH / 100);
+    let left = miniDims.offX + ((cx - effW / 2) / 100) * miniDims.dW;
+    let top = miniDims.offY + ((cy - effH / 2) / 100) * miniDims.dH;
+    left = clamp(left, miniDims.offX, miniDims.offX + miniDims.dW - vpWpx);
+    top = clamp(top, miniDims.offY, miniDims.offY + miniDims.dH - vpHpx);
+    return { width: `${vpWpx}px`, height: `${vpHpx}px`, left: `${left}px`, top: `${top}px` };
+  }, [miniDims, viewWPercent, viewHPercent, cx, cy]);
+
   const onMiniClickOrDrag = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       const rect = miniRef.current?.getBoundingClientRect();
       if (!rect || !miniDims.dW || !miniDims.dH) return;
-
       const xIn = e.clientX - rect.left - miniDims.offX;
       const yIn = e.clientY - rect.top - miniDims.offY;
-
       const nx = clamp(xIn / miniDims.dW, 0, 1) * 100;
       const ny = clamp(yIn / miniDims.dH, 0, 1) * 100;
-
       setCenterClamped(nx, ny);
     },
     [miniDims, setCenterClamped]
   );
 
-  // ✅ FIX: viewport del minimapa clamped a la imagen renderizada
-  const vpStyle = useMemo(() => {
-    const effW = Math.min(viewWPercent, 100);
-    const effH = Math.min(viewHPercent, 100);
-
-    const vpWpx = miniDims.dW * (effW / 100);
-    const vpHpx = miniDims.dH * (effH / 100);
-
-    let left = miniDims.offX + ((cx - effW / 2) / 100) * miniDims.dW;
-    let top = miniDims.offY + ((cy - effH / 2) / 100) * miniDims.dH;
-
-    // clamp para que no se salga del área de la imagen en el minimapa
-    left = clamp(left, miniDims.offX, miniDims.offX + miniDims.dW - vpWpx);
-    top = clamp(top, miniDims.offY, miniDims.offY + miniDims.dH - vpHpx);
-
-    return {
-      width: `${vpWpx}px`,
-      height: `${vpHpx}px`,
-      left: `${left}px`,
-      top: `${top}px`,
-    };
-  }, [miniDims, viewWPercent, viewHPercent, cx, cy]);
-
-  // Dots (se transforman junto con la imagen)
+  // dots
   const dots = useMemo(
     () =>
       threads.map((t) => ({
@@ -254,7 +256,7 @@ export default function ZoomOverlay({
     [threads]
   );
 
-  // Chat / envío
+  // chat
   const activeThread = useMemo(
     () => threads.find((t) => t.id === activeThreadId) || null,
     [threads, activeThreadId]
@@ -267,7 +269,6 @@ export default function ZoomOverlay({
     setDraft("");
   }, [draft, activeThread, onAddMessage]);
 
-  // Ir a un hilo desde la lista
   const centerToThread = (t: ZoomThread) => {
     const px = (t.x / 100) * imgW;
     const py = (t.y / 100) * imgH;
@@ -275,11 +276,42 @@ export default function ZoomOverlay({
     onFocusThread(t.id);
   };
 
+  // cursor según herramienta
+  const cursor =
+    tool === "pin"
+      ? "crosshair"
+      : dragRef.current
+      ? "grabbing"
+      : "grab";
+
+      
   return (
     <div className={css.overlay} role="dialog" aria-label="Zoom">
       <button className={css.close} onClick={onClose} aria-label="Cerrar">×</button>
 
-      {/* Viewport principal con stage */}
+      {/* TOOLBOX flotante del overlay */}
+      <div className={css.toolbox} aria-label="Herramientas">
+        <button
+          type="button"
+          className={`${css.toolBtn} ${tool === "pan" ? css.toolActive : ""}`}
+          aria-pressed={tool === "pan"}
+          title="Mover (arrastrar)"
+          onClick={() => setTool("pan")}
+        >
+          🖐️
+        </button>
+        <button
+          type="button"
+          className={`${css.toolBtn} ${tool === "pin" ? css.toolActive : ""}`}
+          aria-pressed={tool === "pin"}
+          title="Añadir anotación"
+          onClick={() => setTool("pin")}
+        >
+          📍
+        </button>
+      </div>
+
+      {/* Viewport principal */}
       <div
         className={css.mainWrap}
         ref={wrapRef}
@@ -288,6 +320,8 @@ export default function ZoomOverlay({
         onMouseMove={onMouseMove}
         onMouseUp={endDrag}
         onMouseLeave={endDrag}
+        onClick={onClickMain}
+        
       >
         <div
           className={css.stage}
@@ -295,6 +329,7 @@ export default function ZoomOverlay({
             width: imgW || 1,
             height: imgH || 1,
             transform: `translate(${tx}px, ${ty}px) scale(${zoom})`,
+            cursor
           }}
         >
           {/* Imagen principal (Next/Image) */}
@@ -313,7 +348,7 @@ export default function ZoomOverlay({
                 setImgW(w);
                 setImgH(h);
                 const minZ = Math.min(view.vw / w, view.vh / h);
-                setZoom((z) => Math.max(z, minZ)); // asegúrate de no bajar de fit
+                setZoom((z) => Math.max(z, minZ));
                 setTimeout(() => measureMini(), 0);
               }}
             />
@@ -344,11 +379,7 @@ export default function ZoomOverlay({
             </div>
             <div className={css.chatList}>
               {activeThread.messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`${css.bubble} ${m.isSystem ? css.sys : ""}`}
-                  title={m.createdByName || "Usuario"}
-                >
+                <div key={m.id} className={`${css.bubble} ${m.isSystem ? css.sys : ""}`} title={m.createdByName || "Usuario"}>
                   <div className={css.bubbleText}>{m.text}</div>
                   <div className={css.meta}>{m.createdByName || "Usuario"}</div>
                 </div>
@@ -367,21 +398,13 @@ export default function ZoomOverlay({
                 }}
                 placeholder="Escribe un mensaje…"
               />
-              <button
-                onClick={() => {
-                  const minZ = getMinZoom();
-                  setZoom((z) => clamp(z, minZ, 10));
-                  send();
-                }}
-              >
-                Enviar
-              </button>
+              <button onClick={send}>Enviar</button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Sidebar: Minimap (Next/Image) + controles + lista */}
+      {/* Sidebar: Minimap + controles + lista */}
       <div className={css.sidebar}>
         <div
           className={css.minimap}
@@ -390,19 +413,8 @@ export default function ZoomOverlay({
           onMouseMove={(e) => e.buttons === 1 && onMiniClickOrDrag(e)}
         >
           <div className={css.miniImgWrap}>
-            <Image
-              src={src}
-              alt=""
-              fill
-              sizes="320px"
-              priority
-              draggable={false}
-              className={css.miniImg}
-              onLoadingComplete={() => measureMini()}
-            />
+            <Image src={src} alt="" fill sizes="320px" priority draggable={false} className={css.miniImg} onLoadingComplete={() => measureMini()} />
           </div>
-
-          {/* Viewport con el mismo aspect ratio y clamped al área visible */}
           <div className={css.viewport} style={vpStyle} />
           <div className={css.veil} />
         </div>
@@ -414,23 +426,18 @@ export default function ZoomOverlay({
             <button onClick={() => setZoom((z) => clamp(z * 1.1, getMinZoom(), 10))}>+</button>
           </div>
           <div className={css.hint}>
-            Arrastra para mover · Rueda para zoom · Esc para cerrar
+            🖐️ mover · 📍 anotar · rueda para zoom · Esc para cerrar
           </div>
 
           <div className={css.threadList}>
             <div className={css.threadListTitle}>Hilos</div>
             <ul>
               {threads.map((t, i) => (
-                <li
-                  key={t.id}
-                  className={`${css.threadRow} ${activeThreadId === t.id ? css.threadRowActive : ""}`}
-                >
+                <li key={t.id} className={`${css.threadRow} ${activeThreadId === t.id ? css.threadRowActive : ""}`}>
                   <button className={css.threadRowMain} onClick={() => centerToThread(t)}>
                     <span className={css.dotMini} style={{ background: colorByStatus(t.status) }} />
                     <span className={css.threadName}>#{i + 1}</span>
-                    <span className={css.threadCoords}>
-                      ({t.x.toFixed(1)}%, {t.y.toFixed(1)}%)
-                    </span>
+                    <span className={css.threadCoords}>({t.x.toFixed(1)}%, {t.y.toFixed(1)}%)</span>
                   </button>
                   <button
                     className={css.stateBtn}

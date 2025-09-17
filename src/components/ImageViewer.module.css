@@ -251,3 +251,41 @@
   position: relative;
   /* asegúrate de tener esto en tu hoja ya existente */
 }
+
+/* Toolbox flotante del visor principal */
+.parentToolbox {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 12;
+  display: grid;
+  gap: 8px;
+  background: rgba(18, 18, 18, 0.95);
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+
+.toolBtn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid #2a2a2a;
+  background: #222;
+  color: #eee;
+  cursor: pointer;
+  font-size: 18px;
+  display: grid;
+  place-items: center;
+}
+
+.toolBtn:hover {
+  background: #2a2a2a;
+}
+
+.toolActive {
+  border-color: #FF0040;
+  box-shadow: 0 0 0 2px rgba(255, 0, 64, .25);
+}

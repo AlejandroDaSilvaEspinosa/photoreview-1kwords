@@ -19,6 +19,7 @@ interface ImageViewerProps {
 }
 
 type AnyStatus = AnnotationThread["status"];
+type ParentTool = "zoom" | "pin";
 
 export default function ImageViewer({ sku, username }: ImageViewerProps) {
   const { images } = sku;
@@ -41,25 +42,13 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
   const threadToImage = useRef<Map<number, string>>(new Map());
   const pendingThreads = useRef<Map<string, { tempId: number; imgName: string }>>(new Map());
 
-  const [isHoveringImage, setIsHoveringImage] = useState(false);
-  const [isShiftDown, setIsShiftDown] = useState(false);
+  // toolbox en el padre
+  const [tool, setTool] = useState<ParentTool>("zoom");
 
   const fp = (image: string, x: number, y: number) =>
     `${image}|${Math.round(x * 1000) / 1000}|${Math.round(y * 1000) / 1000}`;
 
-  // Shift global
-  useEffect(() => {
-    const kd = (e: KeyboardEvent) => e.key === "Shift" && setIsShiftDown(true);
-    const ku = (e: KeyboardEvent) => e.key === "Shift" && setIsShiftDown(false);
-    window.addEventListener("keydown", kd);
-    window.addEventListener("keyup", ku);
-    return () => {
-      window.removeEventListener("keydown", kd);
-      window.removeEventListener("keyup", ku);
-    };
-  }, []);
-
-  // Carga inicial
+  // ====== CARGA INICIAL ======
   useEffect(() => {
     let cancelled = false;
     async function run() {
@@ -92,9 +81,94 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     }
     if (images.length > 0) run();
     return () => { cancelled = true; };
-  }, [sku, images, update]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sku, images]);
 
-  // Abrir zoom donde se haga click
+  // ====== HELPER: crear hilo en (xPct, yPct) ======
+  const createThreadAt = useCallback(
+    async (imgName: string, x: number, y: number) => {
+      const tempId = -Date.now();
+      const key = fp(imgName, x, y);
+
+      const sysText = `**@${username ?? "usuario"}** ha creado un nuevo hilo de revisión.`;
+      const sysOptimisticMsg = {
+        id: tempId,
+        text: sysText,
+        createdAt: new Date().toISOString(),
+        createdByName: "system",
+        isSystem: true,
+      };
+      const tempThread: AnnotationThread = { id: tempId, x, y, status: "pending", messages: [sysOptimisticMsg] };
+
+      setAnnotations((prev) => ({ ...prev, [imgName]: [...(prev[imgName] || []), tempThread] }));
+      setActiveThreadId(tempId);
+      setActiveKey(key);
+      pendingThreads.current.set(key, { tempId, imgName });
+
+      const created = await fetch("/api/threads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sku: sku.sku, imageName: imgName, x, y }),
+      }).then((r) => r.json()).catch(() => null);
+
+      if (created?.threadId) {
+        const realId = created.threadId;
+        threadToImage.current.set(realId, imgName);
+        setActiveThreadId((prev) => (prev === tempId ? realId : prev));
+
+        setAnnotations((prev) => {
+          const list = prev[imgName] || [];
+          const alreadyReal = list.some((t) => t.id === realId);
+          if (alreadyReal) return { ...prev, [imgName]: list.filter((t) => t.id !== tempId) };
+          return { ...prev, [imgName]: list.map((t) => (t.id === tempId ? { ...t, id: realId } : t)) };
+        });
+
+        const sysSaved = await fetch("/api/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threadId: realId, text: sysText, isSystem: true }),
+        }).then((r) => r.json()).catch(() => null);
+
+        if (sysSaved?.id) {
+          setAnnotations((prev) => {
+            const list = prev[imgName] || [];
+            const next = list.map((t) => {
+              if (t.id !== realId) return t;
+              const exists = t.messages.some((m) => m.id === sysSaved.id);
+              const msgsBase = exists
+                ? t.messages
+                : [
+                    ...t.messages,
+                    {
+                      id: sysSaved.id,
+                      text: sysSaved.text ?? sysText,
+                      createdAt: sysSaved.createdAt ?? new Date().toISOString(),
+                      createdByName: sysSaved.createdByName || "system",
+                      isSystem: true,
+                    },
+                  ];
+              const msgs = msgsBase.filter((m) => !(m.id < 0 && m.isSystem && m.text === sysText));
+              return { ...t, messages: msgs };
+            });
+            return { ...prev, [imgName]: next };
+          });
+        }
+        pendingThreads.current.delete(key);
+      } else {
+        // revert
+        setAnnotations((prev) => {
+          const list = prev[imgName] || [];
+          return { ...prev, [imgName]: list.filter((t) => t.id !== tempId) };
+        });
+        pendingThreads.current.delete(key);
+        setActiveThreadId((prev) => (prev === tempId ? null : prev));
+        setActiveKey((prev) => (prev === key ? null : prev));
+      }
+    },
+    [sku.sku, username]
+  );
+
+  // ====== Abrir zoom donde se haga click (x,y relativos al wrapper de imagen) ======
   const openZoomAtEvent = (e: React.MouseEvent) => {
     const r = imgRef.current?.getBoundingClientRect();
     if (!r) return;
@@ -103,92 +177,23 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     setZoomOverlay({ x: xPct, y: yPct });
   };
 
-  // Crear hilo (optimista + reconciliación)
+  // ====== Click sobre la imagen del visor principal ======
   const handleImageClick = async (e: React.MouseEvent) => {
-    if (e.shiftKey) { openZoomAtEvent(e); return; }
     if (!selectedImage?.name) return;
+    const rect = imgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+    const yPct = ((e.clientY - rect.top) / rect.height) * 100;
 
-    const r = imgRef.current?.getBoundingClientRect();
-    if (!r) return;
-
-    const x = ((e.clientX - r.left) / r.width) * 100;
-    const y = ((e.clientY - r.top) / r.height) * 100;
-
-    const imgName = selectedImage.name;
-    const tempId = -Date.now();
-    const key = fp(imgName, x, y);
-
-    const sysText = `**@${username ?? "usuario"}** ha creado un nuevo hilo de revisión.`;
-    const sysOptimisticMsg = {
-      id: tempId,
-      text: sysText,
-      createdAt: new Date().toISOString(),
-      createdByName: "system",
-      isSystem: true,
-    };
-    const tempThread: AnnotationThread = { id: tempId, x, y, status: "pending", messages: [sysOptimisticMsg] };
-
-    setAnnotations((prev) => ({ ...prev, [imgName]: [...(prev[imgName] || []), tempThread] }));
-    setActiveThreadId(tempId);
-    setActiveKey(key);
-    pendingThreads.current.set(key, { tempId, imgName });
-
-    const created = await fetch("/api/threads", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sku: sku.sku, imageName: imgName, x, y }),
-    }).then((r) => r.json()).catch(() => null);
-
-    if (created?.threadId) {
-      const realId = created.threadId;
-      threadToImage.current.set(realId, imgName);
-      setActiveThreadId((prev) => (prev === tempId ? realId : prev));
-
-      setAnnotations((prev) => {
-        const list = prev[imgName] || [];
-        const alreadyReal = list.some((t) => t.id === realId);
-        if (alreadyReal) return { ...prev, [imgName]: list.filter((t) => t.id !== tempId) };
-        return { ...prev, [imgName]: list.map((t) => (t.id === tempId ? { ...t, id: realId } : t)) };
-      });
-
-      const sysSaved = await fetch("/api/messages", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId: realId, text: sysText, isSystem: true }),
-      }).then((r) => r.json()).catch(() => null);
-
-      if (sysSaved?.id) {
-        setAnnotations((prev) => {
-          const list = prev[imgName] || [];
-          const next = list.map((t) => {
-            if (t.id !== realId) return t;
-            const exists = t.messages.some((m) => m.id === sysSaved.id);
-            const msgsBase = exists
-              ? t.messages
-              : [...t.messages, {
-                  id: sysSaved.id,
-                  text: sysSaved.text ?? sysText,
-                  createdAt: sysSaved.createdAt ?? new Date().toISOString(),
-                  createdByName: sysSaved.createdByName || "system",
-                  isSystem: true,
-                }];
-            const msgs = msgsBase.filter((m) => !(m.id < 0 && m.isSystem && m.text === sysText));
-            return { ...t, messages: msgs };
-          });
-          return { ...prev, [imgName]: next };
-        });
-      }
-      pendingThreads.current.delete(key);
-    } else {
-      setAnnotations((prev) => {
-        const list = prev[imgName] || [];
-        return { ...prev, [imgName]: list.filter((t) => t.id !== tempId) };
-      });
-      pendingThreads.current.delete(key);
-      setActiveThreadId((prev) => (prev === tempId ? null : prev));
-      setActiveKey((prev) => (prev === key ? null : prev));
+    if (tool === "zoom") {
+      openZoomAtEvent(e);
+      return;
     }
+    // tool === 'pin' → crear hilo
+    await createThreadAt(selectedImage.name, xPct, yPct);
   };
 
-  // Añadir mensaje
+  // ====== Mensajes ======
   const onAddMessage = async (threadId: number, text: string) => {
     if (!selectedImage?.name) return;
     const imgName = selectedImage.name;
@@ -233,7 +238,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     }
   };
 
-  // Cambiar estado
+  // ====== Cambiar estado ======
   const onToggleThreadStatus = async (
     threadId: number,
     next: "pending" | "corrected" | "reopened" | "deleted"
@@ -280,7 +285,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     }
   };
 
-  // Borrado lógico rápido
+  // ====== Borrado lógico rápido ======
   const removeThread = useCallback(async (imgName: string, id: number) => {
     setAnnotations((prev) => {
       const curr = prev[imgName] || [];
@@ -293,7 +298,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     }).catch(() => {});
   }, []);
 
-  // Navegación
+  // ====== NAV ======
   const selectImage = (index: number) => {
     setSelectedImageIndex(index);
     setActiveThreadId(null);
@@ -301,7 +306,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     requestAnimationFrame(update);
   };
 
-  // RT helpers
+  // ====== REALTIME ======
   const upsertThread = useCallback((imgName: string, row: { id: number; x: number; y: number; status: AnyStatus }) => {
     if (row.status === "deleted") {
       setAnnotations((prev) => {
@@ -396,7 +401,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
 
   useSkuChannel(sku.sku, channelHandlers);
 
-  // Derivados
+  // ====== Derivados ======
   const threads: AnnotationThread[] = useMemo(
     () => (selectedImage ? (annotations[selectedImage.name] || []).filter((t) => (t as any).status !== "deleted") : []),
     [annotations, selectedImage]
@@ -416,6 +421,9 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
   const colorByStatus = (status: AnnotationThread["status"]) =>
     status === "corrected" ? "#0FA958" : status === "reopened" ? "#FFB000" : "#FF0040";
 
+  // cursor del visor principal según herramienta
+  const parentCursor = tool === "pin" ? "crosshair" : "zoom-in";
+
   return (
     <div className={styles.viewerContainer}>
       <div className={styles.mainViewer}>
@@ -425,6 +433,26 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
         </div>
 
         <div className={styles.mainImageContainer}>
+          {/* TOOLBOX del padre */}
+          <div className={styles.parentToolbox} aria-label="Herramientas">
+            <button
+              className={`${styles.toolBtn} ${tool === "zoom" ? styles.toolActive : ""}`}
+              aria-pressed={tool === "zoom"}
+              title="Lupa (abrir zoom)"
+              onClick={() => setTool("zoom")}
+            >
+              🔍
+            </button>
+            <button
+              className={`${styles.toolBtn} ${tool === "pin" ? styles.toolActive : ""}`}
+              aria-pressed={tool === "pin"}
+              title="Añadir anotación"
+              onClick={() => setTool("pin")}
+            >
+              📍
+            </button>
+          </div>
+
           <button
             className={`${styles.navButton} ${styles.navLeft}`}
             onClick={() => selectImage(selectedImageIndex - 1)}
@@ -435,9 +463,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
           <div
             className={styles.mainImageWrapper}
             ref={wrapperRef}
-            onMouseEnter={() => setIsHoveringImage(true)}
-            onMouseLeave={() => setIsHoveringImage(false)}
-            style={{ cursor: isHoveringImage && isShiftDown ? "zoom-in" : undefined }}
+            style={{ cursor: parentCursor }}
           >
             {loading && (
               <div className={styles.overlayLoader}>
@@ -541,6 +567,10 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
           onFocusThread={(id: number) => setActiveThreadId(id)}
           onAddMessage={onAddMessage}
           onToggleThreadStatus={onToggleThreadStatus}
+          onCreateThreadAt={(x, y) => {
+            if (!selectedImage?.name) return;
+            createThreadAt(selectedImage.name, x, y);
+          }}
           onClose={() => setZoomOverlay(null)}
           initial={{ xPct: zoomOverlay.x, yPct: zoomOverlay.y, zoom: 1 }}
         />
