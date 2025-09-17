@@ -21,6 +21,7 @@
     "react": "^18",
     "react-dom": "^18",
     "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0",
     "sharp": "^0.34.3",
     "swr": "^2.3.6",
     "timeago.js": "^4.0.2",
