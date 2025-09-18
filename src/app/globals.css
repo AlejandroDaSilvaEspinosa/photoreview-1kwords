@@ -21,6 +21,13 @@
     /* Ajustado al color de tu marca */
     --foreground: #D9D9D9;
     /* Ajustado al color de tu marca */
+
+    --green-bg: #212E28;
+    --green-border: #214A36;
+    --orange-bg: #2E2721;
+    --orange-border: #4A3421;
+    --red-bg: #2E2122;
+    --red-border: #4A2125;
   }
 }
 
@@ -29,6 +36,10 @@ body {
   color: var(--foreground);
   font-family: 'Roboto', sans-serif;
   /* Tipografía principal actualizada */
+}
+
+strong {
+  font-weight: 500;
 }
 
 /* ===== Scrollbar theme (global) ===== */

@@ -67,7 +67,6 @@ export default function SidePanel({
     // estado
   const [drafts, setDrafts] = useState<Record<number, string>>({});
 
-  // const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement | null>(null);
 
   const setDraft = (threadId: number, value: string | ((prev: string) => string)) => {

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import type { Dispatch, SetStateAction } from 'react';
 import styles from "./ImageViewer.module.css";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import ThumbnailGrid from "./images/ThumbnailGrid";
@@ -14,6 +15,10 @@ import ZoomOverlay from "@/components/images/ZoomOverlay";
 interface ImageViewerProps {
   sku: { sku: string; images: ImageItem[] };
   username?: string;
+  setSelectedSku: Dispatch<SetStateAction<{
+      sku: string;
+      images: ImageItem[];  
+    } | null>>;
 }
 
 type ParentTool = "zoom" | "pin";
@@ -21,7 +26,7 @@ type ParentTool = "zoom" | "pin";
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const fp = (image: string, x: number, y: number) => `${image}|${round3(x)}|${round3(y)}`;
 
-export default function ImageViewer({ sku, username }: ImageViewerProps) {
+export default function ImageViewer({ sku, username,setSelectedSku }: ImageViewerProps) {
   const { images } = sku;
 
   const {
@@ -37,6 +42,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     loading,
     loadError,
   } = useThreads(sku.sku, images, username);
+
 
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const selectedImage = images[selectedImageIndex] ?? null;
@@ -111,6 +117,10 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     <div className={styles.viewerContainer}>
       <div className={styles.mainViewer}>
         <div className={styles.imageHeader}>
+          <button
+          className={styles.toolBtn}
+          onClick={()=> {setSelectedSku(null)}}
+          >🏠</button>
           <h1>Revisión de SKU: {sku.sku}</h1>
           <div className={styles.imageCounter}>{selectedImageIndex + 1} de {images.length}</div>
         </div>
@@ -259,15 +269,16 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
           if (selectedImage?.name) toggleThreadStatus(selectedImage.name, id, status);
         }}
         loading={loading}
-      />
+        />
 
       {zoomOverlay && selectedImage?.url && (
         <ZoomOverlay
           src={selectedImage.bigImgUrl || selectedImage.url}
           threads={threadsInImage}
           activeThreadId={resolvedActiveThreadId}
-          onFocusThread={(id: number) => setActiveThreadId(id)}
-          onAddMessage={(threadId, text) => {
+          currentUsername={username}
+          onFocusThread={(id: number | null) => setActiveThreadId(id)}
+          onAddThreadMessage={(threadId:number, text:string) => {
             if (selectedImage?.name) addMessage(selectedImage.name, threadId, text);
           }}
           onToggleThreadStatus={(id, status) => {

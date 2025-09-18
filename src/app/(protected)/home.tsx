@@ -26,7 +26,7 @@ export default function Home({ username, skus, clientInfo }: { username: string;
       />
       <div className={styles.content}>
         {selectedSku ? (
-          <ImageViewer username={username} key={selectedSku.sku} sku={selectedSku} />
+          <ImageViewer username={username} key={selectedSku.sku} sku={selectedSku} setSelectedSku={setSelectedSku} />
         ) : (
           <div className={styles.placeholder}>
             {/* <p>Por favor, selecciona una SKU para ver sus imágenes.</p> */}

@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import ImageWithSkeleton from "./ImageWithSkeleton";
 import styles from "./SkuSearch.module.css";
-import type { ImageItem, SkuWithImages} from "@/types/review";
+import type { ImageItem, SkuWithImages } from "@/types/review";
 
 export type SkuItem = {
   sku: string;
@@ -14,8 +15,8 @@ type Props = {
   skus: SkuWithImages[];
   onSelect: (item: SkuWithImages) => void;
   placeholder?: string;
-  maxResults?: number;  // default 20
-  minChars?: number;    // default 2
+  maxResults?: number;  // default 200
+  minChars?: number;    // default 1
   debounceMs?: number;  // default 200
   thumbSize?: number;   // default 28 (px)
 };
@@ -27,7 +28,7 @@ export default function SkuSearch({
   maxResults = 200,
   minChars = 1,
   debounceMs = 200,
-  thumbSize = 28,
+  thumbSize = 50,
 }: Props) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -49,7 +50,7 @@ export default function SkuSearch({
     if (!meetsMinChars) return [];
     const q = debouncedQuery.trim().toLowerCase();
     if (!q) return [];
-    const out:any[] = [];
+    const out: SkuWithImages[] = [];
     for (let i = 0; i < skus.length && out.length < maxResults; i++) {
       const it = skus[i];
       if (it.sku.toLowerCase().includes(q)) out.push(it);
@@ -58,33 +59,26 @@ export default function SkuSearch({
   }, [skus, debouncedQuery, maxResults, meetsMinChars]);
 
   // cerrar en blur fuera
-    // dentro de SkuSearch.tsx
-    const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
-    // ⬇️ snapshot antes del rAF (el synthetic event puede “vaciarse”)
+  const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
     const root = e.currentTarget;
     const nextFocus = (e.relatedTarget as Node | null) ?? null;
-
     requestAnimationFrame(() => {
-        // puede que el componente se haya desmontado
-        if (!root || !document.body.contains(root)) {
+      if (!root || !document.body.contains(root)) {
         setOpen(false);
         setHighlighted(-1);
         return;
-        }
-
-        // intenta usar el target calculado; si no, cae a activeElement
-        const active = nextFocus ?? (document.activeElement as Node | null);
-        if (!active || !root.contains(active)) {
+      }
+      const active = nextFocus ?? (document.activeElement as Node | null);
+      if (!active || !root.contains(active)) {
         setOpen(false);
         setHighlighted(-1);
-        }
+      }
     });
-    };
+  };
 
-
-  const commitSelection = (item: { sku: string; images: ImageItem[]; } | undefined) => {
+  const commitSelection = (item: SkuWithImages | undefined) => {
     if (!item) return;
-    onSelect(item); 
+    onSelect(item);
     setQuery(item.sku);
     setOpen(false);
     setHighlighted(-1);
@@ -169,7 +163,7 @@ export default function SkuSearch({
                 }}
                 onMouseEnter={() => setHighlighted(idx)}
               >
-                <Image
+                <ImageWithSkeleton
                   src={item.images[0].thumbnailUrl}
                   alt={item.sku}
                   width={thumbSize}

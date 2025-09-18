@@ -1,19 +1,23 @@
+// ZoomOverlay.tsx 
+
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./ZoomOverlay.module.css";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
-import {Thread, ThreadMessage, ThreadStatus} from "@/types/review"
+import ThreadChat from "./ThreadChat";
+import { Thread, ThreadStatus } from "@/types/review";
 
 type Props = {
   src: string;
   threads: Thread[];
   activeThreadId: number | null;
   initial?: { xPct: number; yPct: number; zoom?: number; ax?: number; ay?: number };
+  currentUsername?: string;
   onCreateThreadAt: (xPct: number, yPct: number) => void;
-  onFocusThread: (id: number) => void;
-  onAddMessage: (threadId: number, text: string) => void;
-  onToggleThreadStatus: (threadId: number, next:ThreadStatus) => void;
+  onFocusThread: (id: number | null) => void;
+  onAddThreadMessage: (threadId: number, text: string) => void;
+  onToggleThreadStatus: (threadId: number, next: ThreadStatus) => void;
   onClose: () => void;
 };
 
@@ -34,11 +38,12 @@ export default function ZoomOverlay({
   threads,
   activeThreadId,
   onFocusThread,
-  onAddMessage,
+  onAddThreadMessage,
   onToggleThreadStatus,
   onCreateThreadAt,
   onClose,
   initial,
+  currentUsername
 }: Props) {
   // Tamaño real de la imagen
   const [imgW, setImgW] = useState(0);
@@ -52,7 +57,7 @@ export default function ZoomOverlay({
 
   const [hasInitialized, setHasInitialized] = useState(false);
   const [tool, setTool] = useState<ToolMode>("pan");
-  const [draft, setDraft] = useState("");
+  const [isDragging, setIsDragging] = useState(false)
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; y: number; cxPx: number; cyPx: number } | null>(null);
@@ -199,6 +204,15 @@ export default function ZoomOverlay({
   );
 
   // ====== inicialización ======
+  useEffect(() => {
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden"; 
+
+    return () => {
+      document.body.style.overflow = original; 
+    };
+  }, []);
+
   const initializeView = useCallback(() => {
     if (hasInitialized || !imgReady || !view.vw || !view.vh) return;
 
@@ -220,11 +234,21 @@ export default function ZoomOverlay({
   useEffect(() => {
     initializeView();
   }, [initializeView]);
+  
+function normalize(s?: string | null) {
+  return (s ?? "").trim().toLowerCase();
+}
+  const isMine = (author?: string | null) => {
+    const me = normalize(currentUsername);
+    const a = normalize(author);
+    return !a || (!!me && a === me);
+  };
 
   // ====== rueda (desktop) ======
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault();
+      e.stopPropagation()
       const rect = wrapRef.current?.getBoundingClientRect();
       if (!rect || !imgW || !imgH) return;
 
@@ -280,6 +304,7 @@ export default function ZoomOverlay({
   const onMouseDown = (e: React.MouseEvent) => {
     if (tool !== "pan") return;
     movedRef.current = false;
+    setIsDragging(true)
     dragRef.current = { x: e.clientX, y: e.clientY, cxPx, cyPx };
   };
   const onMouseMove = (e: React.MouseEvent) => {
@@ -289,6 +314,7 @@ export default function ZoomOverlay({
     setCenterToPx(dragRef.current.cxPx - dx, dragRef.current.cyPx - dy);
   };
   const endDrag = () => {
+    setIsDragging(false)
     dragRef.current = null;
   };
 
@@ -387,13 +413,6 @@ export default function ZoomOverlay({
     () => threads.find((t) => t.id === activeThreadId) || null,
     [threads, activeThreadId]
   );
-
-  const send = useCallback(() => {
-    const text = draft.trim();
-    if (!text || !activeThread) return;
-    onAddMessage(activeThread.id, text);
-    setDraft("");
-  }, [draft, activeThread, onAddMessage]);
 
   const fitToView = useCallback(() => {
     const z = getFitZoom();
@@ -583,13 +602,15 @@ export default function ZoomOverlay({
     onFocusThread(t.id);
   };
   const [cursor, setCursor] = useState("")
+
   useEffect(() => {
     console.log("test")
+    console.log(dragRef)
     setCursor(tool === "pin" ? "crosshair" : dragRef.current ? "grabbing" : "grab")
-  },[dragRef,tool])
+  },[isDragging,tool])
 
   return (
-    <div className={styles.overlay} role="dialog" aria-label="Zoom" style={{ touchAction: "none" }}>
+    <div className={styles.overlay} role="dialog" aria-label="Zoom" style={{ touchAction: "none" }} >
       <button className={styles.close} onClick={onClose} aria-label="Cerrar">
         ×
       </button>
@@ -679,41 +700,16 @@ export default function ZoomOverlay({
           ))}
         </div>
 
-        {/* Chat acoplado */}
-        {activeThread && (
-          <div className={styles.chatDock}>
-            <div className={styles.chatHeader}>
-              Hilo #{threads.findIndex((x) => x.id === activeThread.id) + 1}
-            </div>
-            <div className={styles.chatList}>
-              {activeThread.messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`${styles.bubble} ${m.isSystem ? styles.sys : ""}`}
-                  title={m.createdByName || "Usuario"}
-                >
-                  <div className={styles.bubbleText}>{m.text}</div>
-                  <div className={styles.meta}>{m.createdByName || "Usuario"}</div>
-                </div>
-              ))}
-            </div>
-            <div className={styles.composer}>
-              <textarea
-                rows={1}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    send();
-                  }
-                }}
-                placeholder="Escribe un mensaje…"
-              />
-              <button onClick={send}>Enviar</button>
-            </div>
-          </div>
-        )}
+      {activeThread && (
+        <ThreadChat
+          activeThread={activeThread}
+          threads={threads}
+          isMine={isMine}
+          onAddThreadMessage={onAddThreadMessage}
+          onFocusThread={onFocusThread}
+          onToggleThreadStatus={onToggleThreadStatus}
+        />
+      )}
       </div>
 
       {/* Sidebar */}
