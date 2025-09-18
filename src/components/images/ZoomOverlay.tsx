@@ -1,43 +1,29 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 import styles from "./ZoomOverlay.module.css";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
-
-export type ZoomThread = {
-  id: number;
-  x: number; // porcentaje 0..100
-  y: number; // porcentaje 0..100
-  status: "pending" | "corrected" | "reopened" | "deleted";
-  messages: Array<{
-    id: number;
-    text: string;
-    createdAt: string;
-    createdByName?: string | null;
-    isSystem?: boolean;
-  }>;
-};
+import {Thread, ThreadMessage, ThreadStatus} from "@/types/review"
 
 type Props = {
   src: string;
-  threads: ZoomThread[];
+  threads: Thread[];
   activeThreadId: number | null;
   initial?: { xPct: number; yPct: number; zoom?: number; ax?: number; ay?: number };
   onCreateThreadAt: (xPct: number, yPct: number) => void;
   onFocusThread: (id: number) => void;
   onAddMessage: (threadId: number, text: string) => void;
-  onToggleThreadStatus: (threadId: number, next: ZoomThread["status"]) => void;
+  onToggleThreadStatus: (threadId: number, next:ThreadStatus) => void;
   onClose: () => void;
 };
 
 type ToolMode = "pan" | "pin";
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
-const colorByStatus = (s: ZoomThread["status"]) =>
+const colorByStatus = (s: ThreadStatus) =>
   s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : s === "deleted" ? "#666" : "#FF0040";
-const toggleLabel = (s: ZoomThread["status"]) => (s === "corrected" ? "Reabrir" : "Corregido");
-const nextStatus = (s: ZoomThread["status"]): ZoomThread["status"] =>
+const toggleLabel = (s: ThreadStatus) => (s === "corrected" ? "Reabrir" : "Corregido");
+const nextStatus = (s: ThreadStatus): ThreadStatus =>
   s === "corrected" ? "reopened" : "corrected";
 
 const dist = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax - bx, ay - by);
@@ -590,14 +576,17 @@ export default function ZoomOverlay({
     [threads]
   );
 
-  const centerToThread = (t: ZoomThread) => {
+  const centerToThread = (t: Thread) => {
     const px = (t.x / 100) * imgW;
     const py = (t.y / 100) * imgH;
     setCenterToPx(px, py);
     onFocusThread(t.id);
   };
-
-  const cursor = tool === "pin" ? "crosshair" : dragRef.current ? "grabbing" : "grab";
+  const [cursor, setCursor] = useState("")
+  useEffect(() => {
+    console.log("test")
+    setCursor(tool === "pin" ? "crosshair" : dragRef.current ? "grabbing" : "grab")
+  },[dragRef,tool])
 
   return (
     <div className={styles.overlay} role="dialog" aria-label="Zoom" style={{ touchAction: "none" }}>

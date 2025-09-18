@@ -2,7 +2,7 @@
 import { sheets, drive } from "./google";
 import { unstable_cache } from "next/cache";
 import type {
-  AnnotationThread,
+  Thread,
   ReviewJSON,
   ImageItem, // asegúrate de que coincide con lo que uso más abajo
 } from "@/types/review";
@@ -204,7 +204,7 @@ export async function getReviewsBySku(sku: string): Promise<ReviewsByFile> {
 export async function appendReviewRows(
   sku: string,
   revision: number,
-  byname: Record<string, AnnotationThread[]>
+  byname: Record<string, Thread[]>
 ) {
   const now = new Date().toISOString();
   const values: string[][] = Object.entries(byname).map(

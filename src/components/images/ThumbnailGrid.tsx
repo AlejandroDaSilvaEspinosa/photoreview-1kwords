@@ -4,7 +4,7 @@ import React from "react";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import styles from "./ThumbnailGrid.module.css";
 import type {
-  AnnotationState,
+  ThreadState,
   ValidationState,
   ImageItem,
 } from "@/types/review";
@@ -13,7 +13,7 @@ type Props = {
   images: ImageItem[];
   selectedIndex: number;
   onSelect: (index: number) => void;
-  annotations: AnnotationState;
+  threads: ThreadState;
   validatedImages: ValidationState;
 };
 
@@ -21,7 +21,7 @@ export default function ThumbnailGrid({
   images,
   selectedIndex,
   onSelect,
-  annotations,
+  threads,
   validatedImages
 }: Props) {
   return (
@@ -29,7 +29,7 @@ export default function ThumbnailGrid({
       {images.map((image, index) => {
         const hasNotes =
           image.name &&
-          (annotations[image.name]?.length || 0) > 0 &&
+          (threads[image.name]?.length || 0) > 0 &&
           !validatedImages[image.name];
 
         return (

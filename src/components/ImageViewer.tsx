@@ -4,8 +4,8 @@ import React, { useMemo, useState } from "react";
 import styles from "./ImageViewer.module.css";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import ThumbnailGrid from "./images/ThumbnailGrid";
-import SidePanel, { Thread } from "./images/SidePanel";
-import type { AnnotationThread, ImageItem } from "@/types/review";
+import SidePanel from "./images/SidePanel";
+import type { Thread, ImageItem, ThreadStatus } from "@/types/review";
 import { usePresence } from "@/lib/usePresence";
 import { useImageGeometry } from "@/lib/useImageGeometry";
 import { useThreads } from "@/lib/useThreads";
@@ -25,7 +25,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
   const { images } = sku;
 
   const {
-    annotations,
+    threads,
     activeThreadId,
     setActiveThreadId,
     activeKey,
@@ -85,24 +85,24 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
   };
 
   // Derivados
-  const threads: AnnotationThread[] = useMemo(() => {
+  const threadsInImage: Thread[] = useMemo(() => {
     if (!selectedImage?.name) return [];
-    const list = annotations[selectedImage.name] || [];
+    const list = threads[selectedImage.name] || [];
     return list.filter((t) => t.status !== "deleted");
-  }, [annotations, selectedImage]);
+  }, [threads, selectedImage]);
 
   const resolvedActiveThreadId: number | null = useMemo(() => {
     if (!selectedImage?.name) return null;
-    const list = annotations[selectedImage.name] || [];
+    const list = threads[selectedImage.name] || [];
     if (activeThreadId != null && list.some((t) => t.id === activeThreadId)) return activeThreadId;
     if (activeKey) {
       const th = list.find((t) => fp(selectedImage.name!, Number(t.x), Number(t.y)) === activeKey);
       if (th) return th.id;
     }
     return null;
-  }, [annotations, selectedImage, activeThreadId, activeKey]);
+  }, [threads, selectedImage, activeThreadId, activeKey]);
 
-  const colorByStatus = (status: AnnotationThread["status"]) =>
+  const colorByStatus = (status: ThreadStatus) =>
     status === "corrected" ? "#0FA958" : status === "reopened" ? "#FFB000" : "#FF0040";
 
   const parentCursor = tool === "pin" ? "crosshair" : "zoom-in";
@@ -173,7 +173,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
               fallbackText={(selectedImage?.name || "").slice(0, 2).toUpperCase()}
             />
 
-            {threads.map((th, index) => {
+            {threadsInImage.map((th, index) => {
               const topPx = imgBox.offsetTop + (th.y / 100) * imgBox.height;
               const leftPx = imgBox.offsetLeft + (th.x / 100) * imgBox.width;
               const bg = colorByStatus(th.status);
@@ -223,7 +223,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
           images={images}
           selectedIndex={selectedImageIndex}
           onSelect={selectImage}
-          annotations={annotations}
+          threads={threads}
           validatedImages={{}}
         />
       </div>
@@ -231,21 +231,21 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
       <SidePanel
         name={selectedImage?.name || ""}
         isValidated={false}
-        threads={threads}
+        threads={threadsInImage}
         activeThreadId={resolvedActiveThreadId}
         onValidateSku={() => {}}
         onUnvalidateSku={() => {}}
-        onAddMessage={(threadId, text) => {
+        onAddThreadMessage={(threadId:number, text:string) => {
           if (selectedImage?.name) addMessage(selectedImage.name, threadId, text);
         }}
         onDeleteThread={(imageName: string, id: number) => {
           // Usa el nombre que te pasan, no dependas del seleccionado
           removeThread(imageName, id);
         }}
-        onFocusThread={(id) => {
+        onFocusThread={(id:number) => {
           setActiveThreadId(id);
           if (selectedImage?.name) {
-            const t = (annotations[selectedImage.name] || []).find((x) => x.id === id);
+            const t = (threads[selectedImage.name] || []).find((x) => x.id === id);
             if (t) setActiveKey(fp(selectedImage.name, t.x, t.y));
           }
         }}
@@ -255,7 +255,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
         totalImages={images.length}
         onlineUsers={onlineUsers}
         currentUsername={username}
-        onToggleThreadStatus={(id, status) => {
+        onToggleThreadStatus={(id:number, status:ThreadStatus) => {
           if (selectedImage?.name) toggleThreadStatus(selectedImage.name, id, status);
         }}
         loading={loading}
@@ -264,7 +264,7 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
       {zoomOverlay && selectedImage?.url && (
         <ZoomOverlay
           src={selectedImage.bigImgUrl || selectedImage.url}
-          threads={threads as Thread[]}
+          threads={threadsInImage}
           activeThreadId={resolvedActiveThreadId}
           onFocusThread={(id: number) => setActiveThreadId(id)}
           onAddMessage={(threadId, text) => {

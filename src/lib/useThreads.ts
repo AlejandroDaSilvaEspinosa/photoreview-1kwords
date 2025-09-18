@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AnnotationThread, AnnotationState, ImageItem } from "@/types/review";
+import type { Thread, ThreadState, ImageItem,ThreadStatus } from "@/types/review";
 import { useSkuChannel } from "@/lib/useSkuChannel";
 
-type AnyStatus = AnnotationThread["status"];
 
-type ReviewsPayload = Record<string, { points?: AnnotationThread[] }>;
+
+type ReviewsPayload = Record<string, { points?: Thread[] }>;
 
 type ThreadRow = {
   id: number;
@@ -14,7 +14,7 @@ type ThreadRow = {
   image_name: string;
   x: number;
   y: number;
-  status: AnyStatus;
+  status: ThreadStatus;
 };
 
 type MessageRow = {
@@ -47,7 +47,7 @@ const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const fp = (image: string, x: number, y: number) => `${image}|${round3(x)}|${round3(y)}`;
 
 export function useThreads(sku: string, images: ImageItem[], username?: string) {
-  const [annotations, setAnnotations] = useState<AnnotationState>({});
+  const [threads, setThreads] = useState<ThreadState>({});
   const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
@@ -71,7 +71,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
         if (!res.ok) throw new Error("No se pudieron cargar las anotaciones");
         const payload: ReviewsPayload = (await res.json()) as ReviewsPayload;
 
-        const merged: AnnotationState = {};
+        const merged: ThreadState = {};
         const map = new Map<number, string>();
 
         for (const img of images) {
@@ -90,7 +90,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
 
         if (!cancelled) {
           threadToImage.current = map;
-          setAnnotations(merged);
+          setThreads(merged);
         }
       } catch (err) {
         if (!cancelled) {
@@ -127,7 +127,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
         isSystem: true,
       };
 
-      const tempThread: AnnotationThread = {
+      const tempThread: Thread = {
         id: tempId,
         x: rx,
         y: ry,
@@ -135,7 +135,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
         messages: [sysOptimisticMsg],
       };
 
-      setAnnotations((prev) => ({
+      setThreads((prev) => ({
         ...prev,
         [imgName]: [...(prev[imgName] || []), tempThread],
       }));
@@ -156,7 +156,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
         threadToImage.current.set(realId, imgName);
         setActiveThreadId((prev) => (prev === tempId ? realId : prev));
 
-        setAnnotations((prev) => {
+        setThreads((prev) => {
           const list = prev[imgName] || [];
           const existsReal = list.some((t) => t.id === realId);
           if (existsReal) {
@@ -178,7 +178,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
         pendingThreads.current.delete(key);
       } else {
         // Revertir si falla
-        setAnnotations((prev) => {
+        setThreads((prev) => {
           const list = prev[imgName] || [];
           return { ...prev, [imgName]: list.filter((t) => t.id !== tempId) };
         });
@@ -202,7 +202,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
         isSystem: false,
       };
 
-      setAnnotations((prev) => ({
+      setThreads((prev) => ({
         ...prev,
         [imgName]: (prev[imgName] || []).map((t) =>
           t.id === threadId ? { ...t, messages: [...t.messages, optimistic] } : t
@@ -223,7 +223,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
         const createdByName = (created.createdByName as string) || username || "Usuario";
 
         // Si el realtime ya metió el mensaje, esto no hará nada. Si no, sustituye el optimista.
-        setAnnotations((prev) => {
+        setThreads((prev) => {
           const list = prev[imgName] || [];
           const next = list.map((t) => {
             if (t.id !== threadId) return t;
@@ -243,12 +243,12 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
 
   // ====== Cambiar estado ======
   const toggleThreadStatus = useCallback(
-    async (imgName: string, threadId: number, next: AnyStatus) => {
+    async (imgName: string, threadId: number, next: ThreadStatus) => {
       const prevStatus =
-        (annotations[imgName]?.find((t) => t.id === threadId)?.status as AnyStatus) ?? "pending";
+        (threads[imgName]?.find((t) => t.id === threadId)?.status as ThreadStatus) ?? "pending";
 
       // 1) Optimista: cambia status
-      setAnnotations((prev) => ({
+      setThreads((prev) => ({
         ...prev,
         [imgName]: (prev[imgName] || []).map((t) => (t.id === threadId ? { ...t, status: next } : t)),
       }));
@@ -257,7 +257,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
       const text = `**@${username ?? "usuario"}** cambió el estado del hilo a "**${STATUS_LABEL[next]}**".`;
       const tempMsgId = -Math.floor(Math.random() * 1e9) - 1;
 
-      setAnnotations((prev) => ({
+      setThreads((prev) => ({
         ...prev,
         [imgName]: (prev[imgName] || []).map((t) =>
           t.id === threadId
@@ -287,7 +287,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
 
       if (!res || !("ok" in res) || !res.ok) {
         // Revert si falla: status + quitar el optimista
-        setAnnotations((prev) => ({
+        setThreads((prev) => ({
           ...prev,
           [imgName]: (prev[imgName] || []).map((t) =>
             t.id === threadId
@@ -301,13 +301,13 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
         }));
       }
     },
-    [annotations, username]
+    [threads, username]
   );
 
 
   // ====== Borrado lógico (optimista) ======
   const removeThread = useCallback(async (imgName: string, id: number) => {
-    setAnnotations((prev) => {
+    setThreads((prev) => {
       const curr = prev[imgName] || [];
       return { ...prev, [imgName]: curr.filter((t) => t.id !== id) };
     });
@@ -315,7 +315,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
     await fetch(`/api/threads/status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ threadId: id, status: "deleted" as AnyStatus }),
+      body: JSON.stringify({ threadId: id, status: "deleted" as ThreadStatus }),
     }).catch(() => {});
   }, []);
 
@@ -326,7 +326,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
     const ry = round3(row.y);
 
     if (row.status === "deleted") {
-      setAnnotations((prev) => {
+      setThreads((prev) => {
         const curr = prev[imgName] || [];
         if (!curr.some((t) => t.id === row.id)) return prev;
         return { ...prev, [imgName]: curr.filter((t) => t.id !== row.id) };
@@ -344,7 +344,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
       // Alinea también la activeKey por si el backend normalizó x/y
       setActiveKey((prev) => (prev ? key : prev));
 
-      setAnnotations((prev) => {
+      setThreads((prev) => {
         const curr = prev[imgName] || [];
         const next = curr.map((t) =>
           t.id === pending.tempId ? { ...t, id: row.id, x: rx, y: ry, status: row.status } : t
@@ -356,7 +356,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
     }
 
     // Upsert normal
-    setAnnotations((prev) => {
+    setThreads((prev) => {
       const curr = prev[imgName] || [];
       const idx = curr.findIndex((t) => t.id === row.id);
       if (idx >= 0) {
@@ -380,7 +380,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
       threadId: number,
       msg: { id: number; text: string; createdAt: string; createdByName?: string; isSystem?: boolean }
     ) => {
-      setAnnotations((prev) => {
+      setThreads((prev) => {
         const curr = prev[imgName] || [];
         const next = curr.map((t) => {
           if (t.id !== threadId) return t;
@@ -423,7 +423,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
   );
 
   const removeMessage = useCallback((imgName: string, threadId: number, messageId: number) => {
-    setAnnotations((prev) => {
+    setThreads((prev) => {
       const curr = prev[imgName] || [];
       const next = curr.map((t) =>
         t.id === threadId ? { ...t, messages: t.messages.filter((m) => m.id !== messageId) } : t
@@ -448,7 +448,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
       onThreadDelete: (t) => {
         const imgName = threadToImage.current.get(t.id) || t.image_name;
         if (!imgName) return;
-        setAnnotations((prev) => {
+        setThreads((prev) => {
           const curr = prev[imgName] || [];
           return { ...prev, [imgName]: curr.filter((x) => x.id !== t.id) };
         });
@@ -492,7 +492,7 @@ export function useThreads(sku: string, images: ImageItem[], username?: string) 
 
   return {
     // estado
-    annotations,
+    threads,
     activeThreadId,
     activeKey,
     loading,

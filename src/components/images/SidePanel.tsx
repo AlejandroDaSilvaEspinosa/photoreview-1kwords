@@ -7,21 +7,8 @@ import "@/lib/timeago";
 import ReactMarkDown from "react-markdown"
 import AutoGrowTextarea from "../AutoGrowTextarea"
 
-export type ThreadStatus = "pending" | "corrected" | "reopened" | "deleted";
-export type Message = {
-  id: number;
-  text: string;
-  createdAt: string;
-  createdByName?: string | null;
-  isSystem?: boolean; // <-- para pintar diferente
-};
-export type Thread = {
-  id: number;
-  x: number;
-  y: number;
-  status: ThreadStatus;
-  messages: Message[];
-};
+import type { Thread, ThreadMessage, ThreadStatus } from "@/types/review";
+
 
 type Props = {
   name: string;
@@ -31,7 +18,7 @@ type Props = {
 
   onValidateSku: () => void;
   onUnvalidateSku: () => void;
-  onAddMessage: (threadId: number, text: string) => Promise<void> | void;
+  onAddThreadMessage: (threadId: number, text: string) => Promise<void> | void;
   onDeleteThread: (imgName: string, id: number) => void;
   onFocusThread: (id: number) => void;
   onToggleThreadStatus: (threadId: number, next: ThreadStatus) => Promise<void> | void;
@@ -59,7 +46,7 @@ export default function SidePanel({
   activeThreadId,
   onValidateSku,
   onUnvalidateSku,
-  onAddMessage,
+  onAddThreadMessage,
   onDeleteThread,
   onFocusThread,
   onToggleThreadStatus,
@@ -126,7 +113,7 @@ export default function SidePanel({
       const draft =  getDraft(activeThreadId)
       if (!selected || !draft.trim()) return;
       clearDraft(activeThreadId)
-      await onAddMessage(selected.id, draft.trim());
+      await onAddThreadMessage(selected.id, draft.trim());
     }
   };
 

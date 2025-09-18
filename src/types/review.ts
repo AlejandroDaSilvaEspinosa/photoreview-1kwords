@@ -1,21 +1,22 @@
-export interface AnnotationMessage {
+export interface ThreadMessage {
   id: number;        // único dentro del thread
   text: string;
   createdAt: string; // ISO
   author?: string;   // opcional
   isSystem?: boolean;
+  createdByName?:string;
 }
 
-export interface AnnotationThread {
+export interface Thread {
   id: number;        // id del punto
   x: number;         // %
   y: number;         // %
-  messages: AnnotationMessage[];
+  messages: ThreadMessage[];
   status: ThreadStatus;
 }
 
 export type ThreadStatus = "pending" | "corrected" | "reopened" | "deleted";
-export type AnnotationState = Record<string, AnnotationThread[]>;
+export type ThreadState = Record<string, Thread[]>;
 export type ValidationState = Record<string, boolean>;
 
 export interface ImageItem {
@@ -36,7 +37,7 @@ export interface SkuData {
 
 export interface ReviewJSON {
   revision: number;
-  points: AnnotationThread[];
+  points: Thread[];
 }
 
 export interface ReviewsBySkuResponse {
@@ -44,6 +45,6 @@ export interface ReviewsBySkuResponse {
   revision: number; // última revisión encontrada
   items: Array<{
     name: string;
-    points: AnnotationThread[];
+    points: Thread[];
   }>;
 }
