@@ -18,6 +18,7 @@ type Props = {
   onFocusThread: (id: number | null) => void;
   onAddThreadMessage: (threadId: number, text: string) => void;
   onToggleThreadStatus: (threadId: number, next: ThreadStatus) => void;
+  onDeleteThread: ( id: number) => void;
   onClose: () => void;
 };
 
@@ -41,6 +42,7 @@ export default function ZoomOverlay({
   onAddThreadMessage,
   onToggleThreadStatus,
   onCreateThreadAt,
+  onDeleteThread,
   onClose,
   initial,
   currentUsername
@@ -630,7 +632,7 @@ function normalize(s?: string | null) {
           type="button"
           className={`${styles.toolBtn} ${tool === "pin" ? styles.toolActive : ""}`}
           aria-pressed={tool === "pin"}
-          title="Añadir anotación"
+          title="Añadir nuevo hilo"
           onClick={() => setTool("pin")}
         >
           📍
@@ -708,6 +710,7 @@ function normalize(s?: string | null) {
           onAddThreadMessage={onAddThreadMessage}
           onFocusThread={onFocusThread}
           onToggleThreadStatus={onToggleThreadStatus}
+          onDeleteThread={onDeleteThread}
         />
       )}
       </div>
@@ -759,10 +762,10 @@ function normalize(s?: string | null) {
                 <li key={t.id} className={`${styles.threadRow} ${activeThreadId === t.id ? styles.threadRowActive : ""}`}>
                   <button className={styles.threadRowMain} onClick={() => centerToThread(t)}>
                     <span className={styles.dotMini} style={{ background: colorByStatus(t.status) }} />
-                    <span className={styles.threadName}>#{i + 1}</span>
-                    <span className={styles.threadCoords}>
+                    <span className={styles.threadName}>Hilo #{i + 1}</span>
+                    {/* <span className={styles.threadCoords}>
                       ({t.x.toFixed(1)}%, {t.y.toFixed(1)}%)
-                    </span>
+                    </span> */}
                   </button>
                   <button className={styles.stateBtn} onClick={() => onToggleThreadStatus(t.id, nextStatus(t.status))} title={toggleLabel(t.status)}>
                     {toggleLabel(t.status)}

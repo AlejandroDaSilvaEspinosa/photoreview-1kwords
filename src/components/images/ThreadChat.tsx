@@ -16,10 +16,11 @@ type Props = {
   onAddThreadMessage: (threadId: number, text: string) => Promise<void> | void;
   onFocusThread:(threadId: number | null) => void
   onToggleThreadStatus: (threadId: number, next: ThreadStatus) => void;
+  onDeleteThread: (id: number) => void;
 
 };
 
-export default function ThreadChat({ activeThread, threads,  isMine,  onAddThreadMessage,onFocusThread,onToggleThreadStatus }: Props) {
+export default function ThreadChat({ activeThread, threads,  isMine,  onAddThreadMessage,onFocusThread,onToggleThreadStatus, onDeleteThread }: Props) {
     // estado
     const [drafts, setDrafts] = useState<Record<number, string>>({});
     const nextStatus = (s: ThreadStatus): ThreadStatus =>
@@ -27,6 +28,8 @@ export default function ThreadChat({ activeThread, threads,  isMine,  onAddThrea
     const toggleLabel = (s: ThreadStatus) => (s === "corrected" ? "Reabrir hilo" : "Validar correcciones");
     const colorByNextStatus = (s: ThreadStatus) =>
         s === "corrected" ? "orange" : "green"
+    const colorByStatus = (s: ThreadStatus) =>
+        s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : s === "deleted" ? "#666" : "#FF0040";
     const listRef = useRef<HTMLDivElement | null>(null);
 
     const setDraft = (threadId: number, value: string | ((prev: string) => string)) => {
@@ -36,6 +39,7 @@ export default function ThreadChat({ activeThread, threads,  isMine,  onAddThrea
             typeof value === "function" ? value(prev[threadId] ?? "") : value,
         }));
     };
+
     const getDraft = (threadId: number) => drafts[threadId] ?? "";
     const clearDraft = (threadId: number) => {
         setDrafts(prev => {
@@ -70,7 +74,8 @@ export default function ThreadChat({ activeThread, threads,  isMine,  onAddThrea
       
     >
       <div className={styles.chatHeader}>
-        <span>Hilo #{threads.findIndex((x) => x.id === activeThread.id) + 1}</span>
+
+        <span><span className={styles.dotMini} style={{ background: colorByStatus(activeThread.status) }} />Hilo #{threads.findIndex((x) => x.id === activeThread.id) + 1}</span>
         <button
          type="button"
          onClick={() => onFocusThread(null)}
@@ -130,9 +135,17 @@ export default function ThreadChat({ activeThread, threads,  isMine,  onAddThrea
         <button 
           className={`${styles.changeStatusBtn} ${styles[`${colorByNextStatus(activeThread.status)}`]}`}
           onClick={() => onToggleThreadStatus(activeThread.id, nextStatus(activeThread.status))}
+          title={toggleLabel(activeThread.status)}
           >
 
             {toggleLabel(activeThread.status)}
+            </button>
+            <button 
+            title={"Borrar hilo"}
+            className={`${styles.red} ${styles.deleteThreadBtn}` }
+            onClick={() => onDeleteThread( activeThread.id)}
+            >
+                🗑
             </button>
         </div>
     </div>

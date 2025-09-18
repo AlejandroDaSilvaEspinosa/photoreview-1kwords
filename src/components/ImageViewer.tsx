@@ -42,7 +42,7 @@ export default function ImageViewer({ sku, username,setSelectedSku }: ImageViewe
     loading,
     loadError,
   } = useThreads(sku.sku, images, username);
-
+  
 
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const selectedImage = images[selectedImageIndex] ?? null;
@@ -98,16 +98,19 @@ export default function ImageViewer({ sku, username,setSelectedSku }: ImageViewe
   }, [threads, selectedImage]);
 
   const resolvedActiveThreadId: number | null = useMemo(() => {
+    if(!activeThreadId){
+      setActiveKey(null)
+    }
     if (!selectedImage?.name) return null;
     const list = threads[selectedImage.name] || [];
-    if (activeThreadId != null && list.some((t) => t.id === activeThreadId)) return activeThreadId;
+    if (list.some((t) => t.id === activeThreadId)) return activeThreadId;
     if (activeKey) {
       const th = list.find((t) => fp(selectedImage.name!, Number(t.x), Number(t.y)) === activeKey);
       if (th) return th.id;
     }
     return null;
   }, [threads, selectedImage, activeThreadId, activeKey]);
-
+  
   const colorByStatus = (status: ThreadStatus) =>
     status === "corrected" ? "#0FA958" : status === "reopened" ? "#FFB000" : "#FF0040";
 
@@ -139,7 +142,7 @@ export default function ImageViewer({ sku, username,setSelectedSku }: ImageViewe
             <button
               className={`${styles.toolBtn} ${tool === "pin" ? styles.toolActive : ""}`}
               aria-pressed={tool === "pin"}
-              title="Añadir anotación"
+              title="Añadir nuevo hilo"
               onClick={() => setTool("pin")}
             >
               📍
@@ -252,7 +255,7 @@ export default function ImageViewer({ sku, username,setSelectedSku }: ImageViewe
           // Usa el nombre que te pasan, no dependas del seleccionado
           removeThread(imageName, id);
         }}
-        onFocusThread={(id:number) => {
+        onFocusThread={(id:number|null) => {
           setActiveThreadId(id);
           if (selectedImage?.name) {
             const t = (threads[selectedImage.name] || []).find((x) => x.id === id);
@@ -286,6 +289,9 @@ export default function ImageViewer({ sku, username,setSelectedSku }: ImageViewe
           }}
           onCreateThreadAt={(x, y) => {
             if (selectedImage?.name) createThreadAt(selectedImage.name, x, y);
+          }}
+          onDeleteThread={(id: number) => {
+            removeThread(selectedImage?.name, id);
           }}
           initial={{ xPct: zoomOverlay.x, yPct: zoomOverlay.y, zoom: 1, ax: zoomOverlay.ax, ay: zoomOverlay.ay }}
           onClose={() => setZoomOverlay(null)}
