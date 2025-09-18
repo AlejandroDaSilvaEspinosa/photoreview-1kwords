@@ -4,12 +4,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Image, { ImageProps } from "next/image";
 import styles from "./ImageWithSkeleton.module.css";
 
-type Props = Omit<ImageProps, "onLoadingComplete" | "onError"> & {
+type Props = Omit<ImageProps, "onError"> & {
   wrapperClassName?: string;
   minSkeletonMs?: number;
   fallbackText?: string;
   forceSkeletonOnSrcChange?: boolean;
-  onReady?: () => void; // callback cuando quedó visible
+  onReady?: (img:any) => void; // callback cuando quedó visible
 };
 
 function srcToString(src: ImageProps["src"]): string {
@@ -56,18 +56,18 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
       };
     }, []);
 
-    const handleLoaded = () => {
+    const handleLoaded = (img:any) => {
       if (error) return;
       const elapsed = Date.now() - mountedAt;
       const remaining = Math.max(0, minSkeletonMs - elapsed);
       if (remaining === 0) {
         setLoaded(true);
-        onReady?.();
+        onReady?.(img);
       } else {
         doneTimer.current = window.setTimeout(() => {
           setLoaded(true);
           doneTimer.current = null;
-          onReady?.();
+          onReady?.(img);
         }, remaining) as unknown as number;
       }
     };
@@ -94,7 +94,7 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
             {...imgProps}
             onLoadingComplete={(img) => {
               setRatio(img.naturalWidth / img.naturalHeight);
-              handleLoaded();
+              handleLoaded(img);
             }}
             onError={() => {
               setError(true);

@@ -35,6 +35,10 @@
     border-radius: 12px;
     background: #111;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    touch-action: none;
+    /* desactiva pinch/pan del navegador */
+    overscroll-behavior: contain;
+    /* evita “bounce” */
 }
 
 /* Stage translate+scale */
@@ -109,7 +113,7 @@
     overflow: hidden;
     display: grid;
     grid-template-rows: auto 1fr auto;
-    max-height: 45vh;
+    max-height: 25vh;
 }
 
 .chatHeader {
@@ -372,6 +376,14 @@
         flex: 1;
     }
 
+    .controls {
+        max-height: 260px;
+    }
+
+    .threadList {
+        max-height: 140px;
+    }
+
     .sidebar {
         display: flex;
         flex-direction: row;
@@ -385,6 +397,38 @@
         max-width: fit-content;
     }
 }
+
+@media (max-width:638px) {
+    .overlay {
+        padding: 5px;
+        gap: 5px;
+    }
+
+    .minimap {
+        min-width: 140px;
+        height: 140px;
+        max-width: fit-content;
+    }
+
+    .sidebar {
+        gap: 5px;
+        position: fixed;
+        bottom: 0;
+    }
+
+    .controls {
+        max-width: calc(100% - 180px);
+        max-height: 140px;
+
+    }
+
+    .chatDock {
+        bottom: 0;
+        right: 0;
+        left: unset;
+    }
+}
+
 
 /* TOOLBOX flotante */
 .toolbox {

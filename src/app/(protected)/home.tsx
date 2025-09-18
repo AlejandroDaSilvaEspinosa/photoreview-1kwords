@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import styles from "./home.module.css";
 import Image from 'next/image';
 import type { ImageItem,SkuWithImages } from "@/types/review";
+import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 
 export default function Home({ username, skus, clientInfo }: { username: string; skus:SkuWithImages[]; clientInfo: {name: string; project: string} }) {
   const [selectedSku, setSelectedSku] = useState<{
@@ -38,7 +39,7 @@ export default function Home({ username, skus, clientInfo }: { username: string;
                     onClick={() => setSelectedSku(sku)}
                     //solve problem with onClick ARgument of type 'string | null' is not assignable to parameter of type 'SetStateAction<null>'.
                     key={sku.sku} className={styles.skuCard}>
-                        <Image
+                        <ImageWithSkeleton
                             src={sku.images[0].listingImageUrl}
                             alt={sku.sku}
                             width={600}

@@ -41,7 +41,8 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const selectedImage = images[selectedImageIndex] ?? null;
 
-  const [zoomOverlay, setZoomOverlay] = useState<null | { x: number; y: number }>(null);
+  const [zoomOverlay, setZoomOverlay] =
+  useState<null | { x: number; y: number; ax: number; ay: number }>(null);
 
   const onlineUsers = usePresence(sku.sku, username);
   const { wrapperRef, imgRef, box: imgBox, update } = useImageGeometry();
@@ -54,7 +55,9 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
     if (!r) return;
     const xPct = ((e.clientX - r.left) / r.width) * 100;
     const yPct = ((e.clientY - r.top) / r.height) * 100;
-    setZoomOverlay({ x: xPct, y: yPct });
+    const ax = (e.clientX - r.left) / r.width;   // [0..1]
+    const ay = (e.clientY - r.top) / r.height;   // [0..1]
+    setZoomOverlay({ x: xPct, y: yPct, ax, ay });
   };
 
   // ====== Click sobre la imagen del visor principal ======
@@ -273,8 +276,8 @@ export default function ImageViewer({ sku, username }: ImageViewerProps) {
           onCreateThreadAt={(x, y) => {
             if (selectedImage?.name) createThreadAt(selectedImage.name, x, y);
           }}
+          initial={{ xPct: zoomOverlay.x, yPct: zoomOverlay.y, zoom: 1, ax: zoomOverlay.ax, ay: zoomOverlay.ay }}
           onClose={() => setZoomOverlay(null)}
-          initial={{ xPct: zoomOverlay.x, yPct: zoomOverlay.y, zoom: 1 }}
         />
       )}
     </div>
