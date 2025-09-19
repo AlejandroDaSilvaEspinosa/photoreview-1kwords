@@ -23,10 +23,13 @@
     /* Ajustado al color de tu marca */
 
     --green-bg: #212E28;
+    --green-bg-hover: #37433D;
     --green-border: #214A36;
     --orange-bg: #2E2721;
+    --orange-bg-hover: #433C37;
     --orange-border: #4A3421;
     --red-bg: #2E2122;
+    --red-bg-hover: #433738;
     --red-border: #4A2125;
   }
 }

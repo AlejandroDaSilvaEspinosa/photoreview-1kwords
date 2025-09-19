@@ -6,19 +6,16 @@ import styles from "./ImageViewer.module.css";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import ThumbnailGrid from "./images/ThumbnailGrid";
 import SidePanel from "./images/SidePanel";
-import type { Thread, ImageItem, ThreadStatus } from "@/types/review";
+import type { Thread, ImageItem, ThreadStatus,SkuWithImagesAndStatus } from "@/types/review";
 import { usePresence } from "@/lib/usePresence";
 import { useImageGeometry } from "@/lib/useImageGeometry";
 import { useThreads } from "@/lib/useThreads";
 import ZoomOverlay from "@/components/images/ZoomOverlay";
 
 interface ImageViewerProps {
-  sku: { sku: string; images: ImageItem[] };
+  sku: SkuWithImagesAndStatus;
   username?: string;
-  setSelectedSku: Dispatch<SetStateAction<{
-      sku: string;
-      images: ImageItem[];  
-    } | null>>;
+   selectSku:(sku: SkuWithImagesAndStatus | null) => void;
 }
 
 type ParentTool = "zoom" | "pin";
@@ -26,7 +23,7 @@ type ParentTool = "zoom" | "pin";
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const fp = (image: string, x: number, y: number) => `${image}|${round3(x)}|${round3(y)}`;
 
-export default function ImageViewer({ sku, username,setSelectedSku }: ImageViewerProps) {
+export default function ImageViewer({ sku, username,selectSku }: ImageViewerProps) {
   const { images } = sku;
 
   const {
@@ -41,8 +38,8 @@ export default function ImageViewer({ sku, username,setSelectedSku }: ImageViewe
     removeThread,
     loading,
     loadError,
-  } = useThreads(sku.sku, images, username);
-  
+  } = useThreads(sku, username);
+
 
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const selectedImage = images[selectedImageIndex] ?? null;
@@ -122,7 +119,7 @@ export default function ImageViewer({ sku, username,setSelectedSku }: ImageViewe
         <div className={styles.imageHeader}>
           <button
           className={styles.toolBtn}
-          onClick={()=> {setSelectedSku(null)}}
+          onClick={()=> {selectSku(null)}}
           >🏠</button>
           <h1>Revisión de SKU: {sku.sku}</h1>
           <div className={styles.imageCounter}>{selectedImageIndex + 1} de {images.length}</div>

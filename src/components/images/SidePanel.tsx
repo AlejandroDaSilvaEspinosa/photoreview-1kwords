@@ -118,7 +118,6 @@ export default function SidePanel({
 
   const nextStatus = (s: ThreadStatus): ThreadStatus =>
     s === "corrected" ? "reopened" : "corrected";
-  console.log(selected?.messages )
   return (
     <div className={styles.sidePanel}>
       <div className={styles.commentSection}>

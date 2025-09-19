@@ -4,21 +4,17 @@ import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import styles from './Header.module.css';
 import type { Dispatch, SetStateAction } from 'react';
-import type { ImageItem, SkuWithImages } from '@/types/review';
+import type { ImageItem, SkuWithImagesAndStatus } from '@/types/review';
 import SkuSearch from './SkuSearch';
 interface HeaderProps {
-  skus: SkuWithImages[];
+  skus: SkuWithImagesAndStatus[];
   loading: boolean;
   clientName: string;
   clientProject: string;
-  onSkuChange: Dispatch<SetStateAction<{
-    sku: string;
-    images: ImageItem[];
-
-  } | null>>;
+  selectSku:(sku: SkuWithImagesAndStatus | null) => void;
 }
 
-export default function Header({ skus, loading, clientName, clientProject, onSkuChange }: HeaderProps) {
+export default function Header({ skus, loading, clientName, clientProject, selectSku }: HeaderProps) {
   const [isVisible, setIsVisible] = useState(false);
 
   // Mostrar temporalmente el header al cargar la página
@@ -76,7 +72,7 @@ export default function Header({ skus, loading, clientName, clientProject, onSku
           onSelect={(sku) => {
             // setSelectedSku(item.sku) o navegar, etc.
             // aqyui en on skuChange cambiar para que reciba todo el objeto
-            onSkuChange(sku as any);
+            selectSku(sku as SkuWithImagesAndStatus );
           }}
         />
 

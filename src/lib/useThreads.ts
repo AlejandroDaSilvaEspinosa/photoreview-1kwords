@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Thread, ThreadState, ImageItem,ThreadStatus } from "@/types/review";
+import type { Thread, ThreadState, ThreadStatus,SkuWithImagesAndStatus} from "@/types/review";
 import { useSkuChannel } from "@/lib/useSkuChannel";
 
 
@@ -46,7 +46,9 @@ const STATUS_LABEL = {
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const fp = (image: string, x: number, y: number) => `${image}|${round3(x)}|${round3(y)}`;
 
-export function useThreads(sku: string, images: ImageItem[], username?: string) {
+export function useThreads(selectedSku: SkuWithImagesAndStatus, username?: string) {
+  const {sku, images} = selectedSku
+
   const [threads, setThreads] = useState<ThreadState>({});
   const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);

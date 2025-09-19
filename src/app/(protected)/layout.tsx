@@ -4,7 +4,10 @@ import { Inter } from 'next/font/google';
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifyToken, SESSION_COOKIE_NAME } from "@/lib/auth";
+
 import '../globals.css';
+import { ToastProvider } from "@/hooks/useToast";
+import Toaster from "@/components/Toaster";
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -22,7 +25,11 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   return (
     <html lang="es">
       <body className={inter.className}>
-        <>{children}</>
+        <ToastProvider>
+        {children}
+        <Toaster/>
+
+        </ToastProvider>
       </body>
     </html>
   );

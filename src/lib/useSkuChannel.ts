@@ -1,15 +1,14 @@
-// src/lib/useSkuChannel.ts
 // Hook de canales Realtime de Supabase para un SKU:
-// - Escucha review_threads (filtrado por sku)
-// - Escucha review_messages (sin filtro en DB, pero descarta en cliente
-//   los thread_id que no pertenecen al sku actual)
-// - Limpieza robusta: removeChannel en el cleanup
-// - Evita recrear handlers con useRef
+// - review_threads (filtrado por sku)
+// - review_messages (filtrado en cliente por thread_id)
+// - review_images_status (filtrado por sku)  <-- NUEVO
+// - review_skus_status   (filtrado por sku)  <-- NUEVO
 
 "use client";
 
 import { useEffect, useRef } from "react";
 import { supabaseBrowser } from "@/lib/supabase";
+import type { SkuStatus,ImageStatus } from "@/types/review";
 
 export type ThreadStatus = "pending" | "corrected" | "reopened" | "deleted";
 
@@ -33,6 +32,22 @@ export type MessageRow = {
   is_system: boolean | null;
 };
 
+// añade tipos de estado:
+export type ImageStatusRow = { 
+  sku: string;
+  image_name: string;
+  status: ImageStatus;
+  updated_at: string; 
+};
+
+export type SkuStatusRow = {
+  sku: string;
+  status: SkuStatus;
+  images_total: number|null;
+  images_needing_fix: number|null;
+  updated_at: string;
+};
+
 export type Handlers = {
   // THREADS
   onThreadInsert?: (t: ThreadRow) => void;
@@ -42,13 +57,18 @@ export type Handlers = {
   onMessageInsert?: (m: MessageRow) => void;
   onMessageUpdate?: (m: MessageRow) => void;
   onMessageDelete?: (m: MessageRow) => void;
+  //  Estados agregados en BD
+  onImageStatusUpsert?: (row: ImageStatusRow) => void;
+  onSkuStatusUpsert?: (row: SkuStatusRow) => void;
   // Opcional: avisos de estado del canal
-  onStatusChange?: (status: "SUBSCRIBED" | "CLOSED" | "CHANNEL_ERROR" | "TIMED_OUT") => void;
+  onStatusChange?: (
+    status: "SUBSCRIBED" | "CLOSED" | "CHANNEL_ERROR" | "TIMED_OUT"
+  ) => void;
 };
 
 /**
- * Suscribe a los cambios de `review_threads` y `review_messages` para un SKU.
- * Limpia correctamente el canal al desmontar o cambiar de SKU.
+ * Suscribe a cambios de threads, messages, image-status y sku-status
+ * para un SKU. Limpieza robusta del canal.
  */
 export function useSkuChannel(sku: string, handlers: Handlers) {
   // Handlers estables
@@ -57,15 +77,14 @@ export function useSkuChannel(sku: string, handlers: Handlers) {
     hRef.current = handlers;
   }, [handlers]);
 
-  // Cache de thread_ids que pertenecen a este SKU para filtrar mensajes
+  // Cache de thread_ids que pertenecen a este SKU para filtrar messages
   const threadIdsRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     const sb = supabaseBrowser();
     let disposed = false;
 
-    // Inicial: precarga ids de hilos del SKU para que los mensajes
-    // existentes se filtren correctamente desde el primer instante.
+    // Precarga ids de hilos del SKU
     (async () => {
       try {
         const { data, error } = await sb
@@ -74,10 +93,12 @@ export function useSkuChannel(sku: string, handlers: Handlers) {
           .eq("sku", sku);
 
         if (!error && data && !disposed) {
-          threadIdsRef.current = new Set<number>(data.map((r: { id: number }) => r.id));
+          threadIdsRef.current = new Set<number>(
+            data.map((r: { id: number }) => r.id)
+          );
         }
       } catch {
-        // noop
+        /* noop */
       }
     })();
 
@@ -89,17 +110,18 @@ export function useSkuChannel(sku: string, handlers: Handlers) {
     // === THREADS (filtrados por sku) ===
     channel.on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "review_threads", filter: `sku=eq.${sku}` },
+      {
+        event: "*",
+        schema: "public",
+        table: "review_threads",
+        filter: `sku=eq.${sku}`,
+      },
       (payload) => {
         const { eventType } = payload;
 
-        // En UPDATE/INSERT, payload.new está presente
         if ((eventType === "INSERT" || eventType === "UPDATE") && payload.new) {
           const row = payload.new as ThreadRow;
-
-          // Mantén la cache de ids al día
           threadIdsRef.current.add(row.id);
-
           if (eventType === "INSERT") {
             hRef.current.onThreadInsert?.(row);
           } else {
@@ -108,7 +130,6 @@ export function useSkuChannel(sku: string, handlers: Handlers) {
           return;
         }
 
-        // En DELETE, suele venir en payload.old (requiere REPLICA IDENTITY FULL)
         if (eventType === "DELETE") {
           const row = (payload.old as ThreadRow) || (payload.new as ThreadRow);
           if (row?.id != null) {
@@ -119,31 +140,73 @@ export function useSkuChannel(sku: string, handlers: Handlers) {
       }
     );
 
-    // === MESSAGES (no podemos filtrar por sku en DB; filtramos en cliente) ===
+    // === MESSAGES (filtrado en cliente por thread_id) ===
     channel.on(
       "postgres_changes",
       { event: "*", schema: "public", table: "review_messages" },
       (payload) => {
         const { eventType } = payload;
-
-        // Para INSERT/UPDATE la fila está en new; para DELETE normalmente en old.
         const row =
-          (eventType === "DELETE" ? (payload.old as MessageRow) : (payload.new as MessageRow)) ||
+          (eventType === "DELETE"
+            ? (payload.old as MessageRow)
+            : (payload.new as MessageRow)) ||
           (payload.new as MessageRow) ||
           (payload.old as MessageRow);
 
         if (!row) return;
-
-        // Ignora mensajes de hilos que no pertenecen a este SKU
         if (!threadIdsRef.current.has(row.thread_id)) return;
 
-        if (eventType === "INSERT") {
-          hRef.current.onMessageInsert?.(row);
-        } else if (eventType === "UPDATE") {
-          hRef.current.onMessageUpdate?.(row);
-        } else if (eventType === "DELETE") {
-          hRef.current.onMessageDelete?.(row);
-        }
+        if (eventType === "INSERT") hRef.current.onMessageInsert?.(row);
+        else if (eventType === "UPDATE") hRef.current.onMessageUpdate?.(row);
+        else if (eventType === "DELETE") hRef.current.onMessageDelete?.(row);
+      }
+    );
+
+    // === review_images_status (filtrado por sku) ===
+    channel.on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "review_images_status",
+      },
+      (payload) => {
+        // Normalmente solo INSERT/UPDATE; si hay DELETE lo ignoramos o lo tratamos como "pending_review"
+        const row =
+          (payload.eventType === "DELETE"
+            ? (payload.old as ImageStatusRow)
+            : (payload.new as ImageStatusRow)) || (payload.new as ImageStatusRow);
+        if (!row) return;
+        hRef.current.onImageStatusUpsert?.({
+          sku: row.sku,
+          image_name: (row as any).image_name,
+          status: (row as any).status,
+          updated_at: (row as any).updated_at,
+        });
+      }
+    );
+
+    // === review_skus_status (filtrado por sku) ===
+    channel.on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "review_skus_status",
+      },
+      (payload) => {
+        const row =
+          (payload.eventType === "DELETE"
+            ? (payload.old as SkuStatusRow)
+            : (payload.new as SkuStatusRow)) || (payload.new as SkuStatusRow);
+        if (!row) return;
+        hRef.current.onSkuStatusUpsert?.({
+          sku: row.sku,
+          status: (row as any).status,
+          images_total: (row as any).images_total ?? null,
+          images_needing_fix: (row as any).images_needing_fix ?? null,
+          updated_at: (row as any).updated_at,
+        });
       }
     );
 
@@ -153,7 +216,7 @@ export function useSkuChannel(sku: string, handlers: Handlers) {
       hRef.current.onStatusChange?.(status as any);
     });
 
-    // Cleanup robusto: cierra y elimina el canal del cliente
+    // Cleanup robusto
     return () => {
       disposed = true;
       sb.removeChannel(channel);

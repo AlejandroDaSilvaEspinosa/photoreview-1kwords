@@ -64,3 +64,33 @@
   aspect-ratio: 1;
   height: auto;
 }
+
+.sectionDivider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0 12px;
+  font-size: 12px;
+  opacity: 0.9;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground, #bbb);
+}
+
+.sectionDivider::before,
+.sectionDivider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.22));
+}
+
+.sectionDivider::after {
+  background: linear-gradient(to left, transparent, rgba(255, 255, 255, 0.22));
+}
+
+.sectionDivider>span {
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--foreground, #ddd);
+  opacity: 0.85;
+}

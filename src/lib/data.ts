@@ -3,20 +3,16 @@ import { sheets, drive } from "./google";
 import { unstable_cache } from "next/cache";
 import type {
   Thread,
-  ReviewJSON,
+  SkuWithImagesAndStatus,
+  SkuWithImages,
   ImageItem, // asegúrate de que coincide con lo que uso más abajo
 } from "@/types/review";
-import {SkuWithImages} from "@/types/review"; 
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID!;
 const REVIEW_SHEET = process.env.GOOGLE_REVIEW_SHEET || "01.Revisión";
-const APP_SHEET = process.env.SHEET_NAME_APP || "Revision app";
 
 // Rango de SKUs (columna con SKUs)
 const SKU_RANGE = `${REVIEW_SHEET}!${process.env.SKUS_RANGE}`;
-// Hoja de imágenes: A: SKU | B: url/id carpeta Drive
-const IMAGES_RANGE = `${REVIEW_SHEET}!${process.env.IMAGES_RANGE}`;
-const ANOTATIONS_RANGE = `${APP_SHEET}!${process.env.ANOTATIONS_RANGE}`;
 
 /** Util: lee un rango y devuelve rows */
 async function readRange(range: string): Promise<string[][]> {
@@ -95,7 +91,6 @@ export async function getImageUrlThumbnail(
   const subfolderBigImageId = subfolderBigImageResponse.data.files?.[0]?.id ?? subfolderId ;
 
 
-
   // 3) Listar imágenes
   const imageFilesResponse = await drive.files.list({
     q: `'${subfolderId}' in parents and mimeType contains 'image/'`,
@@ -125,14 +120,8 @@ export async function getImageUrlThumbnail(
 
     const {id :idBigFile} = bigFiles.filter(bf => bf.name == name)[0];
 
-
-    // ⚠️ ADAPTA este objeto a TU ImageItem:
-    // si tu ImageItem usa `name`, usa `name: name`
-    // si usa `name`, usa `name`
     const obj = {
-      // si tu tipo es { name: string; ... } 👉 name: name,
-      // si tu tipo es { name: string; ... }     👉 name,
-      name: name, // <— cámbialo a 'name' si tu ImageItem lo exige
+      name: name, 
       url: `https://drive.google.com/uc?id=${id}`,
       listingImageUrl: `https://lh3.googleusercontent.com/d/${id}=s${sizeListing}-c`,
       thumbnailUrl: `https://lh3.googleusercontent.com/d/${id}=s${sizeThumbnail}-c`,
@@ -145,81 +134,3 @@ export async function getImageUrlThumbnail(
   return images;
 }
 
-/** -------------- Imágenes por SKU ------------------ */
-export async function getImagesForSku(sku: string): Promise<ImageItem[] | null> {
-  const rows = await readRange(IMAGES_RANGE);
-  if (!rows.length) return null;
-
-  const imageDataRow = rows.find((row) => row?.[0] === sku);
-  if (!imageDataRow) return null;
-
-  const mainFolderUrl = (imageDataRow[1] as string | undefined) ?? null;
-  const images = await getImageUrlThumbnail(mainFolderUrl);
-  return images ?? null;
-}
-
-/** -------------- Revisiones (JSON en columna) ------------------ */
-async function readAllReviewRows(): Promise<string[][]> {
-  return readRange(ANOTATIONS_RANGE);
-}
-
-export async function getLatestRevisionForSku(sku: string): Promise<number> {
-  const rows = await readAllReviewRows();
-  let maxRev = 0;
-  for (const row of rows) {
-    const [rSku, , json] = row;
-    if (rSku !== sku || !json) continue;
-    try {
-      const parsed = JSON.parse(json) as ReviewJSON;
-      if (typeof parsed.revision === "number") {
-        if (parsed.revision > maxRev) maxRev = parsed.revision;
-      }
-    } catch {
-      // fila rota -> ignorar
-    }
-  }
-  return maxRev;
-}
-
-/** Lee las anotaciones de la última revisión por name */
-export type ReviewsByFile = Record<string, ReviewJSON>;
-
-export async function getReviewsBySku(sku: string): Promise<ReviewsByFile> {
-  const rows = await readAllReviewRows();
-  const out: ReviewsByFile = {};
-
-  for (const row of rows) {
-    const [rSku, name, json] = row;
-    if (rSku !== sku || !name || !json) continue;
-    try {
-      out[name] = JSON.parse(json) as ReviewJSON;
-    } catch {
-      // fila rota -> ignorar
-    }
-  }
-  return out;
-}
-
-/** Guarda filas (una por imagen) para una revisión nueva */
-export async function appendReviewRows(
-  sku: string,
-  revision: number,
-  byname: Record<string, Thread[]>
-) {
-  const now = new Date().toISOString();
-  const values: string[][] = Object.entries(byname).map(
-    ([name, points]) => {
-      const json: ReviewJSON = { revision, points };
-      return [sku, name, JSON.stringify(json), now];
-    }
-  );
-
-  if (!values.length) return;
-
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: SHEET_ID,
-    range: ANOTATIONS_RANGE,
-    valueInputOption: "RAW",
-    requestBody: { values },
-  });
-}

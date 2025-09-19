@@ -1,7 +1,9 @@
 // app/(protected)/page.tsx
 import { getCachedSkus } from "@/lib/data";
+import { hydrateStatuses } from "@/lib/status";
+
 import Home from "./home";
-import { SkuWithImages } from '@/types/review';
+import { SkuWithImages,SkuWithImagesAndStatus } from '@/types/review';
 import { cookies } from "next/headers";
 import { verifyToken,SESSION_COOKIE_NAME } from "@/lib/auth";
 
@@ -17,6 +19,8 @@ export default async function HomePage() {
   const username = user?.name || "user";
 
   const skus : SkuWithImages[] = await getCachedSkus(); // ✅ directamente desde servidor
-  return <Home username={username} skus={skus} clientInfo={clientInfo} />;
+  const skusWithStatus : SkuWithImagesAndStatus[] = await hydrateStatuses(skus); // <- aquí
+  
+  return <Home username={username} skus={skusWithStatus} clientInfo={clientInfo} />;
 }
  

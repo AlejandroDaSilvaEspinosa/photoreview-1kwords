@@ -1,3 +1,37 @@
+// Imagen
+export type ImageStatus = "finished" | "needs_correction";
+
+// SKU
+export type SkuStatus = "pending_validation" | "needs_correction" | "validated" | "reopened";
+
+export interface ImageItem {
+  url: string;
+  name: string;
+  listingImageUrl: string;
+  thumbnailUrl: string;
+  bigImgUrl: string;
+}
+
+export interface ImageItemWithStatus extends ImageItem {
+  status: ImageStatus;
+}
+
+export interface SkuWithImages {
+  sku: string;
+  images: ImageItem[];
+}
+
+export interface SkuWithImagesAndStatus extends SkuWithImages {
+  status: SkuStatus;
+  images: ImageItemWithStatus[];
+  counts: {
+    finished: number;
+    needs_correction: number;
+    total: number;
+  };
+}
+
+
 export interface ThreadMessage {
   id: number;        // único dentro del thread
   text: string;
@@ -18,33 +52,3 @@ export interface Thread {
 export type ThreadStatus = "pending" | "corrected" | "reopened" | "deleted";
 export type ThreadState = Record<string, Thread[]>;
 export type ValidationState = Record<string, boolean>;
-
-export interface ImageItem {
-  url: string;
-  name: string;
-  listingImageUrl: string;
-  thumbnailUrl: string;
-  bigImgUrl: string;
-}
-
-export interface SkuWithImages  { sku: string; images: ImageItem[] };
-
-export interface SkuData {
-  sku: string;
-  images: ImageItem[];
-  allReviewed?: boolean;
-}
-
-export interface ReviewJSON {
-  revision: number;
-  points: Thread[];
-}
-
-export interface ReviewsBySkuResponse {
-  sku: string;
-  revision: number; // última revisión encontrada
-  items: Array<{
-    name: string;
-    points: Thread[];
-  }>;
-}

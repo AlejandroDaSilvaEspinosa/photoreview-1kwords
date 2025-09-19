@@ -1,19 +1,68 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ImageViewer from "@/components/ImageViewer";
 import Header from "@/components/Header";
 import styles from "./home.module.css";
-import Image from 'next/image';
-import type { ImageItem,SkuWithImages } from "@/types/review";
+import type { SkuWithImagesAndStatus } from "@/types/review";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
+import {useGlobalRealtimeToasts} from "@/hooks/useRealtimeToasts"
 
-export default function Home({ username, skus, clientInfo }: { username: string; skus:SkuWithImages[]; clientInfo: {name: string; project: string} }) {
-  const [selectedSku, setSelectedSku] = useState<{
-      sku: string;
-      images: ImageItem[];
+type Props = {
+  username: string;
+  skus: SkuWithImagesAndStatus[];
+  clientInfo: { name: string; project: string };
+};
+
+export default function Home({ username, skus, clientInfo }: Props) {
+  const [selectedSku, setSelectedSku] = useState<SkuWithImagesAndStatus | null>(null);
+
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   
-    } | null>(null);
+  useGlobalRealtimeToasts({
+    onOpenSku: (sku) => { /* abrir ficha SKU */ },
+    onOpenImage: (sku, img) => { /* abrir imagen concreta */ },
+    
+  });
+
+  // Índice por sku para búsquedas O(1)
+  const bySku = useMemo(() => {
+    const m = new Map<string, SkuWithImagesAndStatus>();
+    for (const s of skus) m.set(s.sku, s);
+    return m;
+  }, [skus]);
+
+  // Al montar / cuando cambie el query param ?sku=..., selecciona ese SKU
+  useEffect(() => {
+    const skuParam = searchParams.get("sku");
+    if (!skuParam) {
+      // Si no hay param y hay algo seleccionado, no lo tocamos (o deselecciona si prefieres)
+      return;
+    }
+    const fromParam = bySku.get(skuParam);
+    if (fromParam && fromParam !== selectedSku) {
+      setSelectedSku(fromParam);
+    }
+  }, [searchParams, bySku, selectedSku]);
+
+  // Helper para seleccionar SKU y sincronizar URL (?sku=...)
+  const selectSku = (sku: SkuWithImagesAndStatus | null) => {
+    setSelectedSku(sku);
+    const next = new URLSearchParams(searchParams.toString());
+    if (sku) {
+      next.set("sku", sku.sku);
+    } else {
+      next.delete("sku");
+      // si también soportas ?image=..., borra aquí:
+      next.delete("image");
+    }
+    router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, {
+      scroll: false,
+    });
+  };
 
   return (
     <main className={styles.main}>
@@ -22,36 +71,40 @@ export default function Home({ username, skus, clientInfo }: { username: string;
         loading={false}
         clientName={clientInfo.name}
         clientProject={clientInfo.project}
-        onSkuChange={setSelectedSku} 
+        selectSku={selectSku} // ⬅️ importante: usamos el wrapper que sincroniza URL
       />
       <div className={styles.content}>
         {selectedSku ? (
-          <ImageViewer username={username} key={selectedSku.sku} sku={selectedSku} setSelectedSku={setSelectedSku} />
+          <ImageViewer
+            username={username}
+            key={selectedSku.sku}
+            sku={selectedSku}
+            selectSku={selectSku} // ⬅️ también aquí para que el botón "🏠" limpie ?sku
+          />
         ) : (
           <div className={styles.placeholder}>
-            {/* <p>Por favor, selecciona una SKU para ver sus imágenes.</p> */}
             <h2>Revisión de Productos</h2>
             <p>Selecciona una SKU para comenzar el proceso de revisión.</p>
-            <div className={styles.skuGrid}>                
-            {
-                skus.map(sku => (
-                    <div 
-                    onClick={() => setSelectedSku(sku)}
-                    //solve problem with onClick ARgument of type 'string | null' is not assignable to parameter of type 'SetStateAction<null>'.
-                    key={sku.sku} className={styles.skuCard}>
-                        <ImageWithSkeleton
-                            src={sku.images[0].listingImageUrl}
-                            alt={sku.sku}
-                            width={600}
-                            height={600}
-                            className={styles.thumbnail}
-                            sizes={`100%`}
-                            quality={100}
-                        />
-                        <p>{sku.sku}</p>
-                    </div>
-                ))
-            }
+
+            <div className={styles.skuGrid}>
+              {skus.map((sku) => (
+                <div
+                  key={sku.sku}
+                  className={styles.skuCard}
+                  onClick={() => selectSku(sku)} // ⬅️ sincroniza con URL
+                >
+                  <ImageWithSkeleton
+                    src={sku.images[0]?.listingImageUrl}
+                    alt={sku.sku}
+                    width={600}
+                    height={600}
+                    className={styles.thumbnail}
+                    sizes="100%"
+                    quality={100}
+                  />
+                  <p>{sku.sku}</p>
+                </div>
+              ))}
             </div>
           </div>
         )}
