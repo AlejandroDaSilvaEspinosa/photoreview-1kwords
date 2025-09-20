@@ -1,24 +1,12 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { unstable_noStore as noStore } from "next/cache";
+import { Thread , ThreadMessage } from "@/types/review";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Msg = {
-  id: number;
-  text: string;
-  createdAt: string;
-  createdByName?: string;
-  isSystem?: boolean;
-};
-type Thread = {
-  id: number;
-  x: number;
-  y: number;
-  status: "pending" | "corrected" | "reopened" | "deleted";
-  messages: Msg[];
-};
+
 type Payload = Record<string, { points: Thread[] }>;
 
 export async function GET(
@@ -54,7 +42,7 @@ export async function GET(
 
   if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
 
-  const msgsByThread = new Map<number, Msg[]>();
+  const msgsByThread = new Map<number, ThreadMessage[]>();
   for (const m of messages ?? []) {
     const arr = msgsByThread.get(m.thread_id) ?? [];
     arr.push({

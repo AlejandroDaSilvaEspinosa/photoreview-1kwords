@@ -71,7 +71,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
         loading={false}
         clientName={clientInfo.name}
         clientProject={clientInfo.project}
-        selectSku={selectSku} // ⬅️ importante: usamos el wrapper que sincroniza URL
+        selectSku={selectSku} 
       />
       <div className={styles.content}>
         {selectedSku ? (
@@ -79,7 +79,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
             username={username}
             key={selectedSku.sku}
             sku={selectedSku}
-            selectSku={selectSku} // ⬅️ también aquí para que el botón "🏠" limpie ?sku
+            selectSku={selectSku} 
           />
         ) : (
           <div className={styles.placeholder}>
