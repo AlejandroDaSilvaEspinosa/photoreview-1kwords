@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCachedSkus } from "@/lib/data";
+import { getCachedSkus } from "@/lib/dataSheets";
 import { cookies } from "next/headers";
 export const runtime = "nodejs";
 

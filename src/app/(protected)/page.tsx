@@ -1,5 +1,5 @@
 // app/(protected)/page.tsx
-import { getCachedSkus } from "@/lib/data";
+import { getCachedSkus } from "@/lib/dataSheets";
 import { hydrateStatuses } from "@/lib/status";
 
 import Home from "./home";
@@ -16,7 +16,7 @@ export default async function HomePage() {
     // Usuario desde tu cookie JWT
   const token = cookies().get(SESSION_COOKIE_NAME)?.value;
   const user = token ? verifyToken(token) : null;
-  const username = user?.name || "user";
+  const username:string|null = user?.name || "user";
 
   const skus : SkuWithImages[] = await getCachedSkus(); // ✅ directamente desde servidor
   const skusWithStatus : SkuWithImagesAndStatus[] = await hydrateStatuses(skus); // <- aquí

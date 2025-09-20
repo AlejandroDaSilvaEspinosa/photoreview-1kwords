@@ -5,13 +5,6 @@ import { useToast } from "@/hooks/useToast";
 import s from "./Toaster.module.css";
 import ReactMarkdown from "react-markdown";
 
-const ICON: Record<string, string> = {
-  info: "🟦",
-  success: "🟢",
-  warning: "🟠",
-  error: "🔴",
-};
-
 export default function Toaster() {
   const { toasts, dismiss } = useToast();
 

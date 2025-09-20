@@ -2,8 +2,6 @@
 import { sheets, drive } from "./google";
 import { unstable_cache } from "next/cache";
 import type {
-  Thread,
-  SkuWithImagesAndStatus,
   SkuWithImages,
   ImageItem, // asegúrate de que coincide con lo que uso más abajo
 } from "@/types/review";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ImageViewer from "@/components/ImageViewer";
 import Header from "@/components/Header";
@@ -22,11 +22,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   
-  useGlobalRealtimeToasts({
-    onOpenSku: (sku) => { /* abrir ficha SKU */ },
-    onOpenImage: (sku, img) => { /* abrir imagen concreta */ },
-    
-  });
+
 
   // Índice por sku para búsquedas O(1)
   const bySku = useMemo(() => {
@@ -63,7 +59,16 @@ export default function Home({ username, skus, clientInfo }: Props) {
       scroll: false,
     });
   };
+  const onOpenSku = useCallback((sku: string) => selectSku(bySku.get(sku) ?? null), [selectSku, bySku]);
+  const onOpenImage = useCallback((sku: string, img: string) => {
+    const s = bySku.get(sku);
+    if (!s) return;
+    selectSku(s);
+    // si añades ?image=... podrías sincronizar aquí
+  }, [bySku, selectSku]);
 
+  useGlobalRealtimeToasts({ onOpenSku, onOpenImage });
+  
   return (
     <main className={styles.main}>
       <Header

@@ -6,6 +6,7 @@ import { format } from "timeago.js";
 import "@/lib/timeago";
 import ReactMarkDown from "react-markdown"
 import AutoGrowTextarea from "../AutoGrowTextarea"
+import ThreadChat from "./ThreadChat";
 
 import type { Thread, ThreadMessage, ThreadStatus } from "@/types/review";
 
@@ -19,8 +20,8 @@ type Props = {
   onValidateSku: () => void;
   onUnvalidateSku: () => void;
   onAddThreadMessage: (threadId: number, text: string) => Promise<void> | void;
-  onDeleteThread: (imgName: string, id: number) => void;
-  onFocusThread: (id: number) => void;
+  onDeleteThread: (id: number) => void;
+  onFocusThread: (id: number | null) => void;
   onToggleThreadStatus: (threadId: number, next: ThreadStatus) => Promise<void> | void;
 
   onlineUsers?: { username: string }[];
@@ -177,105 +178,15 @@ export default function SidePanel({
             )}
 
             {selected && (
-              <div className={styles.annotationItem}>
-                <div className={styles.annotationHeader}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span className={styles.annotationNumber}>
-                      {selectedIndex >= 0 ? selectedIndex + 1 : "•"}
-                    </span>
-                    <span
-                      className={styles.validatedBadge}
-                      style={{
-                        background:
-                          selected.status === "corrected"
-                            ? "#00AA00"
-                            : selected.status === "reopened"
-                            ? "#FFB000"
-                            : "#FF0040",
-                      }}
-                    >
-                      {selected.status === "pending"
-                        ? "Pendiente"
-                        : selected.status === "reopened"
-                        ? "Reabierto"
-                        : "Corregido"}
-                    </span>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      type="button"
-                      className={styles.validateButton}
-                      style={{
-                        background: selected.status === "corrected" ? "#FF6600" : "#00AA00",
-                      }}
-                      onClick={() => onToggleThreadStatus(selected.id, nextStatus(selected.status))}
-                    >
-                      {selected.status === "corrected" ? "Reabrir" : "Marcar corregido"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => onDeleteThread(name, selected.id)}
-                      className={styles.deleteAnnotationBtn}
-                      aria-label="Eliminar hilo"
-                      title="Eliminar hilo"
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
-
-                <div
-                  className={styles.chatList}
-                  ref={listRef}
-                  onFocus={() => onFocusThread(selected.id)}
-                >
-                  {(selected.messages ?? []).map((m) => {
-                    const mine = isMine(m.createdByName);
-                    const sys = !!m.isSystem || (m.createdByName || "").toLowerCase() === "system";
-                    return (
-                      <div
-                        key={m.id}
-                        className={
-                          sys
-                            ? `${styles.bubble} ${styles.system}`
-                            : `${styles.bubble} ${mine ? styles.mine : styles.theirs}`
-                        }
-                      >
-                        <div lang="es" className={styles.bubbleText}><ReactMarkDown>{m.text}</ReactMarkDown></div>
-                        <div className={styles.bubbleMeta}>
-                          <span className={styles.author}>
-                            {sys ? "Sistema" : m.createdByName || "Usuario"}
-                          </span>
-                          <span className={styles.timeago}>{format(m.createdAt, "es")}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                    <div className={styles.chatComposer}>
-                      <AutoGrowTextarea               
-                        value={activeThreadId ? getDraft(activeThreadId):""}
-                        onChange={(v:string) => activeThreadId &&  setDraft(activeThreadId, v)}
-                        placeholder="Escribe un mensaje…"
-                        minRows={1}
-                        maxRows={5}
-                        growsUp
-                        onEnter={handleSend}                        
-                      />
-                      <button
-                        type="button"
-                        className={styles.sendButton}
-                        onClick={handleSend}
-                        aria-label="Enviar"
-                        title="Enviar"
-                      >
-                        Enviar
-                      </button>
-                    </div>
-
-              </div>
+              <ThreadChat
+                activeThread={selected}
+                threads={threads}
+                isMine={isMine}
+                onAddThreadMessage={onAddThreadMessage}
+                onFocusThread={onFocusThread}
+                onToggleThreadStatus={onToggleThreadStatus}
+                onDeleteThread={onDeleteThread}
+              />
             )}
           </div>
         )}

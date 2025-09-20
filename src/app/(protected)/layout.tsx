@@ -26,9 +26,8 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
     <html lang="es">
       <body className={inter.className}>
         <ToastProvider>
-        {children}
-        <Toaster/>
-
+          {children}
+          <Toaster/>
         </ToastProvider>
       </body>
     </html>

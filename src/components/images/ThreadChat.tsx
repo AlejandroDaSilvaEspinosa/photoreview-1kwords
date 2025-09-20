@@ -89,9 +89,13 @@ export default function ThreadChat({ activeThread, threads,  isMine,  onAddThrea
       <div 
        ref={listRef}
        className={styles.chatList}>
-        {activeThread.messages.map((m: ThreadMessage) => {
+        {activeThread.messages?.map((m: ThreadMessage) => {
           const mine = isMine(m.createdByName);
-          
+          const delivery = m.meta?.localDelivery; // "sending" | "sent" | "read"
+          const ticks =
+            delivery === "sending" ? "⏳"
+            : delivery === "read"   ? "✓✓"  // ponlo azul con CSS si quieres
+            : /* sent */             "✓";
           const sys =
             !!m.isSystem || (m.createdByName || "").toLowerCase() === "system";
           return (
@@ -113,6 +117,7 @@ export default function ThreadChat({ activeThread, threads,  isMine,  onAddThrea
                 <span className={styles.timeago}>
                   {format(m.createdAt, "es")}
                 </span>
+                  {!sys && mine && <span className={styles.ticks}>{ticks}</span>}
               </div>
             </div>
           );

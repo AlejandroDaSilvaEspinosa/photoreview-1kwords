@@ -1,6 +1,17 @@
 // src/lib/supabase.ts
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/types/supabase";
+import type { Database,Tables, Enums  } from "@/types/supabase";
+
+export type ThreadRow       = Tables<'review_threads'>;
+export type MessageRow      = Tables<'review_messages'>;
+export type ImageStatusRow  = Tables<'review_images_status'>;
+export type SkuStatusRow    = Tables<'review_skus_status'>;
+export type MessageMeta     = Tables<'review_message_receipts'>;
+
+export type ThreadStatus = Enums<'thread_status'>;   // 'pending' | 'corrected' | 'reopened' | 'deleted'
+export type ImageStatus  = Enums<'image_status'>;    // 'finished' | 'needs_correction'
+export type SkuStatus    = Enums<'sku_status'>;      // 'pending_validation' | ...
+
 
 const PUBLIC_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const PUBLIC_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;

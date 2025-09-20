@@ -39,16 +39,28 @@ export interface ThreadMessage {
   author?: string;   // opcional
   isSystem?: boolean;
   createdByName?:string;
+  meta?:MessageMeta
 }
 
 export interface Thread {
   id: number;        // id del punto
   x: number;         // %
   y: number;         // %
-  messages: ThreadMessage[];
+  messages?: ThreadMessage[];
   status: ThreadStatus;
 }
 
 export type ThreadStatus = "pending" | "corrected" | "reopened" | "deleted";
 export type ThreadState = Record<string, Thread[]>;
 export type ValidationState = Record<string, boolean>;
+
+
+export type DeliveryState = "sending" | "sent" | "read"; 
+// sending: id negativo (optimista)
+// sent:    guardado en DB (id >= 0)
+// read:    existe al menos un receipt.read_at de un usuario != autor
+
+export type MessageMeta = {
+  localDelivery?: DeliveryState;
+  readBy?: Set<string>;           // usuarios (id/username) que lo leyeron
+};
