@@ -143,6 +143,7 @@ export function useGlobalRealtimeToasts(opts: Options = {}) {
 
         const info = threadInfoRef.current.get(row.thread_id) ?? await ensureThreadInfo(row.thread_id);
         const who = row.created_by_display_name || row.created_by_username || "Usuario";
+        if(who === "system") return;
 
         const title =
           evt === "INSERT" ? `Nuevo mensaje en hilo #${row.thread_id}`
@@ -152,8 +153,10 @@ export function useGlobalRealtimeToasts(opts: Options = {}) {
         const preview = (row.text || "").slice(0, 120);
         const description =
           evt === "DELETE"
-            ? `SKU ${info.sku} · ${info.image} · por ${who}`
-            : `SKU ${info.sku} · ${info.image} · ${who}: "${preview}"`;
+            ? `SKU ${info.sku} · ${info.image}
+             por ${who}`
+            : `SKU ${info.sku} · ${info.image}  
+             **${who}**: ${preview}`;
 
         push({
           title,

@@ -3,6 +3,7 @@
 import React from "react";
 import { useToast } from "@/hooks/useToast";
 import s from "./Toaster.module.css";
+import ReactMarkdown from "react-markdown";
 
 const ICON: Record<string, string> = {
   info: "🟦",
@@ -20,7 +21,7 @@ export default function Toaster() {
         <div key={t.id} className={`${s.toast} ${s[t.variant]}`}>
           <div className={s.body}>
             {t.title && <div className={s.title}>{t.title}</div>}
-            {t.description && <div className={s.desc}>{t.description}</div>}
+            {t.description && <div className={s.desc}><ReactMarkdown>{t.description}</ReactMarkdown></div>}
             {t.actionLabel && (
               <button
                 className={s.action}
