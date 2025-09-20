@@ -18,9 +18,10 @@
     --fg: #e7e7e7;
     --border: #2a2a2a;
     --accent: #3b82f6;
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    gap: 10px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    gap: 5px;
     min-width: 280px;
     max-width: 380px;
     padding: 12px 12px 10px 10px;
@@ -31,6 +32,10 @@
     box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
     animation: slideInUp .18s ease-out;
     position: relative;
+}
+
+.toast * {
+    margin: 0;
 }
 
 @keyframes slideInUp {
@@ -91,13 +96,15 @@
     font-size: 16px;
     line-height: 1;
     cursor: pointer;
+    position: absolute;
+    right: 5px;
+    top: 5px;
 }
 
 .progress {
     position: absolute;
-    left: 8px;
-    right: 8px;
-    bottom: 6px;
+    left: 0px;
+    bottom: 0px;
     height: 2px;
     background: linear-gradient(90deg, var(--accent), transparent);
     border-radius: 2px;

@@ -109,8 +109,8 @@ export async function getImageUrlThumbnail(
   const bigFiles = bigImageFilesResponse.data.files ?? files;
 
 
-  const sizeThumbnail = 60;
-  const sizeListing = 800;
+  const sizeThumbnail = 80;
+  const sizeListing = 200;
   const sizeZoom = 3000;
 
   // 4) Construir objetos ImageItem
