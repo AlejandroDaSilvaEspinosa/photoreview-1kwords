@@ -42,7 +42,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       title: t.title ?? "",
       description: t.description ?? "",
       variant: t.variant ?? "info",
-      durationMs: t.durationMs ?? 4000,
+      durationMs: t.durationMs ?? 8000,
       actionLabel: t.actionLabel ?? "",
       onAction: t.onAction ?? (() => {}),
       createdAt: Date.now(),

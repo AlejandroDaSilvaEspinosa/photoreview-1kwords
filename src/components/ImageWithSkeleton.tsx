@@ -72,8 +72,6 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
       }
     };
 
-    const w = typeof imgProps.width === "number" ? imgProps.width : undefined;
-    const h = typeof imgProps.height === "number" ? imgProps.height : undefined;
 
     return (
       <div
@@ -92,7 +90,8 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
             ref={ref as any}
             key={srcKey}
             {...imgProps}
-            onLoadingComplete={(img) => {
+            onLoad={(e) => {
+              const img = e.currentTarget as HTMLImageElement
               setRatio(img.naturalWidth / img.naturalHeight);
               handleLoaded(img);
             }}

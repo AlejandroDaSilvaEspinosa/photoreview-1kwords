@@ -249,7 +249,6 @@ function normalize(s?: string | null) {
   // ====== rueda (desktop) ======
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
-      e.preventDefault();
       e.stopPropagation()
       const rect = wrapRef.current?.getBoundingClientRect();
       if (!rect || !imgW || !imgH) return;
@@ -606,8 +605,6 @@ function normalize(s?: string | null) {
   const [cursor, setCursor] = useState("")
 
   useEffect(() => {
-    console.log("test")
-    console.log(dragRef)
     setCursor(tool === "pin" ? "crosshair" : dragRef.current ? "grabbing" : "grab")
   },[isDragging,tool])
 

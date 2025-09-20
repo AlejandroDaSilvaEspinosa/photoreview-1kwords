@@ -41,7 +41,7 @@ export default function ThumbnailGrid({
             onClick={() => onSelect(index)}
           >
              <ImageWithSkeleton
-                src={image.url || ''}
+                src={image.thumbnailUrl || ''}
                 alt={image.name || ''}
                 width={100}
                 height={100}

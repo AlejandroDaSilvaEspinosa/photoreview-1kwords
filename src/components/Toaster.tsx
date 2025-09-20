@@ -18,7 +18,6 @@ export default function Toaster() {
     <div className={s.wrap} aria-live="polite" aria-relevant="additions text">
       {toasts.map(t => (
         <div key={t.id} className={`${s.toast} ${s[t.variant]}`}>
-          <div className={s.icon}>{ICON[t.variant]}</div>
           <div className={s.body}>
             {t.title && <div className={s.title}>{t.title}</div>}
             {t.description && <div className={s.desc}>{t.description}</div>}

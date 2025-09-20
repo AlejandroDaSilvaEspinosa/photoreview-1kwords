@@ -169,6 +169,7 @@ export default function ImageViewer({ sku, username,selectSku }: ImageViewerProp
             {loadError && !loading && <div className={styles.overlayError}>{loadError}</div>}
 
             <ImageWithSkeleton
+              priority
               ref={imgRef}
               src={selectedImage?.url}
               onClick={handleImageClick}
