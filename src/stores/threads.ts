@@ -5,27 +5,40 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import type { ThreadStatus } from "@/types/review";
 import type { ThreadRow } from "@/lib/supabase";
+import { useMessagesStore } from "@/stores/messages";
 
-export type Thread = { id: number; x: number; y: number; status: ThreadStatus };
+export type Thread = {
+  id: number;
+  x: number;
+  y: number;
+  status: ThreadStatus;
+  /** opcional: si quieres cachear ids de mensajes para UI rápidas */
+  messageIds?: number[];
+};
 
 type ByImage = Record<string, Thread[]>; // key: imageName
 
-const round3 = (n: number) => Math.round(n * 1000) / 1000;
+const round3 = (n: number) => Math.round(+n * 1000) / 1000;
 const keyOf = (image: string, x: number, y: number) =>
-  `${image}|${round3(+x)}|${round3(+y)}`;
+  `${image}|${round3(x)}|${round3(y)}`;
 
 type State = {
   byImage: ByImage;
   threadToImage: Map<number, string>;
+  /** mapa para casar realtime con optimistas por coords */
   pendingByKey: Map<string, number>; // key -> tempId
 };
 
 type Actions = {
   hydrateForImage: (imageName: string, rows: Thread[]) => void;
 
-  // NUEVO: optimista
+  /** Crea hilo optimista y DEVUELVE el tempId (negativo) */
   createOptimistic: (imageName: string, x: number, y: number) => number;
+
+  /** Cambia tempId -> realId y limpia pending */
   confirmCreate: (tempId: number, real: ThreadRow) => void;
+
+  /** Elimina optimista (fallback si falla el insert) */
   rollbackCreate: (tempId: number) => void;
 
   // realtime
@@ -46,8 +59,8 @@ export const useThreadsStore = create<State & Actions>()(
       set((s) => {
         const list: Thread[] = rows.map((r) => ({
           id: r.id,
-          x: round3(+r.x),
-          y: round3(+r.y),
+          x: round3(r.x),
+          y: round3(r.y),
           status: r.status as ThreadStatus,
         }));
         const next = { ...s.byImage, [image]: list };
@@ -57,11 +70,15 @@ export const useThreadsStore = create<State & Actions>()(
       }),
 
     // ========= creación optimista =========
-    createOptimistic: (image, x, y) =>
+    createOptimistic: (image, x, y) => {
+      const tempId = -Date.now() - Math.floor(Math.random() * 1e6);
       set((s) => {
-        const tempId = -Date.now() - Math.floor(Math.random() * 1e6);
         const list = s.byImage[image] || [];
-        const next: Thread[] = [...list, { id: tempId, x: round3(x), y: round3(y), status: "pending" }];
+        const next: Thread[] = [
+          ...list,
+          { id: tempId, x: round3(x), y: round3(y), status: "pending" },
+        ];
+
         const byImage = { ...s.byImage, [image]: next };
 
         const m = new Map(s.threadToImage);
@@ -71,7 +88,9 @@ export const useThreadsStore = create<State & Actions>()(
         p.set(keyOf(image, x, y), tempId);
 
         return { byImage, threadToImage: m, pendingByKey: p };
-      }) as unknown as number, // TS no devuelve valor, lo exponemos con getState más abajo
+      });
+      return tempId;
+    },
 
     confirmCreate: (tempId, real) =>
       set((s) => {
@@ -80,15 +99,24 @@ export const useThreadsStore = create<State & Actions>()(
 
         const list = s.byImage[image] || [];
         const idx = list.findIndex((t) => t.id === tempId);
-        // si el temp ya no está (quizá lo sustituyó el realtime), solo garantizamos mapas
+
         const newThread: Thread = {
           id: real.id,
-          x: round3(+real.x),
-          y: round3(+real.y),
+          x: round3(real.x),
+          y: round3(real.y),
           status: real.status as ThreadStatus,
+          messageIds: list[idx]?.messageIds, // conserva posibles ids cacheados
         };
+
         const nextList =
-          idx >= 0 ? [...list.slice(0, idx), newThread, ...list.slice(idx + 1)] : list;
+          idx >= 0
+            ? [...list.slice(0, idx), newThread, ...list.slice(idx + 1)]
+            : // si por lo que sea ya no está el temp (lo sustituyó el realtime),
+              // garantizamos que exista el real
+              (() => {
+                const exists = list.some((t) => t.id === real.id);
+                return exists ? list : [...list, newThread];
+              })();
 
         const byImage = { ...s.byImage, [image]: nextList };
 
@@ -96,8 +124,12 @@ export const useThreadsStore = create<State & Actions>()(
         m.delete(tempId);
         m.set(real.id, image);
 
+        // limpia pending por tempId (coords pueden variar tras normalización en backend)
         const p = new Map(s.pendingByKey);
-        p.delete(keyOf(image, real.x, real.y));
+        for (const [k, v] of p.entries()) if (v === tempId) p.delete(k);
+
+        // 🟢 mueve los mensajes temp -> real (si hubo optimistas)
+        useMessagesStore.getState().moveThreadMessages?.(tempId, real.id);
 
         return { byImage, threadToImage: m, pendingByKey: p };
       }),
@@ -113,7 +145,7 @@ export const useThreadsStore = create<State & Actions>()(
         const m = new Map(s.threadToImage);
         m.delete(tempId);
 
-        // limpiamos cualquier pendingByKey que apunte a ese temp
+        // limpia cualquier pending que apunte a ese tempId
         const p = new Map(s.pendingByKey);
         for (const [k, v] of p.entries()) if (v === tempId) p.delete(k);
 
@@ -126,31 +158,34 @@ export const useThreadsStore = create<State & Actions>()(
         const image = r.image_name;
         const list = s.byImage[image] || [];
 
-        // 1) Buscar por id
+        // 1) Buscar por id real
         let idx = list.findIndex((t) => t.id === r.id);
-        // 2) Si no existe, intentar casar con un optimista por coordenadas
+
+        // 2) Si no existe, casar con optimista por coordenadas (redondeadas)
         if (idx < 0) {
           const key = keyOf(image, r.x, r.y);
           const tempId = s.pendingByKey.get(key);
           if (tempId != null) {
-            idx = list.findIndex((t) => t.id === tempId);
+            const i2 = list.findIndex((t) => t.id === tempId);
+            if (i2 >= 0) idx = i2;
           }
         }
 
         const updated: Thread = {
           id: r.id,
-          x: round3(+r.x),
-          y: round3(+r.y),
+          x: round3(r.x),
+          y: round3(r.y),
           status: r.status as ThreadStatus,
+          messageIds: list[idx]?.messageIds,
         };
 
         let nextList: Thread[];
         if (idx >= 0) {
-          // Sustituye (mantiene la posición → evita que cambie el “Hilo #”)
+          // Sustituye (conserva índice → “Hilo #” no cambia)
           nextList = [...list];
-          nextList[idx] = { ...updated, /* conserva otros campos si tuvieras */ };
+          nextList[idx] = updated;
         } else {
-          // No había temp coincidente → añadimos al final
+          // Alta nueva
           nextList = [...list, updated];
         }
 
@@ -160,7 +195,18 @@ export const useThreadsStore = create<State & Actions>()(
         m.set(r.id, image);
 
         const p = new Map(s.pendingByKey);
-        p.delete(keyOf(image, r.x, r.y));
+        // elimina entradas de pending que apunten a estas coords o a un id temp ya sustituido
+        const k = keyOf(image, r.x, r.y);
+        p.delete(k);
+        for (const [kk, vv] of p.entries()) {
+          if (vv < 0 && !list.some((t) => t.id === vv)) p.delete(kk);
+        }
+
+        // mueve mensajes si por cualquier motivo aún quedan bajo tempId con esas coords
+        const tempIdMaybe = get().pendingByKey.get(k);
+        if (tempIdMaybe != null && tempIdMaybe < 0) {
+          useMessagesStore.getState().moveThreadMessages?.(tempIdMaybe, r.id);
+        }
 
         return { byImage, threadToImage: m, pendingByKey: p };
       }),
@@ -185,31 +231,17 @@ export const useThreadsStore = create<State & Actions>()(
         const nextList = (s.byImage[image] || []).map((t) =>
           t.id === threadId ? { ...t, status } : t
         );
-        return { byImage: { ...s.byImage, [image]: nextList } };
+        return { byImage: { ...s.byImage, [image]: nextList} };
       }),
 
     setMessageIds: (threadId, ids) =>
-      set((s: any) => {
+      set((s) => {
         const image = s.threadToImage.get(threadId);
         if (!image) return {};
-        const nextList = (s.byImage[image] || []).map((t: any) =>
-          t.id === threadId ? { ...t, messages: ids } : t
+        const nextList = (s.byImage[image] || []).map((t) =>
+          t.id === threadId ? { ...t, messageIds: ids } : t
         );
-        return { byImage: { ...s.byImage, [image]: nextList } };
+        return { byImage: { ...s.byImage, [image]: nextList}};
       }),
   }))
 );
-
-// Helper para devolver el tempId desde createOptimistic
-// (porque zustand set no devuelve el valor)
-export const createThreadOptimistic = (image: string, x: number, y: number) => {
-  const { createOptimistic } = useThreadsStore.getState() as any;
-  // ejecutamos y luego buscamos el último temp en esa imagen/coordenadas
-  const before = performance.now();
-  createOptimistic(image, x, y);
-  const { byImage } = useThreadsStore.getState();
-  const list = byImage[image] || [];
-  // coge el último con id negativo y coords iguales
-  const temp = [...list].reverse().find((t) => t.id < 0 && round3(t.x) === round3(x) && round3(t.y) === round3(y));
-  return temp ? temp.id : -Math.floor(before); // fallback
-};

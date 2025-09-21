@@ -39,7 +39,7 @@ export interface ThreadMessage {
   author?: string;   // opcional
   isSystem?: boolean;
   createdByName?:string;
-  meta?:MessageMeta
+  meta:MessageMeta
 }
 
 export interface Thread {
