@@ -110,3 +110,21 @@ body,
   --text-2: #a0a0a0;
   --accent-red: #FF0040;
 }
+
+/* ===== Paleta alineada con tus otros componentes ===== */
+:root {
+  --surface-1: #151515;
+  --surface-2: #141414;
+  --surface-3: #131313;
+  --border-1: #2a2a2a;
+  --border-2: #242424;
+  --text-1: #ddd;
+  --text-2: #b7b7b7;
+  --accent-red: #FF0040;
+
+  /* Estados tipo ThreadChat (fallbacks si no tienes variables globales) */
+  --green-bg: #1a241e;
+  --green-border: #274a33;
+  --orange-bg: #281f17;
+  --orange-border: #5a3a14;
+}

@@ -28,7 +28,6 @@
     gap: 10px;
 }
 
-
 .chatList {
     overflow: auto;
     padding: 10px;
@@ -121,6 +120,40 @@
     max-height: 54px;
     height: 100%;
     align-self: end;
+}
+
+/* 🔄 estado de carga en el botón */
+.composer button[disabled] {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.buttonLoading {
+    position: relative;
+    padding: 0;
+}
+
+.spinner {
+    width: 10px;
+    height: 10px;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 8px;
+    animation: spin .8s linear infinite;
+    vertical-align: -2px;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.changeStatusBtn[disabled] {
+    opacity: 0.65;
+    cursor: not-allowed;
 }
 
 .changeStatusBtnWrapper {

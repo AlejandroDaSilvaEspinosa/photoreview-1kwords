@@ -1,66 +1,152 @@
-.thumbnailSelector {
+/* ===== Contenedor horizontal (scrollable) ===== */
+.thumbnailStrip {
     display: flex;
     gap: 10px;
-    padding: 15px 20px;
-    background-color: #222;
-    border-top: 1px solid #333;
+    padding: 12px 14px;
+    background: var(--surface-1);
+    border-top: 1px solid var(--border-1);
     overflow-x: auto;
-    max-height: 120px;
+    max-height: 128px;
+    scroll-snap-type: x proximity;
+    outline: none;
 }
 
-.thumbnailWrapper {
-    position: relative;
-    min-width: 80px;
-    height: 80px;
-    cursor: pointer;
+/* Scrollbar sutil */
+.thumbnailStrip::-webkit-scrollbar {
+    height: 10px;
+}
+
+.thumbnailStrip::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text-1) 12%, transparent);
     border-radius: 8px;
+}
+
+.thumbnailStrip::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* ===== Tarjeta de miniatura ===== */
+.card {
+    position: relative;
+    min-width: 92px;
+    height: 92px;
+    display: block;
+    cursor: pointer;
+    border-radius: 10px;
     overflow: hidden;
-    border: 2px solid transparent;
-    transition: border-color 0.2s ease;
+    border: 1px solid var(--border-1);
+    background: #0f0f0f;
+    padding: 0;
+    scroll-snap-align: center;
+
+    transition:
+        transform .08s ease,
+        border-color .15s ease,
+        box-shadow .15s ease,
+        background .15s ease;
 }
 
-.thumbnailWrapper:hover {
-    border-color: #555;
+.card:hover {
+    border-color: #3a3a3a;
+    background: #111;
 }
 
-.activeThumbnail {
-    border-color: #FF0040 !important;
+.card:active {
+    transform: translateY(1px) scale(.995);
 }
 
-.thumbnail {
+.card:focus-visible {
+    outline: none;
+    border-color: var(--accent-red);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-red) 35%, transparent);
+}
+
+/* Activo → anillo/acento rojo + leve brillo */
+.active {
+    border-color: var(--accent-red);
+    box-shadow:
+        0 0 0 2px color-mix(in srgb, var(--accent-red) 35%, transparent),
+        0 6px 18px rgba(0, 0, 0, .35);
+}
+
+/* Imagen */
+.thumb {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    border-radius: 6px;
+    display: block;
 }
 
-.thumbnailName {
+/* Nombre (velo inferior) */
+.nameBar {
     position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: rgba(0, 0, 0, 0.8);
-    color: #fff;
-    font-size: 10px;
-    padding: 2px 4px;
-    text-align: center;
-}
-
-.commentIndicator,
-.validatedIndicator {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    background-color: rgba(0, 0, 0, 0.8);
-    border-radius: 50%;
-    width: 20px;
-    height: 20px;
+    inset: auto 0 0 0;
+    min-height: 20px;
+    padding: 2px 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
+
+    background:
+        linear-gradient(to top,
+            rgba(0, 0, 0, .78),
+            rgba(0, 0, 0, .55),
+            transparent);
+    color: #fff;
 }
 
-.validatedIndicator {
-    background-color: rgba(0, 150, 0, 0.8);
+.nameText {
+    font-size: 11px;
+    letter-spacing: .2px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .65);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: calc(100% - 10px);
+}
+
+/* Badges (alineados arriba-derecha) */
+.badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, .18);
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    line-height: 1;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .45);
+}
+
+/* Ámbar (hay comentarios) */
+.warn {
+    background: var(--orange-bg);
+    border-color: var(--orange-border);
+}
+
+/* Verde (validada) */
+.ok {
+    background: var(--green-bg);
+    border-color: var(--green-border);
+}
+
+/* Responsivo fino */
+@media (max-width: 720px) {
+    .thumbnailStrip {
+        padding: 10px 10px;
+        gap: 8px;
+    }
+
+    .card {
+        min-width: 84px;
+        height: 84px;
+    }
+
+    .nameText {
+        font-size: 10px;
+    }
 }

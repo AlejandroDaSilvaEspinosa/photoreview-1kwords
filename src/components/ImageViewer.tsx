@@ -1,4 +1,3 @@
-// src/components/ImageViewer.tsx
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -50,6 +49,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   const confirmCreate = useThreadsStore((s) => s.confirmCreate);
   const rollbackCreate = useThreadsStore((s) => s.rollbackCreate);
   const setActiveThreadIdStore = useThreadsStore((s) => s.setActiveThreadId);
+  const pendingStatusMap = useThreadsStore((s) => s.pendingStatus); // 👈
 
   const setMsgsForThread   = useMessagesStore((s) => s.setForThread);
   const addOptimisticMsg   = useMessagesStore((s) => s.addOptimistic);
@@ -68,6 +68,9 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
 
   const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
+
+  // ⏳ hilo en creación (id temporal) → bloquea el envío en ese hilo
+  const [creatingThreadId, setCreatingThreadId] = useState<number | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -192,6 +195,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
       const ry = round3(y);
 
       const tempId = createThreadOptimistic(imgName, rx, ry);
+      setCreatingThreadId(tempId); // ⏳ bloquea envío en este hilo
       setActiveThreadId(tempId);
       setActiveThreadIdStore(tempId); // 👈 sincroniza store
       setActiveKey(`${imgName}|${rx}|${ry}`);
@@ -222,6 +226,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         rollbackCreate(tempId);
         setActiveThreadId(null);
         setActiveThreadIdStore(null);
+        setCreatingThreadId(null); // 🔓
         return;
       }
 
@@ -243,7 +248,9 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         setActiveThreadIdStore(n ?? null);
         return n;
       });
+      setCreatingThreadId(null); // 🔓 ya confirmado el hilo
 
+      // Mensaje de sistema persistido
       const sysCreated = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -272,6 +279,9 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
 
   const addMessage = useCallback(
     async (threadId: number, text: string) => {
+      // ⛔ Si el hilo aún es temporal/creándose, no mandamos
+      if (creatingThreadId != null && threadId === creatingThreadId) return;
+
       const tempId = -Date.now();
       const now = new Date().toISOString();
 
@@ -279,7 +289,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         text,
         created_at: now,
         updated_at: now,
-        created_by: "me", // no importa aquí; el backend lo pondrá correcto
+        created_by: "me",
         created_by_username: username || "Tú",
         created_by_display_name: username || "Tú",
         is_system: false,
@@ -309,11 +319,14 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         });
       }
     },
-    [addOptimisticMsg, confirmMessage, username]
+    [addOptimisticMsg, confirmMessage, username, creatingThreadId]
   );
 
   const toggleThreadStatus = useCallback(
     async (_imgName: string, threadId: number, next: ThreadStatus) => {
+      // ⛔ Evitar doble clic si ya hay un cambio pendiente
+      if (useThreadsStore.getState().pendingStatus.has(threadId)) return;
+
       const { byImage, threadToImage, beginStatusOptimistic, clearPendingStatus } = useThreadsStore.getState();
       const img = threadToImage.get(threadId) || "";
       const prev = byImage[img]?.find((t) => t.id === threadId)?.status ?? "pending";
@@ -349,8 +362,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         clearPendingStatus(threadId);
         setThreadStatus(threadId, prev);
       }
-      // si OK, no hacemos nada más: el evento realtime
-      // llegará con el estado definitivo y limpiará el pendiente.
+      // si OK, esperamos al realtime para limpiar pendingStatus
     },
     [setThreadStatus, addOptimisticMsg, username]
   );
@@ -410,6 +422,14 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   };
 
   const parentCursor = tool === "pin" ? "crosshair" : "zoom-in";
+
+  // ⛳ ¿El hilo activo está bloqueado por creación?
+  const composeLocked =
+    creatingThreadId != null && resolvedActiveThreadId != null && creatingThreadId === resolvedActiveThreadId;
+
+  // ⛳ ¿Hay un cambio de estado pendiente en el hilo activo?
+  const statusLocked =
+    resolvedActiveThreadId != null && pendingStatusMap.has(resolvedActiveThreadId);
 
   return (
     <div className={styles.viewerContainer}>
@@ -553,6 +573,8 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
           if (selectedImage?.name) toggleThreadStatus(selectedImage.name, id, status);
         }}
         loading={loading}
+        composeLocked={composeLocked}
+        statusLocked={statusLocked}
       />
 
       {zoomOverlay && selectedImage?.url && (
@@ -567,6 +589,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
             if (id) markThreadRead(id).catch(() => {});
           }}
           onAddThreadMessage={(threadId: number, text: string) => {
+            if (creatingThreadId != null && threadId === creatingThreadId) return; // ⛔ también aquí
             if (selectedImage?.name) addMessage(threadId, text);
           }}
           onToggleThreadStatus={(id, status) => {

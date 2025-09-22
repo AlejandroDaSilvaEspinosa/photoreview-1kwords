@@ -27,6 +27,11 @@ type Props = {
 
   loading?: boolean;
   initialCollapsed?: boolean;
+
+  /** ⛔ Bloquea el envío en el chat del hilo activo */
+  composeLocked?: boolean;
+  /** ⛔ Bloquea el botón de cambiar estado del hilo activo */
+  statusLocked?: boolean;
 };
 
 const LS_KEY = "photoreview:sidepanel:collapsed";
@@ -49,6 +54,8 @@ export default function SidePanel({
   totalImages,
   loading = false,
   initialCollapsed = false,
+  composeLocked = false,
+  statusLocked = false,
 }: Props) {
   const [collapsed, setCollapsed] = useState<boolean>(initialCollapsed);
 
@@ -167,6 +174,8 @@ export default function SidePanel({
                   onFocusThread={onFocusThread}
                   onToggleThreadStatus={onToggleThreadStatus}
                   onDeleteThread={onDeleteThread}
+                  composeLocked={composeLocked}
+                  statusLocked={statusLocked}
                 />
               )}
             </div>

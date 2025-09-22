@@ -16,6 +16,11 @@ type Props = {
   onFocusThread: (threadId: number | null) => void;
   onToggleThreadStatus: (threadId: number, next: ThreadStatus) => void;
   onDeleteThread: (id: number) => void;
+
+  /** ⛔ Bloquea el envío mientras el hilo está en creación */
+  composeLocked?: boolean;
+  /** ⛔ Bloquea el botón de cambiar estado mientras hay un cambio pendiente */
+  statusLocked?: boolean;
 };
 
 type DeliveryState = "sending" | "sent" | "delivered" | "read";
@@ -27,6 +32,8 @@ export default function ThreadChat({
   onFocusThread,
   onToggleThreadStatus,
   onDeleteThread,
+  composeLocked = false,
+  statusLocked = false,
 }: Props) {
   // draft local por hilo
   const [drafts, setDrafts] = useState<Record<number, string>>({});
@@ -79,6 +86,7 @@ export default function ThreadChat({
   };
 
   const handleSend = async () => {
+    if (composeLocked) return; // ⛔ bloqueado mientras se crea el hilo
     const id = activeThread?.id;
     if (!id) return;
     const draft = getDraft(id);
@@ -141,37 +149,57 @@ export default function ThreadChat({
                   {sys ? "Sistema" : mine ? "Tú" : m.createdByName || "Desconocido"}
                 </span>
                 <span className={styles.messageMeta}>
-
                   <span className={styles.timeago}>{format(m.createdAt, "es")}</span>
                   {!sys && mine && <span className={`${styles.ticks} ${delivery === "read" && styles.read}` }>{ticks}</span>}
                 </span>
-
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className={styles.composer}>
+      <div className={styles.composer} aria-disabled={composeLocked ? "true" : "false"}>
         <AutoGrowTextarea
           value={activeThread?.id ? getDraft(activeThread?.id) : ""}
           onChange={(v: string) => activeThread.id && setDraft(activeThread.id, v)}
-          placeholder="Escribe un mensaje…"
+          placeholder={composeLocked ? "Creando hilo… espera un momento" : "Escribe un mensaje…"}
           minRows={1}
           maxRows={5}
           growsUp
-          onEnter={handleSend}
+          onEnter={composeLocked ? undefined : handleSend} // ⛔ sin Enter mientras se crea
         />
-        <button onClick={handleSend}>Enviar</button>
+        <button
+          onClick={handleSend}
+          disabled={composeLocked}
+          aria-busy={composeLocked}
+          className={composeLocked ? `${styles.buttonLoading}` : undefined}
+          title={composeLocked ? "Guardando el nuevo hilo…" : "Enviar mensaje"}
+        > 
+          {composeLocked ? (
+            <>
+              <span className={styles.spinner} aria-hidden /> 
+            </>
+          ) : (
+            "Enviar"
+          )}
+        </button>
       </div>
 
       <div className={styles.changeStatusBtnWrapper}>
         <button
-          className={`${styles.changeStatusBtn} ${styles[`${colorByNextStatus(activeThread.status)}`]}`}
+          className={`${styles.changeStatusBtn} ${styles[`${colorByNextStatus(activeThread.status)}`]} ${statusLocked ? styles.buttonLoading : ""}`}
           onClick={() => onToggleThreadStatus(activeThread.id, nextStatus(activeThread.status))}
           title={toggleLabel(activeThread.status)}
+          disabled={statusLocked}
+          aria-busy={statusLocked}
         >
-          {toggleLabel(activeThread.status)}
+          {statusLocked ? (
+            <>
+              <span  className={styles.spinner} aria-hidden /> Actualizando…
+            </>
+          ) : (
+            toggleLabel(activeThread.status)
+          )}
         </button>
 
         <button
