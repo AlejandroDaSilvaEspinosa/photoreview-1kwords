@@ -1,24 +1,22 @@
-// src/stores/messages.ts
 "use client";
 
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import type { MessageRow } from "@/lib/supabase";
+import type { MessageRow } from "@/types/review";
 
-/** Estados locales de entrega/lectura */
+// Unificamos el tipo local de delivery
 type LocalDelivery = "sending" | "sent" | "delivered" | "read";
 
-/** Mensaje enriquecido (añadimos meta local) */
 export type Msg = MessageRow & {
   meta?: {
     localDelivery?: LocalDelivery;
+    // Flag para evitar flicker: lo ponemos a true en optimistas y lo preservamos
+    isMine?: boolean;
   };
 };
 
 type State = {
-  /** thread_id -> lista de mensajes (ordenados) */
   byThread: Record<number, Msg[]>;
-  /** message_id -> thread_id (para recibos) */
   messageToThread: Map<number, number>;
 };
 
@@ -33,13 +31,12 @@ type Actions = {
 
   confirmMessage: (threadId: number, tempId: number, real: Msg) => void;
 
-  markThreadRead: (threadId: number, currentUser: string) => Promise<void>;
+  markThreadRead: (threadId: number) => Promise<void>;
 
   upsertFromRealtime: (row: MessageRow) => void;
   removeFromRealtime: (row: MessageRow) => void;
   upsertReceipt: (messageId: number, userId: string, readAt?: string | null) => void;
 
-  /** mover los mensajes de un hilo a otro (p.ej. tempId -> realId) */
   moveThreadMessages: (fromThreadId: number, toThreadId: number) => void;
 };
 
@@ -77,120 +74,179 @@ export const useMessagesStore = create<State & Actions>()(
           ...(partial as any),
           id: tempId,
           thread_id: threadId,
-          meta: { ...(partial.meta || {}), localDelivery: "sending" as const },
+          meta: { ...(partial.meta || {}), localDelivery: "sending", isMine: true },
         });
         list.sort(sortByCreatedAt);
         const next = { ...s.byThread, [threadId]: list };
-
         const map = new Map(s.messageToThread);
         map.set(tempId, threadId);
-
         return { byThread: next, messageToThread: map };
       }),
 
     confirmMessage: (threadId, tempId, real) =>
       set((s) => {
         const curr = s.byThread[threadId] || [];
-        // si ya entró por realtime, elimina el optimista duplicado
+
+        // si ya entró por realtime, elimina el optimista y asegura meta preservada
         if (curr.some((m) => m.id === real.id)) {
-          const filtered = curr.filter((m) => m.id !== tempId).sort(sortByCreatedAt);
-          const next = { ...s.byThread, [threadId]: filtered };
+          const optim = curr.find((m) => m.id === tempId);
+          const filtered = curr
+            .filter((m) => m.id !== tempId)
+            .map((m) =>
+              m.id === real.id
+                ? {
+                    ...m,
+                    ...(real as any),
+                    meta: {
+                      ...(m.meta || {}),
+                      localDelivery: "sent",
+                      isMine: (m.meta as any)?.isMine ?? true,
+                    },
+                  }
+                : m
+            )
+            .sort(sortByCreatedAt);
+
           const map = new Map(s.messageToThread);
           map.delete(tempId);
           map.set(real.id, threadId);
-          return { byThread: next, messageToThread: map };
+          return { byThread: { ...s.byThread, [threadId]: filtered }, messageToThread: map };
         }
+
+        // reemplazo normal del optimista por real
         const idx = curr.findIndex((m) => m.id === tempId);
         if (idx < 0) {
           const list = [
             ...curr,
-            { ...real, thread_id: threadId, meta: { localDelivery: "sent" as const } },
+            { ...real, thread_id: threadId, meta: { localDelivery: "sent", isMine: true } } as Msg,
           ].sort(sortByCreatedAt);
-          const next = { ...s.byThread, [threadId]: list };
           const map = new Map(s.messageToThread);
           map.set(real.id, threadId);
           map.delete(tempId);
-          return { byThread: next, messageToThread: map };
+          return { byThread: { ...s.byThread, [threadId]: list }, messageToThread: map };
         }
+        const preservedMeta = { ...(curr[idx].meta || {}) };
         const copy = curr.slice();
-        copy[idx] = { ...copy[idx], ...real, id: real.id, meta: { localDelivery: "sent" as const } };
+        copy[idx] = {
+          ...copy[idx],
+          ...real,
+          id: real.id,
+          meta: { ...preservedMeta, localDelivery: "sent", isMine: preservedMeta.isMine ?? true },
+        };
         copy.sort(sortByCreatedAt);
 
-        const next = { ...s.byThread, [threadId]: copy };
         const map = new Map(s.messageToThread);
         map.delete(tempId);
         map.set(real.id, threadId);
-        return { byThread: next, messageToThread: map };
+        return { byThread: { ...s.byThread, [threadId]: copy }, messageToThread: map };
       }),
 
-    markThreadRead: async (threadId, currentUser) => {
+    // Marca lectura local y la persiste (sin depender de username)
+    markThreadRead: async (threadId) => {
+      // 1) snapshot antes del set
+      const { byThread } = get();
+      const list = byThread[threadId] || [];
+
+      const toMark = list
+        .filter((m) => {
+          // ignora system
+          if ((m as any).is_system) return false;
+          // ignora si no tiene id aún
+          if (m.id == null) return false;
+          const ld = (m.meta?.localDelivery ?? "sent") as LocalDelivery;
+          // no marcamos los que aún están enviándose
+          if (ld === "sending") return false;
+          // si ya está en read, no hace falta marcar
+          if (ld === "read") return false;
+          return true;
+        })
+        .map((m) => m.id as number);
+
+      if (toMark.length === 0) return;
+
+      // 2) optimista SOLO para esos ids
       set((s) => {
-        const list = (s.byThread[threadId] || []).map((m) => {
-          const mine =
-            (m.created_by_display_name || m.created_by_username || "").toLowerCase() ===
-            (currentUser || "").toLowerCase();
-          return mine ? m : { ...m, meta: { ...(m.meta || {}), localDelivery: "read" as const } };
+        const curr = s.byThread[threadId] || [];
+        const idSet = new Set(toMark);
+        const nextList = curr.map((m) => {
+          if (!idSet.has(m.id as number)) return m;
+          return { ...m, meta: { ...(m.meta || {}), localDelivery: "read" as LocalDelivery } };
         });
-        return { byThread: { ...s.byThread, [threadId]: list } };
+        return { byThread: { ...s.byThread, [threadId]: nextList } };
       });
+
+      // 3) persistir en backend
+      try {
+        const resp = await fetch("/api/messages/receipts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageIds: toMark, mark: "read" }),
+        });
+        if (!resp.ok) {
+          // si falla, opcionalmente podríamos revertir a 'delivered' o 'sent'
+          // pero lo normal es que llegue el realtime de receipts y re-sincronice
+          console.error("markThreadRead failed", await resp.text());
+        }
+      } catch (e) {
+        console.error("markThreadRead network error", e);
+      }
     },
+
 
     upsertFromRealtime: (row) =>
       set((s) => {
         const threadId = row.thread_id;
         const curr = s.byThread[threadId] || [];
-
         const normTxt = (x?: string | null) => (x ?? "").replace(/\s+/g, " ").trim();
-        const aId = (m: any) =>
-          (m.created_by ??
-            m.created_by_username ??
-            m.created_by_display_name ??
-            "")
-            .toString()
-            .toLowerCase();
         const isSystem = !!row.is_system;
 
-        // 1) Limpia optimistas duplicados
+        // preserva meta del optimista coincidente (mismo texto y tipo de mensaje)
+        let preservedMeta: any = null;
         const cleaned = curr.filter((m: any) => {
           if (m.id >= 0) return true;
           if (!!m.is_system !== isSystem) return true;
           if (normTxt(m.text) !== normTxt(row.text)) return true;
-          if (isSystem) return false;
-          const a = aId(m);
-          const b = aId(row as any);
-          if (a && b && a === b) return false;
-          return true;
+          preservedMeta = { ...(m.meta || {}) };
+          return false; // eliminar duplicado optimista
         });
 
-        // 2) Upsert por id
+        // upsert por id
         const idx = cleaned.findIndex((m: any) => m.id === row.id);
         if (idx >= 0) {
           const copy = cleaned.slice();
           copy[idx] = {
             ...copy[idx],
             ...(row as any),
-            meta: { ...(copy[idx].meta || {}), localDelivery: "sent" as const },
+            meta: {
+              ...(copy[idx].meta || {}),
+              ...(preservedMeta || {}),
+              localDelivery: "sent",
+              isMine: (copy[idx].meta as any)?.isMine ?? (preservedMeta?.isMine ?? false),
+            },
           };
           copy.sort(sortByCreatedAt);
-          const next = { ...s.byThread, [threadId]: copy };
-
           const map = new Map(s.messageToThread);
           map.set(row.id, threadId);
-
-          return { byThread: next, messageToThread: map };
+          return { byThread: { ...s.byThread, [threadId]: copy }, messageToThread: map };
         }
 
-        // 3) Insert nuevo
+        // insert nuevo
         const added = [
           ...cleaned,
-          { ...(row as any), meta: { ...(row as any).meta, localDelivery: "sent" as const } },
+          {
+            ...(row as any),
+            meta: {
+              ...(row as any).meta,
+              ...(preservedMeta || {}),
+              localDelivery: "sent",
+              isMine: preservedMeta?.isMine ?? false,
+            },
+          },
         ].sort(sortByCreatedAt);
 
-        const next = { ...s.byThread, [threadId]: added };
         const map = new Map(s.messageToThread);
         map.set(row.id, threadId);
-
-        return { byThread: next, messageToThread: map };
+        return { byThread: { ...s.byThread, [threadId]: added }, messageToThread: map };
       }),
 
     removeFromRealtime: (row) =>
@@ -198,19 +254,32 @@ export const useMessagesStore = create<State & Actions>()(
         const threadId = row.thread_id;
         const curr = s.byThread[threadId] || [];
         const filtered = curr.filter((m) => m.id !== row.id);
-        const next = { ...s.byThread, [threadId]: filtered };
         const map = new Map(s.messageToThread);
         map.delete(row.id);
-        return { byThread: next, messageToThread: map };
+        return { byThread: { ...s.byThread, [threadId]: filtered }, messageToThread: map };
       }),
 
     upsertReceipt: (messageId, _userId, readAt) =>
       set((s) => {
-        const threadId = s.messageToThread.get(messageId);
-        if (!threadId) return {};
+        let threadId = s.messageToThread.get(messageId);
+        console.log(threadId)
+
+        // fallback: busca el mensaje si aún no tenemos el índice
+        if (!threadId) {
+          for (const [tidStr, list] of Object.entries(s.byThread)) {
+            if (list.some((m) => m.id === messageId)) {
+              threadId = Number(tidStr);
+              s.messageToThread.set(messageId, threadId);
+              break;
+            }
+          }
+          if (!threadId) return {};
+        }
+
         const curr = s.byThread[threadId] || [];
         const idx = curr.findIndex((m) => m.id === messageId);
         if (idx < 0) return {};
+
         const copy = curr.slice();
         const prev = copy[idx];
         const nextMeta: LocalDelivery =
@@ -219,6 +288,7 @@ export const useMessagesStore = create<State & Actions>()(
             : prev.meta?.localDelivery === "sending"
             ? "sending"
             : "delivered";
+
         copy[idx] = { ...prev, meta: { ...(prev.meta || {}), localDelivery: nextMeta } };
         return { byThread: { ...s.byThread, [threadId]: copy } };
       }),

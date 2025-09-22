@@ -1,77 +1,41 @@
-// Fichero: src/app/login/page.tsx
+// app/login/page.tsx
 "use client";
 
 import React, { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import styles from "./page.module.css";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 
 export default function LoginPage() {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");         // ← usa email
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
-
     setError("");
     setSubmitting(true);
-    const controller = new AbortController();
 
-    try {
-      // Consumimos la API propia de Next.js (misma origin)
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-        signal: controller.signal,
-      });
+    const sb = supabaseBrowser();
+    const { error } = await sb.auth.signInWithPassword({ email, password });
 
-      let payload: any = null;
-      try {
-        payload = await res.json();
-      } catch {
-        // El backend podría no devolver JSON en error → ignoramos
-      }
-
-      if (!res.ok) {
-        const msg =
-          payload?.message ||
-          payload?.error ||
-          (res.status === 401
-            ? "Credenciales incorrectas"
-            : `Error ${res.status}`);
-        throw new Error(msg);
-      }
-
-      router.replace("/");
-    } catch (err: any) {
-      if (err?.name === "AbortError") return;
-      setError(
-        err?.message ||
-          "Usuario o contraseña incorrectos. Por favor, inténtalo de nuevo."
-      );
-    } finally {
+    if (error) {
+      setError(error.message || "Credenciales incorrectas");
       setSubmitting(false);
+      return;
     }
-
-    return () => controller.abort();
+    // La cookie de sesión queda gestionada por @supabase/ssr
+    router.replace("/");
   };
 
   return (
     <div className={styles.loginContainer}>
       <div className={styles.logoWrapper}>
-        <Image
-          src="/1kwords-logo.png"
-          alt="1K Words Logo"
-          width={250}
-          height={70}
-          priority
-        />
+        <Image src="/1kwords-logo.png" alt="1K Words Logo" width={250} height={70} priority />
       </div>
 
       <div className={styles.loginBox}>
@@ -80,14 +44,14 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} noValidate>
           <input
-            type="text"
-            placeholder="Usuario"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="username"
             className={styles.input}
-            aria-label="Usuario"
+            aria-label="Email"
           />
           <input
             type="password"
@@ -102,12 +66,7 @@ export default function LoginPage() {
 
           {error && <p className={styles.error}>{error}</p>}
 
-          <button
-            type="submit"
-            className={styles.button}
-            disabled={submitting}
-            aria-busy={submitting}
-          >
+          <button type="submit" className={styles.button} disabled={submitting} aria-busy={submitting}>
             {submitting ? "Accediendo…" : "Acceder"}
           </button>
         </form>

@@ -1,3 +1,5 @@
+import type { Tables, Enums  } from "@/types/supabase";
+
 // Imagen
 export type ImageStatus = "finished" | "needs_correction";
 
@@ -39,7 +41,7 @@ export interface ThreadMessage {
   author?: string;   // opcional
   isSystem?: boolean;
   createdByName?:string;
-  meta:MessageMeta
+  meta?:MessageMeta
 }
 
 export interface Thread {
@@ -55,12 +57,22 @@ export type ThreadState = Record<string, Thread[]>;
 export type ValidationState = Record<string, boolean>;
 
 
-export type DeliveryState = "sending" | "sent" | "read"; 
+export type DeliveryState = "sending" | "sent" | "delivered" | "read";
 // sending: id negativo (optimista)
 // sent:    guardado en DB (id >= 0)
 // read:    existe al menos un receipt.read_at de un usuario != autor
 
 export type MessageMeta = {
-  localDelivery?: DeliveryState;
+ localDelivery?: DeliveryState;
   readBy?: Set<string>;           // usuarios (id/username) que lo leyeron
 };
+
+export type ThreadRow       = Tables<'review_threads'>;
+export type MessageRow      = Tables<'review_messages'>;
+export type ImageStatusRow  = Tables<'review_images_status'>;
+export type SkuStatusRow    = Tables<'review_skus_status'>;
+export type MessageMetaRow     = Tables<'review_message_receipts'>;
+
+export type ThreadStatusEnum = Enums<'thread_status'>;   // 'pending' | 'corrected' | 'reopened' | 'deleted'
+export type ImageStatusEnum  = Enums<'image_status'>;    // 'finished' | 'needs_correction'
+export type SkuStatusEnum    = Enums<'sku_status'>;      // 'pending_validation' | ...

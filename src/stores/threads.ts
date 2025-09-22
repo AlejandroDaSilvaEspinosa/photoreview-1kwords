@@ -3,8 +3,7 @@
 
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import type { ThreadStatus } from "@/types/review";
-import type { ThreadRow } from "@/lib/supabase";
+import type { ThreadStatus,ThreadRow } from "@/types/review";
 import { useMessagesStore } from "@/stores/messages";
 
 export type Thread = {
@@ -12,7 +11,6 @@ export type Thread = {
   x: number;
   y: number;
   status: ThreadStatus;
-  /** opcional: si quieres cachear ids de mensajes para UI rápidas */
   messageIds?: number[];
 };
 

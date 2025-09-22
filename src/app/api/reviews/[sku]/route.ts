@@ -1,21 +1,23 @@
-import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { NextResponse, NextRequest } from "next/server";
+import { supabaseFromRequest } from "@/lib/supabase/route";
 import { unstable_noStore as noStore } from "next/cache";
-import { Thread , ThreadMessage } from "@/types/review";
+import { Thread, ThreadMessage } from "@/types/review";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-
 type Payload = Record<string, { points: Thread[] }>;
 
 export async function GET(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: { sku: string } }
 ) {
   noStore();
   const sku = decodeURIComponent(params.sku);
-  const sb = supabaseAdmin();
+  const { client: sb, res } = supabaseFromRequest(req);
+
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // Threads del SKU
   const { data: threads, error: e1 } = await sb
@@ -23,11 +25,12 @@ export async function GET(
     .select(
       "id, sku, image_name, x, y, status, created_by:app_users(username, display_name)"
     )
-    .eq("sku::text", sku)
+    .eq("sku", sku)
     .order("id", { ascending: true });
+  console.log(e1)
 
-  if (e1) return NextResponse.json({ error: e1.message }, { status: 500 });
-  if (!threads?.length) return NextResponse.json({}, { status: 200 });
+  if (e1) return NextResponse.json({ error: e1.message }, { status: 500, headers: res.headers });
+  if (!threads?.length) return NextResponse.json({}, { status: 200, headers: res.headers });
 
   const threadIds = threads.map((t) => t.id);
 
@@ -35,14 +38,15 @@ export async function GET(
   const { data: messages, error: e2 } = await sb
     .from("review_messages")
     .select(
-      "id, thread_id, text, created_at, created_by:app_users(username, display_name)"
+      "id, thread_id, text, created_at, created_by:app_users!review_messages_created_by_fkey (username, display_name)"
     )
     .in("thread_id", threadIds)
     .order("created_at", { ascending: true });
-
-  if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
+  console.log(e2)
+  if (e2) return NextResponse.json({ error: e2.message }, { status: 500, headers: res.headers });
 
   const msgsByThread = new Map<number, ThreadMessage[]>();
+
   for (const m of messages ?? []) {
     const arr = msgsByThread.get(m.thread_id) ?? [];
     arr.push({
@@ -68,5 +72,5 @@ export async function GET(
     byImage[t.image_name].points.push(thread);
   }
 
-  return NextResponse.json(byImage);
+  return NextResponse.json(byImage, { headers: res.headers });
 }

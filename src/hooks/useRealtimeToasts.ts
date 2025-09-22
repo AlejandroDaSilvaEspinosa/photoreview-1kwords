@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { supabaseBrowser } from "@/lib/supabase";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 import { useToast } from "@/hooks/useToast";
 import { notifyNative } from "@/lib/notify";
-import type { ThreadRow, MessageRow, ImageStatusRow, SkuStatusRow } from "@/lib/useSkuChannel";
+import type { ThreadRow, MessageRow, ImageStatusRow, SkuStatusRow } from "@/types/review";
 
 type Options = {
   onOpenSku?: (sku: string) => void;

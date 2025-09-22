@@ -1,23 +1,19 @@
-import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
-import { cookies } from "next/headers";
-import { verifyToken, SESSION_COOKIE_NAME } from "@/lib/auth";
+import { NextResponse,NextRequest } from "next/server";
+import { supabaseFromRequest } from "@/lib/supabase/route";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   const body = await req.json();
   const { threadId, text, isSystem } = body;
 
-  const token = cookies().get(SESSION_COOKIE_NAME)?.value;
-  const user = token ? verifyToken(token) : null;
-  if (!user) return new NextResponse("Unauthorized", { status: 401 });
-
-  const sb = supabaseAdmin();
+  const { client: sb, res } = supabaseFromRequest(req);
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // map username -> app_users.id
   const { data: appUser, error: userError } = await sb
     .from("app_users")
     .select("id")
-    .eq("username", isSystem ? "system" : user.name)
+    .eq("username", isSystem ? "system" : user?.user_metadata?.display_name as string ?? user?.email)
     .single();
 
   if (userError || !appUser) {
@@ -40,5 +36,7 @@ export async function POST(req: Request) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  //return NextResponse.json({ ok: true, data: [] }, { headers: res.headers });
   return NextResponse.json(data);
 }

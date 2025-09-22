@@ -1,26 +1,19 @@
 // app/(protected)/page.tsx
 import { getCachedSkus } from "@/lib/dataSheets";
 import { hydrateStatuses } from "@/lib/status";
-
 import Home from "./home";
-import { SkuWithImages,SkuWithImagesAndStatus } from '@/types/review';
-import { cookies } from "next/headers";
-import { verifyToken,SESSION_COOKIE_NAME } from "@/lib/auth";
-
+import type { SkuWithImages, SkuWithImagesAndStatus } from "@/types/review";
+import { supabaseServer } from "@/lib/supabase/server";
 
 export default async function HomePage() {
-  const clientInfo = {
-    name: "Castejon Joyeros",
-    project: "Catalogo comercial joyeria",
-  };
-    // Usuario desde tu cookie JWT
-  const token = cookies().get(SESSION_COOKIE_NAME)?.value;
-  const user = token ? verifyToken(token) : null;
-  const username:string|null = user?.name || "user";
+  const clientInfo = { name: "Castejon Joyeros", project: "Catalogo comercial joyeria" };
 
-  const skus : SkuWithImages[] = await getCachedSkus(); // ✅ directamente desde servidor
-  const skusWithStatus : SkuWithImagesAndStatus[] = await hydrateStatuses(skus); // <- aquí
-  
+  const supabase = supabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+  const username: string = (user?.user_metadata?.display_name as string) || user?.email || "user";
+
+  const skus: SkuWithImages[] = await getCachedSkus();
+  const skusWithStatus: SkuWithImagesAndStatus[] = await hydrateStatuses(skus);
+
   return <Home username={username} skus={skusWithStatus} clientInfo={clientInfo} />;
 }
- 

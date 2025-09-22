@@ -1,25 +1,21 @@
-import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
-import { cookies } from "next/headers";
-import { verifyToken, SESSION_COOKIE_NAME, UserPayload } from "@/lib/auth";
+import { NextResponse,NextRequest } from "next/server";
+import { supabaseFromRequest } from "@/lib/supabase/route";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   const body = await req.json();
   const { sku, imageName, x, y } = body;
 
-  const token = cookies().get(SESSION_COOKIE_NAME)?.value;
-  const user: UserPayload | null = token ? verifyToken(token) : null;
-  if (!user?.name) {
-    return new NextResponse("No autorizado", { status: 401 });
-  }
+  const { client: sb, res } = supabaseFromRequest(req);
 
-  const sb = supabaseAdmin();
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
 
   // ID del usuario actual (app_users)
   const { data: appUser, error: userError } = await sb
     .from("app_users")
     .select("id")
-    .eq("username", user.name)
+    .eq("username", user.user_metadata.display_name)
     .single();
 
   if (userError || !appUser) {
@@ -48,6 +44,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-
+ //return NextResponse.json({ ok: true, data: [] }, { headers: res.headers });
   return NextResponse.json({ threadId: data.id });
 }

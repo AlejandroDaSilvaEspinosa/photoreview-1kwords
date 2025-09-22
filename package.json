@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.57.4",
     "@szhsin/react-autocomplete": "^1.2.0",
     "cloudinary": "^2.7.0",

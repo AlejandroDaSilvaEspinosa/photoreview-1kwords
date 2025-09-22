@@ -7,46 +7,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { supabaseBrowser } from "@/lib/supabase";
-import type { SkuStatus,ImageStatus } from "@/types/review";
-
-export type ThreadStatus = "pending" | "corrected" | "reopened" | "deleted";
-
-export type ThreadRow = {
-  id: number;
-  sku: string;
-  image_name: string;
-  x: number;
-  y: number;
-  status: ThreadStatus;
-};
-
-export type MessageRow = {
-  id: number;
-  thread_id: number;
-  text: string;
-  created_at: string;
-  created_by?: string | null;
-  created_by_username: string | null;
-  created_by_display_name: string | null;
-  is_system: boolean | null;
-};
-
-// añade tipos de estado:
-export type ImageStatusRow = { 
-  sku: string;
-  image_name: string;
-  status: ImageStatus;
-  updated_at: string; 
-};
-
-export type SkuStatusRow = {
-  sku: string;
-  status: SkuStatus;
-  images_total: number|null;
-  images_needing_fix: number|null;
-  updated_at: string;
-};
+import { supabaseBrowser } from "@/lib/supabase/browser";
+import type {ThreadRow,MessageRow,ImageStatusRow,SkuStatusRow } from "@/types/review";
 
 export type Handlers = {
   // THREADS

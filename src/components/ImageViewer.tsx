@@ -1,4 +1,3 @@
-// src/components/ImageViewer.tsx
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -8,19 +7,17 @@ import ThumbnailGrid from "./images/ThumbnailGrid";
 import SidePanel from "./images/SidePanel";
 import ZoomOverlay from "@/components/images/ZoomOverlay";
 
-import type { ThreadStatus, SkuWithImagesAndStatus, Thread, MessageMeta } from "@/types/review";
-import type { ThreadRow } from "@/lib/supabase";
+import type { ThreadStatus, SkuWithImagesAndStatus, Thread, MessageMeta, ThreadRow } from "@/types/review";
 
 import { usePresence } from "@/lib/usePresence";
 import { useImageGeometry } from "@/lib/useImageGeometry";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 
-// 🔌 Stores + realtime
 import { useThreadsStore } from "@/stores/threads";
 import { useMessagesStore } from "@/stores/messages";
 import type { Msg } from "@/stores/messages";
 import { useWireSkuRealtime } from "@/lib/realtime/wireSkuRealtime";
 
-// ===== helpers =====
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const fp = (image: string, x: number, y: number) => `${image}|${round3(x)}|${round3(y)}`;
 const colorByStatus = (s: ThreadStatus) =>
@@ -36,19 +33,19 @@ type ReviewsPayload = Record<string, { points?: ThreadRow[]; messagesByThread?: 
 
 interface ImageViewerProps {
   sku: SkuWithImagesAndStatus;
-  username: string;
+  username: string; // solo para mostrar nombres bonitos
   selectSku: (sku: SkuWithImagesAndStatus | null) => void;
 }
 
 export default function ImageViewer({ sku, username, selectSku }: ImageViewerProps) {
   const { images } = sku;
 
-  // ========= STORES & REALTIME =========
+  // STORES
   const byImage = useThreadsStore((s) => s.byImage);
   const hydrateForImage = useThreadsStore((s) => s.hydrateForImage);
   const setThreadMsgIds = useThreadsStore((s) => s.setMessageIds);
   const setThreadStatus = useThreadsStore((s) => s.setStatus);
-  const createThreadOptimistic = useThreadsStore((s) => s.createOptimistic)
+  const createThreadOptimistic = useThreadsStore((s) => s.createOptimistic);
   const confirmCreate = useThreadsStore((s) => s.confirmCreate);
   const rollbackCreate = useThreadsStore((s) => s.rollbackCreate);
 
@@ -59,10 +56,10 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   const markThreadRead     = useMessagesStore((s) => s.markThreadRead);
   const msgsByThread       = useMessagesStore((s) => s.byThread);
 
-  // suscripción realtime para este SKU
+  // Realtime
   useWireSkuRealtime(sku.sku);
 
-  // ========= estado local UI =========
+  // UI state
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const selectedImage = images[selectedImageIndex] ?? null;
 
@@ -76,7 +73,10 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   const { wrapperRef, imgRef, box: imgBox, update } = useImageGeometry();
   const onlineUsers = usePresence(sku.sku, username);
 
-  // ========= hidratar stores (threads + mensajes) =========
+  // 👇 auth uid (auth.users.id) para calcular isMine SIEMPRE por id
+  const [selfAuthId, setSelfAuthId] = useState<string | null>(null);
+
+  // Hidratar threads + mensajes (con isMine por id desde el primer render)
   useEffect(() => {
     let cancelled = false;
 
@@ -84,19 +84,22 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
       setLoading(true);
       setLoadError(null);
       try {
-        // 1) Cargamos threads por imagen
+        const sb = supabaseBrowser();
+        const { data: authInfo } = await sb.auth.getUser();
+        const myId = authInfo.user?.id ?? null;
+        if (!cancelled) setSelfAuthId(myId);
+
+        // 1) Cargar threads por imagen
         const res = await fetch(`/api/reviews/${sku.sku}`, { cache: "no-store" });
         if (!res.ok) throw new Error("No se pudieron cargar las anotaciones");
         const payload: ReviewsPayload = await res.json();
 
         const allThreadIds: number[] = [];
-
         for (const img of images) {
           const name = img.name;
           if (!name) continue;
 
           const raw = payload[name]?.points ?? [];
-          // 👇 mapea SOLO a la forma Thread (sin props extra)
           const rows: Thread[] = raw.map((t: ThreadRow) => ({
             id: t.id,
             x: round3(+t.x),
@@ -105,12 +108,11 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
           }));
 
           hydrateForImage(name, rows);
-          raw.forEach((r) => allThreadIds.push(r.id)); // usa ids reales de la respuesta
+          raw.forEach((r) => allThreadIds.push(r.id));
         }
 
-        // 2) Cargamos MENSAJES en un solo query por todos los thread_id
+        // 2) Mensajes de todos los hilos
         if (allThreadIds.length) {
-          const sb = (await import("@/lib/supabase")).supabaseBrowser();
           const { data: msgs, error } = await sb
             .from("review_messages")
             .select(
@@ -121,14 +123,14 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
 
           if (error) throw error;
 
-          // 3) Agrupar por thread_id y volcar en la store
+          // 3) Agrupar y setear en store con meta.isMine por auth id
           const grouped: Record<number, Msg[]> = {};
           (msgs || []).forEach((m: any) => {
+            const mine = !!myId && m.created_by === myId;
             const mm: Msg = {
               ...m,
-              // por si updated_at viene null
               updated_at: m.updated_at ?? m.created_at,
-              meta: { localDelivery: "sent"} as MessageMeta,
+              meta: { localDelivery: "sent", isMine: mine } as any,
             };
             (grouped[m.thread_id] ||= []).push(mm);
           });
@@ -149,7 +151,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
     return () => { cancelled = true; };
   }, [sku.sku, images, hydrateForImage, setMsgsForThread, setThreadMsgIds]);
 
-  // ========= derivados para la UI =========
+  // Mensajes por imagen para la UI (exponemos createdByAuthId = created_by)
   const threadsInImage: Thread[] = useMemo(() => {
     if (!selectedImage?.name) return [];
     const rows = byImage[selectedImage.name] || [];
@@ -161,8 +163,9 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
           text: m.text,
           createdAt: m.created_at,
           createdByName: m.created_by_display_name || m.created_by_username || "Usuario",
+          createdByAuthId: (m as any).created_by ?? null,   // 👈 mismo id que auth.users.id
           isSystem: !!m.is_system,
-          meta: { localDelivery: m.meta?.localDelivery ?? "sent" } as MessageMeta,
+          meta: { localDelivery: m.meta?.localDelivery ?? "sent", isMine: (m.meta as any)?.isMine ?? false } as any,
         }));
         return { id: t.id, x: t.x, y: t.y, status: t.status, messages: list };
       });
@@ -179,19 +182,16 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
     return null;
   }, [byImage, selectedImage, activeThreadId, activeKey]);
 
-  // ========= acciones =========
-
+  // Crear hilo + mensaje sistema
   const createThreadAt = useCallback(
     async (imgName: string, x: number, y: number) => {
       const rx = round3(x);
       const ry = round3(y);
 
-      // 1) Hilo optimista (usa el helper que devuelve el tempId real)
       const tempId = createThreadOptimistic(imgName, rx, ry);
       setActiveThreadId(tempId);
       setActiveKey(`${imgName}|${rx}|${ry}`);
 
-      // 2) Mensaje de sistema optimista
       const sysText = `**@${username ?? "usuario"}** ha creado un nuevo hilo de revisión.`;
       const tempMsgId = -Date.now() - Math.floor(Math.random() * 1000);
 
@@ -203,10 +203,9 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         created_by_display_name: "system",
         is_system: true,
         updated_at: new Date().toISOString(),
-        meta: { localDelivery: "sent" } as MessageMeta
+        meta: { localDelivery: "sent" } as MessageMeta,
       });
 
-      // 3) POST → hilo real
       const created = await fetch("/api/threads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -222,7 +221,6 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
 
       const realId = created.threadId as number;
 
-      // 4) Confirmar hilo y mover mensajes temp -> real
       const realRow: ThreadRow = {
         id: realId,
         sku: sku.sku,
@@ -236,7 +234,6 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
       moveThreadMessages(tempId, realId);
       setActiveThreadId((prev) => (prev === tempId ? realId : prev));
 
-      // 5) Persistir mensaje de sistema y confirmar el optimista
       const sysCreated = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -250,31 +247,34 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
           id: sysCreated.id,
           thread_id: realId,
           text: sysText,
-          created_at: sysCreated.createdAt || new Date().toISOString(),
-          updated_at: sysCreated.updatedAt || sysCreated.createdAt || new Date().toISOString(),
-          created_by: "system",
-          created_by_username: "system",
-          created_by_display_name: "system",
-          is_system: true,
-          meta: { localDelivery: "sent" },
+          created_at: sysCreated.created_at || sysCreated.createdAt || new Date().toISOString(),
+          updated_at: sysCreated.updated_at || sysCreated.updatedAt || sysCreated.createdAt || new Date().toISOString(),
+          created_by: sysCreated.created_by ?? "system",
+          created_by_username: sysCreated.created_by_username ?? "system",
+          created_by_display_name: sysCreated.created_by_display_name ?? "system",
+          is_system: !!sysCreated.is_system,
+          meta: { localDelivery: "sent" } as any,
         });
       }
     },
     [sku.sku, username, confirmCreate, rollbackCreate, addOptimisticMsg, confirmMessage, moveThreadMessages]
   );
 
+  // Enviar mensaje normal (optimista usa auth uid, evita flicker)
   const addMessage = useCallback(
     async (threadId: number, text: string) => {
       const tempId = -Date.now();
+      const now = new Date().toISOString();
+
       addOptimisticMsg(threadId, tempId, {
         text,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        created_by: username,
+        created_at: now,
+        updated_at: now,
+        created_by: selfAuthId || "me", // 👈 auth uid (igual que created_by en BD)
         created_by_username: username || "Tú",
         created_by_display_name: username || "Tú",
         is_system: false,
-        meta: { localDelivery: "sending" },
+        meta: { localDelivery: "sending", isMine: true } as any,
       });
 
       const created = await fetch("/api/messages", {
@@ -286,34 +286,32 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         .catch(() => null);
 
       if (created?.id) {
+        // ⚠️ el handler devuelve columnas snake_case (select().single())
         confirmMessage(threadId, tempId, {
           id: created.id,
           thread_id: threadId,
           text,
-          created_at: created.createdAt || new Date().toISOString(),
-          updated_at: created.updatedAt || created.createdAt || new Date().toISOString(),
-          created_by: created.createdBy || username,
-          created_by_username: created.createdByName || username || "Usuario",
-          created_by_display_name: created.createdByName || username || "Usuario",
-          is_system: !!created.isSystem,
-          meta: { localDelivery: "sent" },
+          created_at: created.created_at || created.createdAt || now,
+          updated_at: created.updated_at || created.updatedAt || created.createdAt || now,
+          created_by: created.created_by, // 👈 auth uid que guarda BD
+          created_by_username: created.created_by_username ?? username ?? "Usuario",
+          created_by_display_name: created.created_by_display_name ?? username ?? "Usuario",
+          is_system: !!created.is_system,
+          meta: { localDelivery: "sent", isMine: true } as any,
         });
       }
     },
-    [addOptimisticMsg, confirmMessage, username]
+    [addOptimisticMsg, confirmMessage, username, selfAuthId]
   );
 
   const toggleThreadStatus = useCallback(
     async (_imgName: string, threadId: number, next: ThreadStatus) => {
-      // 0) lee el estado anterior para poder revertir si falla
       const { byImage, threadToImage } = useThreadsStore.getState();
       const img = threadToImage.get(threadId) || "";
       const prev = byImage[img]?.find((t) => t.id === threadId)?.status ?? "pending";
 
-      // 1) Optimista: cambiar estado del hilo en la UI
       setThreadStatus(threadId, next);
 
-      // 2) Optimista: añadir mensaje de sistema
       const tempId = -Math.floor(Math.random() * 1e9) - 1;
       const sysText = `**@${username ?? "usuario"}** cambió el estado del hilo a "**${STATUS_LABEL[next]}**".`;
 
@@ -328,7 +326,6 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         meta: { localDelivery: "sending" } as MessageMeta,
       });
 
-      // 3) Llamada al backend
       const ok = await fetch("/api/threads/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -337,12 +334,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         .then((r) => r.ok)
         .catch(() => false);
 
-      if (!ok) {
-        // 4) Revertir si falla
-        setThreadStatus(threadId, prev);
-        // (opcional) eliminar/invalidar optimista
-        return;
-      }
+      if (!ok) setThreadStatus(threadId, prev);
     },
     [setThreadStatus, addOptimisticMsg, username]
   );
@@ -356,19 +348,21 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
     }).catch(() => {});
   }, [setThreadStatus]);
 
-  // marcar lectura cuando se enfoca un hilo
+  // marcar lectura cuando se enfoca un hilo (sin username)
   useEffect(() => {
-    if (resolvedActiveThreadId && username) {
-      markThreadRead(resolvedActiveThreadId, username).catch(() => {});
+    if (resolvedActiveThreadId) {
+      markThreadRead(resolvedActiveThreadId).catch(() => {});
     }
-  }, [resolvedActiveThreadId, username, markThreadRead]);
+  }, [resolvedActiveThreadId, markThreadRead]);
 
-  // ========= UI handlers =========
+  // UI
   const [zoomOverlay, setZoomOverlay] =
     useState<null | { x: number; y: number; ax: number; ay: number }>(null);
 
   const openZoomAtEvent = (e: React.MouseEvent) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect?.() || imgRef.current?.getBoundingClientRect();
+    const r =
+      (e.currentTarget as HTMLElement).getBoundingClientRect?.() ||
+      imgRef.current?.getBoundingClientRect();
     if (!r) return;
     const xPct = ((e.clientX - r.left) / r.width) * 100;
     const yPct = ((e.clientY - r.top) / r.height) * 100;
@@ -472,9 +466,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
                     top: `${topPx}px`,
                     left: `${leftPx}px`,
                     background: bg,
-                    boxShadow: isActive
-                      ? `0 0 0 3px rgba(255,255,255,.35), 0 0 10px ${bg}`
-                      : "none",
+                    boxShadow: isActive ? `0 0 0 3px rgba(255,255,255,.35), 0 0 10px ${bg}` : "none",
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -527,7 +519,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         onDeleteThread={(id: number) => removeThread(id)}
         onFocusThread={(id: number | null) => {
           setActiveThreadId(id);
-          if (id && username) markThreadRead(id, username).catch(() => {});
+          if (id) markThreadRead(id).catch(() => {});
           if (selectedImage?.name && id) {
             const t = (byImage[selectedImage.name] || []).find((x) => x.id === id);
             if (t) setActiveKey(fp(selectedImage.name, t.x, t.y));
@@ -538,7 +530,6 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         totalCompleted={0}
         totalImages={images.length}
         onlineUsers={onlineUsers}
-        currentUsername={username}
         onToggleThreadStatus={(id: number, status: ThreadStatus) => {
           if (selectedImage?.name) toggleThreadStatus(selectedImage.name, id, status);
         }}
@@ -553,7 +544,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
           currentUsername={username}
           onFocusThread={(id: number | null) => {
             setActiveThreadId(id);
-            if (id && username) markThreadRead(id, username).catch(() => {});
+            if (id) markThreadRead(id).catch(() => {});
           }}
           onAddThreadMessage={(threadId: number, text: string) => {
             if (selectedImage?.name) addMessage(threadId, text);

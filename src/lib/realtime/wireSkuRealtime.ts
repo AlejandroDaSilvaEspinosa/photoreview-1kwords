@@ -1,12 +1,11 @@
-// src/lib/realtime/wireSkuRealtime.ts
 "use client";
 
-import { supabaseBrowser } from "@/lib/supabase";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 import { useEffect } from "react";
 import { useThreadsStore } from "@/stores/threads";
 import { useMessagesStore } from "@/stores/messages";
 import { useStatusesStore } from "@/stores/statuses";
-import type { ThreadRow, MessageRow } from "@/lib/supabase";
+import type { ThreadRow, MessageRow } from "@/types/review";
 import type { ImageStatusRow, SkuStatusRow } from "@/stores/statuses";
 
 const round3 = (n: number) => Math.round(Number(n) * 1000) / 1000;
@@ -39,7 +38,6 @@ export function useWireSkuRealtime(sku: string) {
           return;
         }
 
-        // casar con optimista por coordenadas para no cambiar el índice y mover mensajes al id real
         const tmpMap = useThreadsStore.getState().pendingByKey;
         const tempId = tmpMap.get(keyOf(row.image_name, row.x as any, row.y as any));
 
@@ -55,12 +53,31 @@ export function useWireSkuRealtime(sku: string) {
     ch.on(
       "postgres_changes",
       { event: "*", schema: "public", table: "review_messages" },
-      (p) => {
+      async (p) => {
         const evt = p.eventType;
         const row = (evt === "DELETE" ? p.old : p.new) as MessageRow;
         if (!row) return;
-        if (evt === "DELETE") delMsg(row);
-        else upMsg(row);
+
+        if (evt === "DELETE") {
+          delMsg(row);
+          return;
+        }
+
+        upMsg(row);
+
+        // Marca DELIVERED siempre que no sea del sistema.
+        if (evt === "INSERT") {
+          const isSystem = !!(row as any).is_system;
+          if (!isSystem && row.id != null) {
+            try {
+              await fetch("/api/messages/receipts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ messageIds: [row.id], mark: "delivered" }),
+              });
+            } catch {}
+          }
+        }
       }
     );
 
@@ -86,14 +103,22 @@ export function useWireSkuRealtime(sku: string) {
       }
     );
 
-    // RECEIPTS
+    // RECEIPTS (delivered/read) → merge old+new para UPDATE
     ch.on(
       "postgres_changes",
       { event: "*", schema: "public", table: "review_message_receipts" },
       (p) => {
-        const row = (p.new || p.old) as { message_id: number; user_id: string; read_at?: string | null };
-        if (!row) return;
-        useMessagesStore.getState().upsertReceipt(row.message_id, row.user_id, row.read_at);
+        console.log("received")
+        console.log(p)
+        const merged = { ...(p.old as any), ...(p.new as any) } as {
+          message_id?: number;
+          user_id?: string;
+          read_at?: string | null;
+        };
+        if (!merged.message_id || !merged.user_id) return;
+        useMessagesStore
+          .getState()
+          .upsertReceipt(merged.message_id, merged.user_id, merged.read_at ?? null);
       }
     );
 

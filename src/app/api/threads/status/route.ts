@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
-import { cookies } from "next/headers";
-import { verifyToken, SESSION_COOKIE_NAME } from "@/lib/auth";
+import { NextResponse,NextRequest } from "next/server";
+
+import { supabaseFromRequest } from "@/lib/supabase/route";
 
 type NextStatus = "pending" | "corrected" | "reopened" | "deleted";
 
@@ -12,19 +11,18 @@ const STATUS_LABEL: Record<NextStatus, string> = {
   deleted: "Eliminado",
 };
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+
+  const { client: sb, res } = supabaseFromRequest(req);
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const body = await req.json();
   const { threadId, status } = body as { threadId: number; status: NextStatus };
 
   if (!threadId || !status || !(status in STATUS_LABEL)) {
     return NextResponse.json({ error: "Bad request" }, { status: 400 });
   }
-
-  const token = cookies().get(SESSION_COOKIE_NAME)?.value;
-  const user = token ? verifyToken(token) : null;
-  if (!user?.name) return new NextResponse("No autorizado", { status: 401 });
-
-  const sb = supabaseAdmin();
 
   // 1) Update estado del hilo
   const { error: e1 } = await sb
@@ -53,7 +51,7 @@ export async function POST(req: Request) {
 
   // 3) Insertar mensaje de sistema (será lo que active realtime)
   const label = STATUS_LABEL[status];
-  const text = `**@${user.name}** cambió el estado del hilo a "**${label}**".`;
+  const text = `**@${user.user_metadata.display_name}** cambió el estado del hilo a "**${label}**".`;
 
   const { data: insertedMsg, error: e2 } = await sb
     .from("review_messages")
@@ -70,6 +68,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: e2?.message || "No se pudo crear el mensaje" }, { status: 500 });
   }
 
+
   // 4) Responder con los datos necesarios para reconciliar en cliente
   return NextResponse.json({
     ok: true,
@@ -80,5 +79,5 @@ export async function POST(req: Request) {
       createdByName: sysUpsert.display_name || "Sistema",
       isSystem: true,
     },
-  });
+  }, { headers: res.headers });
 }

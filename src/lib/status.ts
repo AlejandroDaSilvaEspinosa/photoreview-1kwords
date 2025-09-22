@@ -1,5 +1,5 @@
 // src/lib/status.ts
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import type {
   SkuWithImages, SkuWithImagesAndStatus, ImageItemWithStatus, ImageStatus, SkuStatus
 } from "@/types/review";

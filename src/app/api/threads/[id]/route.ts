@@ -1,20 +1,19 @@
-import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
-import { cookies } from "next/headers";
-import { verifyToken, SESSION_COOKIE_NAME } from "@/lib/auth";
+import { NextResponse,NextRequest } from "next/server";
+import { supabaseFromRequest } from "@/lib/supabase/route";
 
 export async function DELETE(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const token = cookies().get(SESSION_COOKIE_NAME)?.value;
-  const user = token ? verifyToken(token) : null;
-  if (!user?.name) return new NextResponse("No autorizado", { status: 401 });
+
+  const { client: sb, res } = supabaseFromRequest(req);
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
 
   const id = Number(params.id);
   if (!id) return NextResponse.json({ error: "Bad request" }, { status: 400 });
 
-  const sb = supabaseAdmin();
 
   // (Si no tienes CASCADE en FK) borra mensajes primero
   const { error: e1 } = await sb.from("review_messages").delete().eq("thread_id", id);
@@ -23,6 +22,6 @@ export async function DELETE(
   // Borra el hilo
   const { error: e2 } = await sb.from("review_threads").delete().eq("id", id);
   if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
-
+ //return NextResponse.json({ ok: true, data: [] }, { headers: res.headers });
   return NextResponse.json({ ok: true });
 }
