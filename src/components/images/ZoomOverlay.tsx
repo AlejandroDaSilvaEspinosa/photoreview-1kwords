@@ -702,8 +702,7 @@ function normalize(s?: string | null) {
       {activeThread && (
         <ThreadChat
           activeThread={activeThread}
-          threads={threads}
-          isMine={isMine}
+          threads={threads}          
           onAddThreadMessage={onAddThreadMessage}
           onFocusThread={onFocusThread}
           onToggleThreadStatus={onToggleThreadStatus}
