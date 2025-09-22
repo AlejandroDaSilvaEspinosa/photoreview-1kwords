@@ -172,6 +172,9 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   }, [byImage, msgsByThread, selectedImage]);
 
   const resolvedActiveThreadId: number | null = useMemo(() => {
+    if(!activeThreadId){  
+      return null
+    } 
     if (!selectedImage?.name) return null;
     const list = byImage[selectedImage.name] || [];
     if (list.some((t) => t.id === activeThreadId)) return activeThreadId;
@@ -193,7 +196,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
       setActiveThreadIdStore(tempId); // 👈 sincroniza store
       setActiveKey(`${imgName}|${rx}|${ry}`);
 
-      const sysText = `**@${username ?? "usuario"}** ha creado un nuevo hilo de revisión.`;
+      const sysText = `**@${username ?? "desconocido"}** ha creado un nuevo hilo de revisión.`;
       const tempMsgId = -Date.now() - Math.floor(Math.random() * 1000);
 
       addOptimisticMsg(tempId, tempMsgId, {
@@ -534,7 +537,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         onDeleteThread={(id: number) => removeThread(id)}
         onFocusThread={(id: number | null) => {
           setActiveThreadId(id);
-          setActiveThreadIdStore(id); // 👈 sincroniza store
+          setActiveThreadIdStore(id); 
           if (id) markThreadRead(id).catch(() => {});
           if (selectedImage?.name && id) {
             const t = (byImage[selectedImage.name] || []).find((x) => x.id === id);
@@ -560,7 +563,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
           currentUsername={username}
           onFocusThread={(id: number | null) => {
             setActiveThreadId(id);
-            setActiveThreadIdStore(id); // 👈
+            setActiveThreadIdStore(id);
             if (id) markThreadRead(id).catch(() => {});
           }}
           onAddThreadMessage={(threadId: number, text: string) => {

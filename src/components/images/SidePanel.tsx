@@ -78,11 +78,11 @@ export default function SidePanel({
       data-collapsed={collapsed ? "true" : "false"}
       aria-label="Panel de revisión"
     >
-      {/* Rail/pestaña cuando está colapsado */}
       {collapsed && (
         <div className={styles.rail} aria-hidden>
           <div className={styles.railHeader}>
             <span className={styles.dotMini} />
+            <span className={styles.presenceText}>{onlineUsers.length} en línea</span>
           </div>
           <button
             type="button"
@@ -96,7 +96,6 @@ export default function SidePanel({
         </div>
       )}
 
-      {/* Contenido cuando está abierto */}
       {!collapsed && (
         <div className={styles.content}>
           <header className={styles.header}>
@@ -115,10 +114,8 @@ export default function SidePanel({
               </button>
           </header>
 
-          <div className={styles.currentImageInfo} title={name}>
             <span className={styles.fileName}>Revisión de: {name}</span>
             {isValidated && <span className={styles.validatedBadge}>Validada</span>}
-          </div>
 
           <div className={styles.validationButtons}>
             {!isValidated ? (
