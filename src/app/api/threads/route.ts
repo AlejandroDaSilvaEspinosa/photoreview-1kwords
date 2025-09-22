@@ -1,4 +1,4 @@
-import { NextResponse,NextRequest } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { supabaseFromRequest } from "@/lib/supabase/route";
 
 export async function POST(req: NextRequest) {
@@ -10,21 +10,8 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-
-  // ID del usuario actual (app_users)
-  const { data: appUser, error: userError } = await sb
-    .from("app_users")
-    .select("id")
-    .eq("username", user.user_metadata.display_name)
-    .single();
-
-  if (userError || !appUser) {
-    console.error("Error obteniendo el ID del usuario:", userError);
-    return NextResponse.json(
-      { error: "Fallo al autenticar al usuario" },
-      { status: 500 }
-    );
-  }
+  // Usa SIEMPRE el auth.user.id como created_by (== app_users.id)
+  const createdBy = user.id;
 
   const { data, error } = await sb
     .from("review_threads")
@@ -34,7 +21,7 @@ export async function POST(req: NextRequest) {
       x,
       y,
       status: "pending",
-      created_by: appUser.id,
+      created_by: createdBy, // 👈 auth id == app_users.id
     })
     .select("id")
     .single();
@@ -44,6 +31,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
- //return NextResponse.json({ ok: true, data: [] }, { headers: res.headers });
   return NextResponse.json({ threadId: data.id });
 }

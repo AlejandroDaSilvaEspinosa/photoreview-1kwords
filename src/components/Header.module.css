@@ -1,4 +1,9 @@
 /* Fichero: components/Header.module.css */
+.clientInfoRight {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
 
 .appHeader {
   position: fixed;

@@ -1,4 +1,3 @@
-// src/stores/threads.ts
 "use client";
 
 import { create } from "zustand";
@@ -17,15 +16,19 @@ export type Thread = {
 type ByImage = Record<string, Thread[]>;
 
 const round3 = (n: number) => Math.round(+n * 1000) / 1000;
-const keyOf = (image: string, x: number, y: number) =>
-  `${image}|${round3(x)}|${round3(y)}`;
+const keyOf = (image: string, x: number, y: number) => `${image}|${round3(x)}|${round3(y)}`;
+
+// 🟩 estado optimista de status por hilo
+type PendingStatus = { from: ThreadStatus; to: ThreadStatus; at: number };
 
 type State = {
   byImage: ByImage;
   threadToImage: Map<number, string>;
   pendingByKey: Map<string, number>;
-  /** 🔸 hilo activo global */
   activeThreadId: number | null;
+
+  // 🟩 mapa de cambios de estado pendientes
+  pendingStatus: Map<number, PendingStatus>;
 };
 
 type Actions = {
@@ -41,8 +44,11 @@ type Actions = {
   setStatus: (threadId: number, status: ThreadStatus) => void;
   setMessageIds: (threadId: number, ids: number[]) => void;
 
-  /** 🔸 setter público del hilo activo */
   setActiveThreadId: (id: number | null) => void;
+
+  // 🟩 helpers para marcar/limpiar optimismo
+  beginStatusOptimistic: (threadId: number, from: ThreadStatus, to: ThreadStatus) => void;
+  clearPendingStatus: (threadId: number) => void;
 };
 
 export const useThreadsStore = create<State & Actions>()(
@@ -51,6 +57,7 @@ export const useThreadsStore = create<State & Actions>()(
     threadToImage: new Map(),
     pendingByKey: new Map(),
     activeThreadId: null,
+    pendingStatus: new Map(), // 🟩
 
     setActiveThreadId: (id) => set({ activeThreadId: id }),
 
@@ -72,10 +79,7 @@ export const useThreadsStore = create<State & Actions>()(
       const tempId = -Date.now() - Math.floor(Math.random() * 1e6);
       set((s) => {
         const list = s.byImage[image] || [];
-        const next: Thread[] = [
-          ...list,
-          { id: tempId, x: round3(x), y: round3(y), status: "pending" },
-        ];
+        const next: Thread[] = [...list, { id: tempId, x: round3(x), y: round3(y), status: "pending" }];
 
         const byImage = { ...s.byImage, [image]: next };
 
@@ -94,7 +98,6 @@ export const useThreadsStore = create<State & Actions>()(
       set((s) => {
         const image = s.threadToImage.get(tempId) || real.image_name;
         if (!image) return {};
-
         const list = s.byImage[image] || [];
         const idx = list.findIndex((t) => t.id === tempId);
 
@@ -122,10 +125,8 @@ export const useThreadsStore = create<State & Actions>()(
         const p = new Map(s.pendingByKey);
         for (const [k, v] of p.entries()) if (v === tempId) p.delete(k);
 
-        // mover mensajes temp -> real
         useMessagesStore.getState().moveThreadMessages?.(tempId, real.id);
 
-        // si el activo era el temp, cámbialo al real
         if (s.activeThreadId === tempId) {
           (get().setActiveThreadId)(real.id);
         }
@@ -157,6 +158,17 @@ export const useThreadsStore = create<State & Actions>()(
         const image = r.image_name;
         const list = s.byImage[image] || [];
 
+        // 🟩 si hay un cambio de estado pendiente, filtra eventos "viejos"
+        const pending = s.pendingStatus.get(r.id);
+        if (pending) {
+          const incoming = r.status as ThreadStatus;
+          if (incoming === pending.from) {
+            // evento “eco” con el estado anterior → ignorar
+            return {};
+          }
+          // si llega el estado esperado o uno diferente (otro usuario), seguimos y limpiamos
+        }
+
         let idx = list.findIndex((t) => t.id === r.id);
         if (idx < 0) {
           const key = keyOf(image, r.x, r.y);
@@ -175,9 +187,7 @@ export const useThreadsStore = create<State & Actions>()(
           messageIds: list[idx]?.messageIds,
         };
 
-        const nextList = idx >= 0 ? [...list.slice(0, idx), updated, ...list.slice(idx + 1)]
-                                  : [...list, updated];
-
+        const nextList = idx >= 0 ? [...list.slice(0, idx), updated, ...list.slice(idx + 1)] : [...list, updated];
         const byImage = { ...s.byImage, [image]: nextList };
 
         const m = new Map(s.threadToImage);
@@ -190,7 +200,11 @@ export const useThreadsStore = create<State & Actions>()(
           if (vv < 0 && !list.some((t) => t.id === vv)) p.delete(kk);
         }
 
-        return { byImage, threadToImage: m, pendingByKey: p };
+        // 🟩 limpiar pendiente si ya hemos llegado al estado “to”, o si cambió a otra cosa
+        const ps = new Map(s.pendingStatus);
+        if (pending) ps.delete(r.id);
+
+        return { byImage, threadToImage: m, pendingByKey: p, pendingStatus: ps };
       }),
 
     removeFromRealtime: (r) =>
@@ -203,18 +217,19 @@ export const useThreadsStore = create<State & Actions>()(
         const m = new Map(s.threadToImage);
         m.delete(r.id);
 
+        const ps = new Map(s.pendingStatus); // 🟩
+        ps.delete(r.id); // 🟩
+
         if (s.activeThreadId === r.id) (get().setActiveThreadId)(null);
 
-        return { byImage, threadToImage: m };
+        return { byImage, threadToImage: m, pendingStatus: ps };
       }),
 
     setStatus: (threadId, status) =>
       set((s) => {
         const image = s.threadToImage.get(threadId);
         if (!image) return {};
-        const nextList = (s.byImage[image] || []).map((t) =>
-          t.id === threadId ? { ...t, status } : t
-        );
+        const nextList = (s.byImage[image] || []).map((t) => (t.id === threadId ? { ...t, status } : t));
         return { byImage: { ...s.byImage, [image]: nextList } };
       }),
 
@@ -222,10 +237,24 @@ export const useThreadsStore = create<State & Actions>()(
       set((s) => {
         const image = s.threadToImage.get(threadId);
         if (!image) return {};
-        const nextList = (s.byImage[image] || []).map((t) =>
-          t.id === threadId ? { ...t, messageIds: ids } : t
-        );
+        const nextList = (s.byImage[image] || []).map((t) => (t.id === threadId ? { ...t, messageIds: ids } : t));
         return { byImage: { ...s.byImage, [image]: nextList } };
+      }),
+
+    // 🟩 marcar inicio del optimismo de status
+    beginStatusOptimistic: (threadId, from, to) =>
+      set((s) => {
+        const ps = new Map(s.pendingStatus);
+        ps.set(threadId, { from, to, at: Date.now() });
+        return { pendingStatus: ps };
+      }),
+
+    // 🟩 limpiar optimismo de status
+    clearPendingStatus: (threadId) =>
+      set((s) => {
+        const ps = new Map(s.pendingStatus);
+        ps.delete(threadId);
+        return { pendingStatus: ps };
       }),
   }))
 );

@@ -53,6 +53,7 @@ export interface Thread {
 }
 
 export type ThreadStatus = "pending" | "corrected" | "reopened" | "deleted";
+	                          
 export type ThreadState = Record<string, Thread[]>;
 export type ValidationState = Record<string, boolean>;
 

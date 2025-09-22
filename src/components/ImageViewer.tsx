@@ -311,10 +311,12 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
 
   const toggleThreadStatus = useCallback(
     async (_imgName: string, threadId: number, next: ThreadStatus) => {
-      const { byImage, threadToImage } = useThreadsStore.getState();
+      const { byImage, threadToImage, beginStatusOptimistic, clearPendingStatus } = useThreadsStore.getState();
       const img = threadToImage.get(threadId) || "";
       const prev = byImage[img]?.find((t) => t.id === threadId)?.status ?? "pending";
 
+      // 🟩 marca optimista “pegajoso” y aplica local
+      beginStatusOptimistic(threadId, prev, next);
       setThreadStatus(threadId, next);
 
       const tempId = -Math.floor(Math.random() * 1e9) - 1;
@@ -339,7 +341,13 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         .then((r) => r.ok)
         .catch(() => false);
 
-      if (!ok) setThreadStatus(threadId, prev);
+      if (!ok) {
+        // 🟩 si falló, revertir y limpiar pendiente
+        clearPendingStatus(threadId);
+        setThreadStatus(threadId, prev);
+      }
+      // si OK, no hacemos nada más: el evento realtime
+      // llegará con el estado definitivo y limpiará el pendiente.
     },
     [setThreadStatus, addOptimisticMsg, username]
   );
