@@ -64,6 +64,7 @@ html,
 body,
 * {
   scrollbar-width: thin;
+  margin: 0;
   /* fino */
   scrollbar-color: var(--sb-thumb) var(--sb-track);
 }
@@ -95,4 +96,17 @@ body,
 
 ::-webkit-scrollbar-corner {
   background: var(--sb-corner);
+}
+
+/* ===== Paleta alineada a ThreadChat/ZoomOverlay ===== */
+:root {
+  --surface-0: rgba(10, 10, 10, 0.82);
+  --surface-1: #141414;
+  --surface-2: #151515;
+  --surface-3: #131313;
+  --border-1: #2a2a2a;
+  --border-2: #242424;
+  --text-1: #ddd;
+  --text-2: #a0a0a0;
+  --accent-red: #FF0040;
 }

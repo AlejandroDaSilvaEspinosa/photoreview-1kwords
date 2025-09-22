@@ -1,37 +1,29 @@
-/* SkuSearch.module.css — tema oscuro según tu paleta */
+/* Tema oscuro alineado con tu patrón */
 .combobox {
     position: relative;
     width: 100%;
     max-width: 520px;
 
-    /* Paleta base */
     --surface: #151515;
-    /* fondo */
-    --surface-2: #151515;
-    /* contenedores */
     --border: #2a2a2a;
-    /* bordes */
     --text: #ddd;
-    /* texto principal */
     --muted: #a8a8a8;
-    /* texto secundario */
 
-    /* Acento para foco (cámbialo si quieres otro color de marca) */
     --accent: #7fb3ff;
+    /* acento suave para foco del input */
     --accent-weak: color-mix(in srgb, var(--accent) 28%, transparent);
 
-    /* Derivados */
-    --hover: color-mix(in srgb, white 3%, var(--surface-2));
-    --active: color-mix(in srgb, var(--accent) 14%, var(--surface-2));
+    --hover: color-mix(in srgb, white 3%, var(--surface));
+    --active: color-mix(in srgb, var(--accent) 14%, var(--surface));
     --shadow: 0 12px 34px rgba(0, 0, 0, .45);
 }
 
-/* wrapper tipo “pill” con icono */
+/* wrapper del input con icono */
 .inputWrap {
     display: flex;
     align-items: center;
     height: 42px;
-    background: var(--surface-2);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 12px;
     padding-inline: 10px 6px;
@@ -45,9 +37,7 @@
 
 .inputWrap:focus-within {
     border-color: var(--accent);
-    box-shadow:
-        0 0 0 2px var(--accent-weak),
-        var(--shadow);
+    box-shadow: 0 0 0 2px var(--accent-weak), var(--shadow);
 }
 
 /* icono lupa */
@@ -70,52 +60,49 @@
     color: var(--text);
     font-size: 13.5px;
     padding: 0 8px 0 0;
-    max-width: fit-content;
-    background: #151515;
-    border: 1px solid #2a2a2a;
-    padding: 10px;
-    border-radius: 10px;
 }
 
 .input::placeholder {
     color: var(--muted);
 }
 
-/* botón limpiar */
+/* limpiar */
 .clearBtn {
     appearance: none;
     border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface-2) 70%, black);
+    background: color-mix(in srgb, var(--surface) 70%, black);
     color: var(--muted);
     font-size: 12px;
     line-height: 1;
     border-radius: 8px;
     padding: 6px 8px;
-    transition: background .12s ease, border-color .12s ease, color .12s ease;
+    transition: background .12s ease, border-color .12s ease, color .12s ease, transform .06s ease;
 }
 
 .clearBtn:hover {
     background: var(--hover);
     color: var(--text);
-    border-color: color-mix(in srgb, var(--border) 60%, var(--accent));
 }
 
-/* lista flotante */
+.clearBtn:active {
+    transform: translateY(1px);
+}
+
+/* dropdown */
 .menu {
     position: absolute;
     inset-inline: 0;
     top: calc(100% + 8px);
-    background: var(--surface-2);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 12px;
     box-shadow: var(--shadow);
     max-height: 320px;
     overflow-y: auto;
-    padding: 0px;
+    padding: 6px;
     margin: 0;
     list-style: none;
     z-index: 60;
-    max-width: 260px;
 }
 
 /* scrollbar sutil */
@@ -132,7 +119,7 @@
     background: transparent;
 }
 
-/* ítem */
+/* item */
 .item {
     display: flex;
     align-items: center;
@@ -141,8 +128,7 @@
     cursor: pointer;
     color: var(--text);
     transition: background .12s ease;
-    padding: 10px 6px;
-    width: calc(100% - 12px);
+    padding: 8px 6px;
 }
 
 .item:hover {
@@ -168,4 +154,19 @@
     color: var(--text);
     letter-spacing: .2px;
     flex: 1;
+}
+
+/* vacío */
+.empty {
+    position: absolute;
+    inset-inline: 0;
+    top: calc(100% + 8px);
+    padding: 10px;
+    font-size: 13px;
+    color: #bbb;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    z-index: 60;
 }

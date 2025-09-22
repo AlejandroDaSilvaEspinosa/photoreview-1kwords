@@ -1,10 +1,31 @@
-// src/components/Header.tsx
-import React, { useState, useEffect } from "react";
+"use client";
+
+import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import styles from "./Header.module.css";
 import type { SkuWithImagesAndStatus } from "@/types/review";
 import SkuSearch from "./SkuSearch";
 import Notifications from "./Notifications";
+
+type NotificationType =
+  | "new_message"
+  | "new_thread"
+  | "thread_status_changed"
+  | "image_status_changed"
+  | "sku_status_changed";
+
+type NotificationRow = {
+  id: number;
+  user_id: string;
+  author_id: string | null;
+  type: NotificationType;
+  sku: string | null;
+  image_name: string | null;
+  thread_id: number | null;
+  message: string;
+  viewed: boolean;
+  created_at: string;
+};
 
 interface HeaderProps {
   skus: SkuWithImagesAndStatus[];
@@ -12,58 +33,98 @@ interface HeaderProps {
   clientName: string;
   clientProject: string;
   selectSku: (sku: SkuWithImagesAndStatus | null) => void;
-  onOpenSku: (sku: string) => void; // ← para navegar desde notificaciones
-  notificationsInitial?: { items: any[]; unseen: number } | null; // ← prefetch
+  onOpenSku: (sku: string) => void;
+  notificationsInitial?: { items: NotificationRow[]; unseen: number } | null;
 }
 
 export default function Header({
-  skus, loading, clientName, clientProject, selectSku, onOpenSku, notificationsInitial
+  skus,
+  loading,
+  clientName,
+  clientProject,
+  selectSku,
+  onOpenSku,
+  notificationsInitial,
 }: HeaderProps) {
-  const [isVisible, setIsVisible] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
 
+  // pequeño “peek” inicial
   useEffect(() => {
-    setIsVisible(true);
-    const timer = setTimeout(() => setIsVisible(false), 3000);
-    return () => clearTimeout(timer);
-  }, []);
+    setOpen(true);
+    const t = setTimeout(() => !pinned && setOpen(false), 2500);
+    return () => clearTimeout(t);
+  }, [pinned]);
+
+  const reveal = () => setOpen(true);
+  const hide = () => !pinned && setOpen(false);
 
   return (
     <>
-      <div className={styles.hoverZone} onMouseEnter={() => setIsVisible(true)} />
+      {/* zona de activación por hover en el borde superior */}
+      <div className={styles.hoverZone} onMouseEnter={reveal} />
+
       <header
-        className={styles.appHeader}
-        onMouseEnter={() => setIsVisible(true)}
-        onMouseLeave={() => setIsVisible(false)}
-        style={{ transform: isVisible ? "translateY(0)" : "translateY(-85%)" }}
+        className={`${styles.appHeader} ${open ? styles.open : ""} ${pinned ? styles.pinned : ""}`}
+        onMouseEnter={reveal}
+        onMouseLeave={hide}
+        aria-expanded={open}
       >
-        <div className={styles.logoContainer}>
-          <Image src="/1kwords-logo.png" alt="1K Words Logo" width={180} height={50} priority />
+        {/* rail/handler visual */}
+        <div className={styles.peekTab} aria-hidden />
+
+        {/* Izquierda: logo */}
+        <div className={styles.left}>
+          <button
+            className={styles.pinBtn}
+            aria-pressed={pinned}
+            title={pinned ? "Desanclar" : "Anclar"}
+            onClick={() => setPinned((v) => !v)}
+          >
+            {pinned ? "📍" : "📌"}
+          </button>
+
+          <div className={styles.logo}>
+            <Image
+              src="/1kwords-logo.png"
+              alt="1K Words"
+              width={160}
+              height={40}
+              priority
+              draggable={false}
+            />
+          </div>
         </div>
 
-        <div className={styles.selectorWrapper}>
-          <div className={styles.selectorText}>
+        {/* Centro: título + buscador */}
+        <div className={styles.center}>
+          <div className={styles.heading}>
             <h2>Revisión de Productos</h2>
             <p>Selecciona una SKU para comenzar el proceso de revisión.</p>
           </div>
 
           <SkuSearch
             skus={skus}
+            placeholder={loading ? "Cargando SKUs…" : "Buscar SKU…"}
             onSelect={(sku) => selectSku(sku as SkuWithImagesAndStatus)}
+            maxResults={200}
+            minChars={1}
+            debounceMs={200}
+            thumbSize={40}
           />
         </div>
 
-        <div className={styles.clientInfoRight}>
+        {/* Derecha: cliente + notificaciones */}
+        <div className={styles.right}>
           <div className={styles.clientInfo}>
             <h3>{clientName}</h3>
             <p>{clientProject}</p>
           </div>
 
-          {/* 🔔 Campana */}
           <Notifications onOpenSku={onOpenSku} initial={notificationsInitial ?? undefined} />
         </div>
       </header>
 
-      <div className={styles.headerSpacer} />
     </>
   );
 }

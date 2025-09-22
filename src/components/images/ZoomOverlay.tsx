@@ -699,16 +699,6 @@ function normalize(s?: string | null) {
           ))}
         </div>
 
-      {activeThread && (
-        <ThreadChat
-          activeThread={activeThread}
-          threads={threads}          
-          onAddThreadMessage={onAddThreadMessage}
-          onFocusThread={onFocusThread}
-          onToggleThreadStatus={onToggleThreadStatus}
-          onDeleteThread={onDeleteThread}
-        />
-      )}
       </div>
 
       {/* Sidebar */}
@@ -751,25 +741,36 @@ function normalize(s?: string | null) {
             🖐️ mover · 📍 anotar · rueda/gestos para zoom · doble-tap (móvil) · Esc para cerrar
           </div>
 
-          <div className={styles.threadList}>
-            <div className={styles.threadListTitle}>Hilos</div>
-            <ul>
-              {threads.map((t, i) => (
-                <li key={t.id} className={`${styles.threadRow} ${activeThreadId === t.id ? styles.threadRowActive : ""}`}>
-                  <button className={styles.threadRowMain} onClick={() => centerToThread(t)}>
-                    <span className={styles.dotMini} style={{ background: colorByStatus(t.status) }} />
-                    <span className={styles.threadName}>Hilo #{i + 1}</span>
-                    {/* <span className={styles.threadCoords}>
-                      ({t.x.toFixed(1)}%, {t.y.toFixed(1)}%)
-                    </span> */}
-                  </button>
-                  <button className={styles.stateBtn} onClick={() => onToggleThreadStatus(t.id, nextStatus(t.status))} title={toggleLabel(t.status)}>
-                    {toggleLabel(t.status)}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {activeThread ? (
+              <ThreadChat
+                activeThread={activeThread}
+                threads={threads}          
+                onAddThreadMessage={onAddThreadMessage}
+                onFocusThread={onFocusThread}
+                onToggleThreadStatus={onToggleThreadStatus}
+                onDeleteThread={onDeleteThread}
+              />
+            ): 
+            <div className={styles.threadList}>
+              <div className={styles.threadListTitle}>Hilos</div>
+              <ul>
+                {threads.map((t, i) => (
+                  <li key={t.id} className={`${styles.threadRow} ${activeThreadId === t.id ? styles.threadRowActive : ""}`}>
+                    <button className={styles.threadRowMain} onClick={() => centerToThread(t)}>
+                      <span className={styles.dotMini} style={{ background: colorByStatus(t.status) }} />
+                      <span className={styles.threadName}>Hilo #{i + 1}</span>
+                      {/* <span className={styles.threadCoords}>
+                        ({t.x.toFixed(1)}%, {t.y.toFixed(1)}%)
+                      </span> */}
+                    </button>
+                    <button className={styles.stateBtn} onClick={() => onToggleThreadStatus(t.id, nextStatus(t.status))} title={toggleLabel(t.status)}>
+                      {toggleLabel(t.status)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            }
         </div>
       </div>
     </div>

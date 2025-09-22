@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import styles from "./SidePanel.module.css";
 import ThreadChat from "./ThreadChat";
 import type { Thread, ThreadStatus } from "@/types/review";
@@ -26,7 +26,10 @@ type Props = {
   totalImages: number;
 
   loading?: boolean;
+  initialCollapsed?: boolean;
 };
+
+const LS_KEY = "photoreview:sidepanel:collapsed";
 
 export default function SidePanel({
   name,
@@ -45,102 +48,152 @@ export default function SidePanel({
   totalCompleted,
   totalImages,
   loading = false,
+  initialCollapsed = false,
 }: Props) {
-  const selected =
-    activeThreadId != null ? threads.find((t) => t.id === activeThreadId) ?? null : null;
+  const [collapsed, setCollapsed] = useState<boolean>(initialCollapsed);
 
-  const hasOpenThreads = threads.some(
-    (t) => t.status === "pending" || t.status === "reopened"
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(LS_KEY);
+      if (v != null) setCollapsed(v === "1");
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem(LS_KEY, collapsed ? "1" : "0"); } catch {}
+  }, [collapsed]);
+
+  const selected = useMemo(
+    () => (activeThreadId != null ? threads.find((t) => t.id === activeThreadId) ?? null : null),
+    [activeThreadId, threads]
+  );
+
+  const hasOpenThreads = useMemo(
+    () => threads.some((t) => t.status === "pending" || t.status === "reopened"),
+    [threads]
   );
 
   return (
-    <div className={styles.sidePanel}>
-      <div className={styles.commentSection}>
-        <h3>Revisión de:</h3>
+    <aside
+      className={`${styles.panel} ${collapsed ? styles.isCollapsed : ""}`}
+      data-collapsed={collapsed ? "true" : "false"}
+      aria-label="Panel de revisión"
+    >
+      {/* Rail/pestaña cuando está colapsado */}
+      {collapsed && (
+        <div className={styles.rail} aria-hidden>
+          <div className={styles.railHeader}>
+            <span className={styles.dotMini} />
+          </div>
+          <button
+            type="button"
+            className={styles.railExpandBtn}
+            onClick={() => setCollapsed(false)}
+            aria-label="Abrir panel"
+            title="Abrir panel"
+          >
+            ❮
+          </button>
+        </div>
+      )}
 
-        <div className={styles.currentImageInfo}>
-          <span>{name}</span>
+      {/* Contenido cuando está abierto */}
+      {!collapsed && (
+        <div className={styles.content}>
+          <header className={styles.header}>
+              <div className={styles.presenceWrap}>
+                <span className={styles.dotMini} />
+                <span className={styles.presenceText}>{onlineUsers.length} en línea</span>
+              </div>
+              <button
+                type="button"
+                className={styles.collapseBtn}
+                onClick={() => setCollapsed(true)}
+                aria-label="Colapsar panel"
+                title="Colapsar panel"
+              >
+                ❯
+              </button>
+          </header>
 
-          <div className={styles.presenceWrap}>
-            <span className={styles.presenceDot} />
-            <span className={styles.presenceText}>{onlineUsers.length} en línea</span>
+          <div className={styles.currentImageInfo} title={name}>
+            <span className={styles.fileName}>Revisión de: {name}</span>
+            {isValidated && <span className={styles.validatedBadge}>Validada</span>}
           </div>
 
-        {isValidated && <span className={styles.validatedBadge}>✅ Validada</span>}
-        </div>
+          <div className={styles.validationButtons}>
+            {!isValidated ? (
+              <button
+                type="button"
+                className={`${styles.actionBtn} ${styles.green}`}
+                onClick={onValidateSku}
+                disabled={hasOpenThreads}
+                title={
+                  hasOpenThreads
+                    ? "Hay hilos pendientes o reabiertos. Resuélvelos para validar el SKU."
+                    : "Validar SKU"
+                }
+              >
+                ✓ Validar SKU
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={`${styles.actionBtn} ${styles.orange}`}
+                onClick={onUnvalidateSku}
+                title="Quitar validación del SKU"
+              >
+                ↩️ Quitar validación
+              </button>
+            )}
+          </div>
 
-        <div className={styles.validationButtons}>
-          {!isValidated ? (
-            <button
-              type="button"
-              className={styles.validateButton}
-              onClick={onValidateSku}
-              disabled={hasOpenThreads}
-              title={
-                hasOpenThreads
-                  ? "Hay hilos pendientes o reabiertos. Resuélvelos para validar el SKU."
-                  : "Validar SKU"
-              }
-            >
-              ✅ Validar SKU
-            </button>
+          <div className={styles.divider}>
+            <span>Chat del punto seleccionado</span>
+          </div>
+
+          {loading ? (
+            <div className={styles.loaderWrap}>
+              <div className={styles.loaderSpinner} />
+              <div className={styles.loaderText}>Cargando anotaciones…</div>
+            </div>
           ) : (
-            <button type="button" className={styles.unvalidateButton} onClick={onUnvalidateSku}>
-              ↩️ Quitar validación del SKU
-            </button>
+            <div className={styles.annotationsList}>
+              {!selected ? (
+                <p className={styles.noAnnotations}>
+                  Selecciona un punto en la imagen para ver su chat.
+                </p>
+              ) : (
+                <ThreadChat
+                  activeThread={selected}
+                  threads={threads}
+                  onAddThreadMessage={onAddThreadMessage}
+                  onFocusThread={onFocusThread}
+                  onToggleThreadStatus={onToggleThreadStatus}
+                  onDeleteThread={onDeleteThread}
+                />
+              )}
+            </div>
           )}
+
+          <section className={styles.reviewSummary} aria-label="Progreso de revisión">
+            <h4>Progreso</h4>
+            <div className={styles.progressInfo}>
+              <span>Con correcciones</span>
+              <strong className={styles.countWarn}>{withCorrectionsCount}</strong>
+            </div>
+            <div className={styles.progressInfo}>
+              <span>Validadas</span>
+              <strong className={styles.countOk}>{validatedImagesCount}</strong>
+            </div>
+            <div className={styles.progressInfo}>
+              <span>Completadas</span>
+              <strong>
+                {totalCompleted} / {totalImages}
+              </strong>
+            </div>
+          </section>
         </div>
-
-        <div className={styles.divider}>
-          <span>Chat del punto seleccionado</span>
-        </div>
-
-        {loading && (
-          <div className={styles.loaderWrap}>
-            <div className={styles.loaderSpinner} />
-            <div className={styles.loaderText}>Cargando anotaciones…</div>
-          </div>
-        )}
-
-        {!loading && (
-          <div className={styles.annotationsList}>
-            {!selected && (
-              <p className={styles.noAnnotations}>
-                Selecciona un punto en la imagen para ver su chat.
-              </p>
-            )}
-
-            {selected && (
-              <ThreadChat
-                activeThread={selected}
-                threads={threads}
-                onAddThreadMessage={onAddThreadMessage}
-                onFocusThread={onFocusThread}
-                onToggleThreadStatus={onToggleThreadStatus}
-                onDeleteThread={onDeleteThread}
-              />
-            )}
-          </div>
-        )}
-
-        <div className={styles.reviewSummary}>
-          <h4>Progreso:</h4>
-          <div className={styles.progressInfo}>
-            <span>Con correcciones:</span>
-            <strong className={styles.commentCount}>{withCorrectionsCount}</strong>
-          </div>
-          <div className={styles.progressInfo}>
-            <span>Validadas:</span>
-            <strong className={styles.validatedCount}>{validatedImagesCount}</strong>
-          </div>
-          <div className={styles.progressInfo}>
-            <span>Completadas:</span>
-            <strong>
-              {totalCompleted} / {totalImages}
-            </strong>
-          </div>
-        </div>
-      </div>
-    </div>
+      )}
+    </aside>
   );
 }

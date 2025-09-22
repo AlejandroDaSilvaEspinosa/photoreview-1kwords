@@ -1,165 +1,168 @@
-/* Fichero: components/Header.module.css */
-.clientInfoRight {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.appHeader {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 40px;
-  background-color: #1f1f1f;
-  border-bottom: 1px solid #333;
-  z-index: 1000;
-
-  /* Animación de transición */
-  transform: translateY(-85%);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-}
-
-/* Mostrar header completo al hacer hover */
-.appHeader:hover {
-  transform: translateY(0);
-}
-
-/* Indicador visual para mostrar que hay contenido arriba */
-.appHeader::after {
-  content: '';
-  position: absolute;
-  bottom: -8px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 60px;
-  height: 4px;
-  background: linear-gradient(90deg, transparent, #FF0040, transparent);
-  border-radius: 0 0 4px 4px;
-  opacity: 0.7;
-  transition: opacity 0.3s ease;
-}
-
-.appHeader:hover::after {
-  opacity: 0;
-}
-
-/* Área de activación más grande en la parte superior */
+/* Hover zone en el borde superior */
 .hoverZone {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 20px;
+  inset: 0 0 auto 0;
+  height: 18px;
   z-index: 1001;
   background: transparent;
 }
 
-.logoContainer,
-.clientInfo {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
+/* Header fijo con “peek” */
+.appHeader {
 
-.logoContainer {
-  display: flex;
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 1002;
+  display: grid;
+  grid-template-columns: 1fr minmax(320px, 720px) 1fr;
   align-items: center;
-}
+  gap: 16px;
 
-/* Estilos del selector wrapper */
-.selectorWrapper {
-  flex: 0;
-  min-width: fit-content;
-  flex-direction: column;
-  display: flex;
-  gap: 5px;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.selectorText {
-  text-align: left;
-}
-
-.selectorWrapper h2 {
-  margin: 0;
-  font-size: 16px;
-  color: #D9D9D9;
-  font-weight: 500;
-}
-
-.selectorWrapper p {
-  margin: 0;
-  color: #a0a0a0;
-  font-size: 14px;
-}
-
-.skuSelector {
   padding: 10px 16px;
-  font-size: 14px;
-  border-radius: 8px;
-  border: 1px solid #444;
-  background-color: #1f1f1f;
-  color: #D9D9D9;
-  min-width: 250px;
-  cursor: pointer;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  background: var(--surface-0);
+  border-bottom: 1px solid var(--border-2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35), inset 0 -1px 0 rgba(255, 255, 255, .03);
+  backdrop-filter: blur(10px);
+  transform: translateY(-100%);
+  /* peek */
+  transition: transform .28s cubic-bezier(.4, 0, .2, 1);
 }
 
-.skuSelector:focus {
-  outline: none;
-  border-color: #FF0040;
-  box-shadow: 0 0 0 3px rgba(255, 0, 64, 0.2);
+.open {
+  transform: translateY(0);
 }
 
-.clientInfo {
-  text-align: right;
+.pinned {
+  transform: translateY(0);
+}
+
+/* Handler visual (barrita) */
+.peekTab {
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  transform: translateX(-50%);
+  width: 70px;
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
+  opacity: .65;
+  pointer-events: none;
+}
+
+/* Layout interno */
+.left,
+.right {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+
+.right {
+  justify-content: right;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+}
+
+.center {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  align-items: center;
+  justify-items: center;
+}
+
+.heading {
+  display: grid;
+  gap: 2px;
+  text-align: center;
+}
+
+.heading h2 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-1);
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+
+.heading p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+/* Botón pin */
+.pinBtn {
+  position: absolute;
+  padding: 0;
+  bottom: 0;
+  right: 0;
+  font-size: 26px;
+  width: 34px;
+  /* border-radius: 8px; */
+  border: none;
+  background: transparent;
+  color: #eee;
+  cursor: pointer;
+  transition: background .15s ease, transform .06s ease;
+}
+
+/* .pinBtn:hover {
+  background: #2a2a2a;
+} */
+
+.pinBtn:active {
+  transform: translateY(1px);
+}
+
+/* Cliente + derecha */
+.clientInfo {
+  display: grid;
+  justify-items: end;
+  row-gap: 2px;
 }
 
 .clientInfo h3 {
-  margin: 0 0 4px 0;
-  font-size: 18px;
-  font-weight: bold;
-  color: #D9D9D9;
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-1);
+  font-weight: 700;
 }
 
 .clientInfo p {
   margin: 0;
-  font-size: 14px;
-  color: #a0a0a0;
+  font-size: 12.5px;
+  color: var(--text-2);
 }
 
-/* Estilos responsive */
-@media (max-width: 768px) {
+
+
+/* Responsivo */
+@media (max-width: 860px) {
   .appHeader {
-    padding: 15px 20px;
-    transform: translateY(-90%);
+    grid-template-columns: 1fr;
+    padding: 8px 10px;
+    transform: translateY(-86%);
   }
 
-  .selectorWrapper {
-    flex-direction: column;
-    gap: 10px;
+  .left,
+  .right {
+    justify-content: space-between;
   }
 
-  .selectorText {
-    text-align: center;
+  .center {
+    order: 3;
   }
 
-  .skuSelector {
-    min-width: 200px;
+  .right {
+    order: 2;
   }
-}
 
-/* Compensar el espacio del header fijo en el body */
-.headerSpacer {
-  height: 20px;
-  background: linear-gradient(180deg, rgba(31, 31, 31, 0.1), transparent);
+  .left {
+    order: 1;
+  }
 }
