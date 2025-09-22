@@ -3,7 +3,7 @@
 
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import type { ThreadStatus,ThreadRow } from "@/types/review";
+import type { ThreadStatus, ThreadRow } from "@/types/review";
 import { useMessagesStore } from "@/stores/messages";
 
 export type Thread = {
@@ -14,7 +14,7 @@ export type Thread = {
   messageIds?: number[];
 };
 
-type ByImage = Record<string, Thread[]>; // key: imageName
+type ByImage = Record<string, Thread[]>;
 
 const round3 = (n: number) => Math.round(+n * 1000) / 1000;
 const keyOf = (image: string, x: number, y: number) =>
@@ -23,28 +23,26 @@ const keyOf = (image: string, x: number, y: number) =>
 type State = {
   byImage: ByImage;
   threadToImage: Map<number, string>;
-  /** mapa para casar realtime con optimistas por coords */
-  pendingByKey: Map<string, number>; // key -> tempId
+  pendingByKey: Map<string, number>;
+  /** 🔸 hilo activo global */
+  activeThreadId: number | null;
 };
 
 type Actions = {
   hydrateForImage: (imageName: string, rows: Thread[]) => void;
 
-  /** Crea hilo optimista y DEVUELVE el tempId (negativo) */
   createOptimistic: (imageName: string, x: number, y: number) => number;
-
-  /** Cambia tempId -> realId y limpia pending */
   confirmCreate: (tempId: number, real: ThreadRow) => void;
-
-  /** Elimina optimista (fallback si falla el insert) */
   rollbackCreate: (tempId: number) => void;
 
-  // realtime
   upsertFromRealtime: (row: ThreadRow) => void;
   removeFromRealtime: (row: ThreadRow) => void;
 
   setStatus: (threadId: number, status: ThreadStatus) => void;
   setMessageIds: (threadId: number, ids: number[]) => void;
+
+  /** 🔸 setter público del hilo activo */
+  setActiveThreadId: (id: number | null) => void;
 };
 
 export const useThreadsStore = create<State & Actions>()(
@@ -52,6 +50,9 @@ export const useThreadsStore = create<State & Actions>()(
     byImage: {},
     threadToImage: new Map(),
     pendingByKey: new Map(),
+    activeThreadId: null,
+
+    setActiveThreadId: (id) => set({ activeThreadId: id }),
 
     hydrateForImage: (image, rows) =>
       set((s) => {
@@ -67,7 +68,6 @@ export const useThreadsStore = create<State & Actions>()(
         return { byImage: next, threadToImage: m };
       }),
 
-    // ========= creación optimista =========
     createOptimistic: (image, x, y) => {
       const tempId = -Date.now() - Math.floor(Math.random() * 1e6);
       set((s) => {
@@ -103,18 +103,15 @@ export const useThreadsStore = create<State & Actions>()(
           x: round3(real.x),
           y: round3(real.y),
           status: real.status as ThreadStatus,
-          messageIds: list[idx]?.messageIds, // conserva posibles ids cacheados
+          messageIds: list[idx]?.messageIds,
         };
 
         const nextList =
           idx >= 0
             ? [...list.slice(0, idx), newThread, ...list.slice(idx + 1)]
-            : // si por lo que sea ya no está el temp (lo sustituyó el realtime),
-              // garantizamos que exista el real
-              (() => {
-                const exists = list.some((t) => t.id === real.id);
-                return exists ? list : [...list, newThread];
-              })();
+            : list.some((t) => t.id === real.id)
+            ? list
+            : [...list, newThread];
 
         const byImage = { ...s.byImage, [image]: nextList };
 
@@ -122,12 +119,16 @@ export const useThreadsStore = create<State & Actions>()(
         m.delete(tempId);
         m.set(real.id, image);
 
-        // limpia pending por tempId (coords pueden variar tras normalización en backend)
         const p = new Map(s.pendingByKey);
         for (const [k, v] of p.entries()) if (v === tempId) p.delete(k);
 
-        // 🟢 mueve los mensajes temp -> real (si hubo optimistas)
+        // mover mensajes temp -> real
         useMessagesStore.getState().moveThreadMessages?.(tempId, real.id);
+
+        // si el activo era el temp, cámbialo al real
+        if (s.activeThreadId === tempId) {
+          (get().setActiveThreadId)(real.id);
+        }
 
         return { byImage, threadToImage: m, pendingByKey: p };
       }),
@@ -143,23 +144,20 @@ export const useThreadsStore = create<State & Actions>()(
         const m = new Map(s.threadToImage);
         m.delete(tempId);
 
-        // limpia cualquier pending que apunte a ese tempId
         const p = new Map(s.pendingByKey);
         for (const [k, v] of p.entries()) if (v === tempId) p.delete(k);
+
+        if (s.activeThreadId === tempId) (get().setActiveThreadId)(null);
 
         return { byImage, threadToImage: m, pendingByKey: p };
       }),
 
-    // ========= realtime =========
     upsertFromRealtime: (r) =>
       set((s) => {
         const image = r.image_name;
         const list = s.byImage[image] || [];
 
-        // 1) Buscar por id real
         let idx = list.findIndex((t) => t.id === r.id);
-
-        // 2) Si no existe, casar con optimista por coordenadas (redondeadas)
         if (idx < 0) {
           const key = keyOf(image, r.x, r.y);
           const tempId = s.pendingByKey.get(key);
@@ -177,15 +175,8 @@ export const useThreadsStore = create<State & Actions>()(
           messageIds: list[idx]?.messageIds,
         };
 
-        let nextList: Thread[];
-        if (idx >= 0) {
-          // Sustituye (conserva índice → “Hilo #” no cambia)
-          nextList = [...list];
-          nextList[idx] = updated;
-        } else {
-          // Alta nueva
-          nextList = [...list, updated];
-        }
+        const nextList = idx >= 0 ? [...list.slice(0, idx), updated, ...list.slice(idx + 1)]
+                                  : [...list, updated];
 
         const byImage = { ...s.byImage, [image]: nextList };
 
@@ -193,17 +184,10 @@ export const useThreadsStore = create<State & Actions>()(
         m.set(r.id, image);
 
         const p = new Map(s.pendingByKey);
-        // elimina entradas de pending que apunten a estas coords o a un id temp ya sustituido
         const k = keyOf(image, r.x, r.y);
         p.delete(k);
         for (const [kk, vv] of p.entries()) {
           if (vv < 0 && !list.some((t) => t.id === vv)) p.delete(kk);
-        }
-
-        // mueve mensajes si por cualquier motivo aún quedan bajo tempId con esas coords
-        const tempIdMaybe = get().pendingByKey.get(k);
-        if (tempIdMaybe != null && tempIdMaybe < 0) {
-          useMessagesStore.getState().moveThreadMessages?.(tempIdMaybe, r.id);
         }
 
         return { byImage, threadToImage: m, pendingByKey: p };
@@ -219,6 +203,8 @@ export const useThreadsStore = create<State & Actions>()(
         const m = new Map(s.threadToImage);
         m.delete(r.id);
 
+        if (s.activeThreadId === r.id) (get().setActiveThreadId)(null);
+
         return { byImage, threadToImage: m };
       }),
 
@@ -229,7 +215,7 @@ export const useThreadsStore = create<State & Actions>()(
         const nextList = (s.byImage[image] || []).map((t) =>
           t.id === threadId ? { ...t, status } : t
         );
-        return { byImage: { ...s.byImage, [image]: nextList} };
+        return { byImage: { ...s.byImage, [image]: nextList } };
       }),
 
     setMessageIds: (threadId, ids) =>
@@ -239,7 +225,7 @@ export const useThreadsStore = create<State & Actions>()(
         const nextList = (s.byImage[image] || []).map((t) =>
           t.id === threadId ? { ...t, messageIds: ids } : t
         );
-        return { byImage: { ...s.byImage, [image]: nextList}};
+        return { byImage: { ...s.byImage, [image]: nextList } };
       }),
   }))
 );

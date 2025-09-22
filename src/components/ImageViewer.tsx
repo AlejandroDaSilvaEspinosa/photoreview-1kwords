@@ -1,3 +1,4 @@
+// src/components/ImageViewer.tsx
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -33,7 +34,7 @@ type ReviewsPayload = Record<string, { points?: ThreadRow[]; messagesByThread?: 
 
 interface ImageViewerProps {
   sku: SkuWithImagesAndStatus;
-  username: string; // solo para mostrar nombres bonitos
+  username: string;
   selectSku: (sku: SkuWithImagesAndStatus | null) => void;
 }
 
@@ -48,12 +49,14 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   const createThreadOptimistic = useThreadsStore((s) => s.createOptimistic);
   const confirmCreate = useThreadsStore((s) => s.confirmCreate);
   const rollbackCreate = useThreadsStore((s) => s.rollbackCreate);
+  const setActiveThreadIdStore = useThreadsStore((s) => s.setActiveThreadId);
 
   const setMsgsForThread   = useMessagesStore((s) => s.setForThread);
   const addOptimisticMsg   = useMessagesStore((s) => s.addOptimistic);
   const confirmMessage     = useMessagesStore((s) => s.confirmMessage);
   const moveThreadMessages = useMessagesStore((s) => s.moveThreadMessages);
   const markThreadRead     = useMessagesStore((s) => s.markThreadRead);
+  const setSelfAuthId      = useMessagesStore((s) => s.setSelfAuthId);
   const msgsByThread       = useMessagesStore((s) => s.byThread);
 
   // Realtime
@@ -73,10 +76,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   const { wrapperRef, imgRef, box: imgBox, update } = useImageGeometry();
   const onlineUsers = usePresence(sku.sku, username);
 
-  // 👇 auth uid (auth.users.id) para calcular isMine SIEMPRE por id
-  const [selfAuthId, setSelfAuthId] = useState<string | null>(null);
-
-  // Hidratar threads + mensajes (con isMine por id desde el primer render)
+  // Hidratar threads + mensajes + selfAuthId
   useEffect(() => {
     let cancelled = false;
 
@@ -87,9 +87,9 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         const sb = supabaseBrowser();
         const { data: authInfo } = await sb.auth.getUser();
         const myId = authInfo.user?.id ?? null;
-        if (!cancelled) setSelfAuthId(myId);
+        setSelfAuthId(myId); // 👈 importantísimo para wire realtime
 
-        // 1) Cargar threads por imagen
+        // 1) Cargar threads
         const res = await fetch(`/api/reviews/${sku.sku}`, { cache: "no-store" });
         if (!res.ok) throw new Error("No se pudieron cargar las anotaciones");
         const payload: ReviewsPayload = await res.json();
@@ -111,7 +111,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
           raw.forEach((r) => allThreadIds.push(r.id));
         }
 
-        // 2) Mensajes de todos los hilos
+        // 2) Mensajes
         if (allThreadIds.length) {
           const { data: msgs, error } = await sb
             .from("review_messages")
@@ -123,7 +123,6 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
 
           if (error) throw error;
 
-          // 3) Agrupar y setear en store con meta.isMine por auth id
           const grouped: Record<number, Msg[]> = {};
           (msgs || []).forEach((m: any) => {
             const mine = !!myId && m.created_by === myId;
@@ -148,10 +147,11 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
       }
     })();
 
-    return () => { cancelled = true; };
-  }, [sku.sku, images, hydrateForImage, setMsgsForThread, setThreadMsgIds]);
+    return () => {
+      cancelled = true;
+    };
+  }, [sku.sku, images, hydrateForImage, setMsgsForThread, setThreadMsgIds, setSelfAuthId]);
 
-  // Mensajes por imagen para la UI (exponemos createdByAuthId = created_by)
   const threadsInImage: Thread[] = useMemo(() => {
     if (!selectedImage?.name) return [];
     const rows = byImage[selectedImage.name] || [];
@@ -163,7 +163,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
           text: m.text,
           createdAt: m.created_at,
           createdByName: m.created_by_display_name || m.created_by_username || "Usuario",
-          createdByAuthId: (m as any).created_by ?? null,   // 👈 mismo id que auth.users.id
+          createdByAuthId: (m as any).created_by ?? null,
           isSystem: !!m.is_system,
           meta: { localDelivery: m.meta?.localDelivery ?? "sent", isMine: (m.meta as any)?.isMine ?? false } as any,
         }));
@@ -182,7 +182,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
     return null;
   }, [byImage, selectedImage, activeThreadId, activeKey]);
 
-  // Crear hilo + mensaje sistema
+  // Crear hilo + sistema
   const createThreadAt = useCallback(
     async (imgName: string, x: number, y: number) => {
       const rx = round3(x);
@@ -190,6 +190,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
 
       const tempId = createThreadOptimistic(imgName, rx, ry);
       setActiveThreadId(tempId);
+      setActiveThreadIdStore(tempId); // 👈 sincroniza store
       setActiveKey(`${imgName}|${rx}|${ry}`);
 
       const sysText = `**@${username ?? "usuario"}** ha creado un nuevo hilo de revisión.`;
@@ -216,6 +217,8 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
 
       if (!created?.threadId) {
         rollbackCreate(tempId);
+        setActiveThreadId(null);
+        setActiveThreadIdStore(null);
         return;
       }
 
@@ -232,7 +235,11 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
 
       confirmCreate(tempId, realRow);
       moveThreadMessages(tempId, realId);
-      setActiveThreadId((prev) => (prev === tempId ? realId : prev));
+      setActiveThreadId((prev) => {
+        const n = prev === tempId ? realId : prev;
+        setActiveThreadIdStore(n ?? null);
+        return n;
+      });
 
       const sysCreated = await fetch("/api/messages", {
         method: "POST",
@@ -257,10 +264,9 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         });
       }
     },
-    [sku.sku, username, confirmCreate, rollbackCreate, addOptimisticMsg, confirmMessage, moveThreadMessages]
+    [sku.sku, username, confirmCreate, rollbackCreate, addOptimisticMsg, confirmMessage, moveThreadMessages, setActiveThreadIdStore]
   );
 
-  // Enviar mensaje normal (optimista usa auth uid, evita flicker)
   const addMessage = useCallback(
     async (threadId: number, text: string) => {
       const tempId = -Date.now();
@@ -270,7 +276,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         text,
         created_at: now,
         updated_at: now,
-        created_by: selfAuthId || "me", // 👈 auth uid (igual que created_by en BD)
+        created_by: "me", // no importa aquí; el backend lo pondrá correcto
         created_by_username: username || "Tú",
         created_by_display_name: username || "Tú",
         is_system: false,
@@ -286,14 +292,13 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         .catch(() => null);
 
       if (created?.id) {
-        // ⚠️ el handler devuelve columnas snake_case (select().single())
         confirmMessage(threadId, tempId, {
           id: created.id,
           thread_id: threadId,
           text,
           created_at: created.created_at || created.createdAt || now,
           updated_at: created.updated_at || created.updatedAt || created.createdAt || now,
-          created_by: created.created_by, // 👈 auth uid que guarda BD
+          created_by: created.created_by,
           created_by_username: created.created_by_username ?? username ?? "Usuario",
           created_by_display_name: created.created_by_display_name ?? username ?? "Usuario",
           is_system: !!created.is_system,
@@ -301,7 +306,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         });
       }
     },
-    [addOptimisticMsg, confirmMessage, username, selfAuthId]
+    [addOptimisticMsg, confirmMessage, username]
   );
 
   const toggleThreadStatus = useCallback(
@@ -348,7 +353,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
     }).catch(() => {});
   }, [setThreadStatus]);
 
-  // marcar lectura cuando se enfoca un hilo (sin username)
+  // marcar lectura cuando se enfoca un hilo
   useEffect(() => {
     if (resolvedActiveThreadId) {
       markThreadRead(resolvedActiveThreadId).catch(() => {});
@@ -388,6 +393,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   const selectImage = (index: number) => {
     setSelectedImageIndex(index);
     setActiveThreadId(null);
+    setActiveThreadIdStore(null); // 👈 reset global
     setActiveKey(null);
     requestAnimationFrame(update);
   };
@@ -471,6 +477,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
                   onClick={(e) => {
                     e.stopPropagation();
                     setActiveThreadId(th.id);
+                    setActiveThreadIdStore(th.id); // 👈
                     if (selectedImage?.name) setActiveKey(fp(selectedImage.name, th.x, th.y));
                   }}
                   title={
@@ -519,6 +526,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         onDeleteThread={(id: number) => removeThread(id)}
         onFocusThread={(id: number | null) => {
           setActiveThreadId(id);
+          setActiveThreadIdStore(id); // 👈 sincroniza store
           if (id) markThreadRead(id).catch(() => {});
           if (selectedImage?.name && id) {
             const t = (byImage[selectedImage.name] || []).find((x) => x.id === id);
@@ -544,6 +552,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
           currentUsername={username}
           onFocusThread={(id: number | null) => {
             setActiveThreadId(id);
+            setActiveThreadIdStore(id); // 👈
             if (id) markThreadRead(id).catch(() => {});
           }}
           onAddThreadMessage={(threadId: number, text: string) => {

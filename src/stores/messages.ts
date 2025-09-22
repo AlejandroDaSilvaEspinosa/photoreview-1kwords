@@ -1,16 +1,15 @@
+// src/stores/messages.ts
 "use client";
 
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import type { MessageRow } from "@/types/review";
 
-// Unificamos el tipo local de delivery
 type LocalDelivery = "sending" | "sent" | "delivered" | "read";
 
 export type Msg = MessageRow & {
   meta?: {
     localDelivery?: LocalDelivery;
-    // Flag para evitar flicker: lo ponemos a true en optimistas y lo preservamos
     isMine?: boolean;
   };
 };
@@ -18,10 +17,13 @@ export type Msg = MessageRow & {
 type State = {
   byThread: Record<number, Msg[]>;
   messageToThread: Map<number, number>;
+  /** 🔸 auth user id actual */
+  selfAuthId: string | null;
 };
 
 type Actions = {
   setForThread: (threadId: number, rows: Msg[]) => void;
+  setSelfAuthId: (id: string | null) => void;
 
   addOptimistic: (
     threadId: number,
@@ -47,6 +49,9 @@ export const useMessagesStore = create<State & Actions>()(
   subscribeWithSelector((set, get) => ({
     byThread: {},
     messageToThread: new Map(),
+    selfAuthId: null,
+
+    setSelfAuthId: (id) => set({ selfAuthId: id }),
 
     setForThread: (threadId, rows) =>
       set((s) => {
@@ -87,9 +92,7 @@ export const useMessagesStore = create<State & Actions>()(
       set((s) => {
         const curr = s.byThread[threadId] || [];
 
-        // si ya entró por realtime, elimina el optimista y asegura meta preservada
         if (curr.some((m) => m.id === real.id)) {
-          const optim = curr.find((m) => m.id === tempId);
           const filtered = curr
             .filter((m) => m.id !== tempId)
             .map((m) =>
@@ -113,7 +116,6 @@ export const useMessagesStore = create<State & Actions>()(
           return { byThread: { ...s.byThread, [threadId]: filtered }, messageToThread: map };
         }
 
-        // reemplazo normal del optimista por real
         const idx = curr.findIndex((m) => m.id === tempId);
         if (idx < 0) {
           const list = [
@@ -141,57 +143,42 @@ export const useMessagesStore = create<State & Actions>()(
         return { byThread: { ...s.byThread, [threadId]: copy }, messageToThread: map };
       }),
 
-    // Marca lectura local y la persiste (sin depender de username)
+    // sólo mensajes NO míos + no 'sending' + no 'read'
     markThreadRead: async (threadId) => {
-      // 1) snapshot antes del set
-      const { byThread } = get();
+      const { byThread, selfAuthId } = get();
       const list = byThread[threadId] || [];
 
       const toMark = list
         .filter((m) => {
-          // ignora system
           if ((m as any).is_system) return false;
-          // ignora si no tiene id aún
           if (m.id == null) return false;
+          if (m.created_by === selfAuthId) return false;
           const ld = (m.meta?.localDelivery ?? "sent") as LocalDelivery;
-          // no marcamos los que aún están enviándose
-          if (ld === "sending") return false;
-          // si ya está en read, no hace falta marcar
-          if (ld === "read") return false;
+          if (ld === "sending" || ld === "read") return false;
           return true;
         })
         .map((m) => m.id as number);
 
-      if (toMark.length === 0) return;
+      if (!toMark.length) return;
 
-      // 2) optimista SOLO para esos ids
       set((s) => {
-        const curr = s.byThread[threadId] || [];
         const idSet = new Set(toMark);
-        const nextList = curr.map((m) => {
-          if (!idSet.has(m.id as number)) return m;
-          return { ...m, meta: { ...(m.meta || {}), localDelivery: "read" as LocalDelivery } };
-        });
+        const nextList = (s.byThread[threadId] || []).map((m) =>
+          !idSet.has(m.id as number)
+            ? m
+            : { ...m, meta: { ...(m.meta || {}), localDelivery: "read" as LocalDelivery } }
+        );
         return { byThread: { ...s.byThread, [threadId]: nextList } };
       });
 
-      // 3) persistir en backend
       try {
-        const resp = await fetch("/api/messages/receipts", {
+        await fetch("/api/messages/receipts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ messageIds: toMark, mark: "read" }),
         });
-        if (!resp.ok) {
-          // si falla, opcionalmente podríamos revertir a 'delivered' o 'sent'
-          // pero lo normal es que llegue el realtime de receipts y re-sincronice
-          console.error("markThreadRead failed", await resp.text());
-        }
-      } catch (e) {
-        console.error("markThreadRead network error", e);
-      }
+      } catch {}
     },
-
 
     upsertFromRealtime: (row) =>
       set((s) => {
@@ -200,17 +187,15 @@ export const useMessagesStore = create<State & Actions>()(
         const normTxt = (x?: string | null) => (x ?? "").replace(/\s+/g, " ").trim();
         const isSystem = !!row.is_system;
 
-        // preserva meta del optimista coincidente (mismo texto y tipo de mensaje)
         let preservedMeta: any = null;
         const cleaned = curr.filter((m: any) => {
           if (m.id >= 0) return true;
           if (!!m.is_system !== isSystem) return true;
           if (normTxt(m.text) !== normTxt(row.text)) return true;
           preservedMeta = { ...(m.meta || {}) };
-          return false; // eliminar duplicado optimista
+          return false;
         });
 
-        // upsert por id
         const idx = cleaned.findIndex((m: any) => m.id === row.id);
         if (idx >= 0) {
           const copy = cleaned.slice();
@@ -230,7 +215,6 @@ export const useMessagesStore = create<State & Actions>()(
           return { byThread: { ...s.byThread, [threadId]: copy }, messageToThread: map };
         }
 
-        // insert nuevo
         const added = [
           ...cleaned,
           {
@@ -262,9 +246,6 @@ export const useMessagesStore = create<State & Actions>()(
     upsertReceipt: (messageId, _userId, readAt) =>
       set((s) => {
         let threadId = s.messageToThread.get(messageId);
-        console.log(threadId)
-
-        // fallback: busca el mensaje si aún no tenemos el índice
         if (!threadId) {
           for (const [tidStr, list] of Object.entries(s.byThread)) {
             if (list.some((m) => m.id === messageId)) {
@@ -297,7 +278,7 @@ export const useMessagesStore = create<State & Actions>()(
       set((s) => {
         if (fromThreadId === toThreadId) return {};
         const from = s.byThread[fromThreadId] || [];
-        if (from.length === 0) {
+        if (!from.length) {
           if (s.byThread[fromThreadId]) {
             const byThread = { ...s.byThread };
             delete byThread[fromThreadId];
@@ -306,7 +287,6 @@ export const useMessagesStore = create<State & Actions>()(
           return {};
         }
         const dest = s.byThread[toThreadId] || [];
-
         const migrated = from.map((m) => ({ ...m, thread_id: toThreadId }));
 
         const mapById = new Map<number, Msg>();

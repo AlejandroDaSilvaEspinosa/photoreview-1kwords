@@ -1,3 +1,4 @@
+// src/lib/realtime/wireSkuRealtime.ts
 "use client";
 
 import { supabaseBrowser } from "@/lib/supabase/browser";
@@ -65,17 +66,33 @@ export function useWireSkuRealtime(sku: string) {
 
         upMsg(row);
 
-        // Marca DELIVERED siempre que no sea del sistema.
+        // delivered / read automáticos si:
+        // - no es system
+        // - no soy el emisor
         if (evt === "INSERT") {
           const isSystem = !!(row as any).is_system;
           if (!isSystem && row.id != null) {
-            try {
-              await fetch("/api/messages/receipts", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ messageIds: [row.id], mark: "delivered" }),
-              });
-            } catch {}
+            const selfId = useMessagesStore.getState().selfAuthId;
+            if (row.created_by !== selfId) {
+              try {
+                // DELIVERED
+                await fetch("/api/messages/receipts", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ messageIds: [row.id], mark: "delivered" }),
+                });
+
+                // Si el hilo está activo en este cliente → READ
+                const activeId = useThreadsStore.getState().activeThreadId;
+                if (activeId === row.thread_id) {
+                  await fetch("/api/messages/receipts", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ messageIds: [row.id], mark: "read" }),
+                  });
+                }
+              } catch {}
+            }
           }
         }
       }
@@ -103,13 +120,11 @@ export function useWireSkuRealtime(sku: string) {
       }
     );
 
-    // RECEIPTS (delivered/read) → merge old+new para UPDATE
+    // RECEIPTS
     ch.on(
       "postgres_changes",
       { event: "*", schema: "public", table: "review_message_receipts" },
       (p) => {
-        console.log("received")
-        console.log(p)
         const merged = { ...(p.old as any), ...(p.new as any) } as {
           message_id?: number;
           user_id?: string;
