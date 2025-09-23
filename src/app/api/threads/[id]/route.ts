@@ -3,10 +3,10 @@ import { supabaseFromRequest } from "@/lib/supabase/route";
 
 export async function DELETE(
   req: NextRequest,
-  context: { params: { id: string } }
+  ctx: RouteContext<'/api/threads/[id]'>
 ) {
-  const { id } = context.params;
-  
+  const { id } = await ctx.params; // params es async en Next 15
+
   const { client: sb } = supabaseFromRequest(req);
 
   const { data: { user } } = await sb.auth.getUser();
@@ -14,7 +14,10 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { error } = await sb.from("review_threads").delete().eq("id", Number.parseInt(id));
+  const { error } = await sb
+    .from("review_threads")
+    .delete()
+    .eq("id", Number(id));
 
   if (error) {
     console.error("Error borrando hilo:", error);
