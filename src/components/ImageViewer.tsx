@@ -583,7 +583,6 @@ export default function ImageViewer({
             {loadError && !loading && <div className={styles.overlayError}>{loadError}</div>}
 
             <ImageWithSkeleton
-              priority={false}
               ref={imgRef}
               src={selectedImage?.url}
               onClick={handleImageClick}
