@@ -1,27 +1,25 @@
-import { NextResponse,NextRequest } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { supabaseFromRequest } from "@/lib/supabase/route";
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
+  const { id } = context.params;
+  
+  const { client: sb } = supabaseFromRequest(req);
 
-  const { client: sb, res } = supabaseFromRequest(req);
   const { data: { user } } = await sb.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
+  const { error } = await sb.from("review_threads").delete().eq("id", Number.parseInt(id));
 
-  const id = Number(params.id);
-  if (!id) return NextResponse.json({ error: "Bad request" }, { status: 400 });
+  if (error) {
+    console.error("Error borrando hilo:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
-
-  // (Si no tienes CASCADE en FK) borra mensajes primero
-  const { error: e1 } = await sb.from("review_messages").delete().eq("thread_id", id);
-  if (e1) return NextResponse.json({ error: e1.message }, { status: 500 });
-
-  // Borra el hilo
-  const { error: e2 } = await sb.from("review_threads").delete().eq("id", id);
-  if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
- //return NextResponse.json({ ok: true, data: [] }, { headers: res.headers });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ success: true });
 }
