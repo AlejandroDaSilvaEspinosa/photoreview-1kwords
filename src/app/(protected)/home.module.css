@@ -25,6 +25,7 @@
 
 .placeholderInner {
   width: min(1400px, 100%);
+  margin-top: 32px;
   background: var(--surface-2);
   border: 1px solid var(--border-1);
   border-radius: 14px;

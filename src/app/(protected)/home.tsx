@@ -22,7 +22,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // 🔸 prefetch de notificaciones en background
+  // 🔸 Prefetch notificaciones (igual que antes)
   const [notifPrefetch, setNotifPrefetch] = useState<Prefetched>(null);
   useEffect(() => {
     let alive = true;
@@ -45,35 +45,70 @@ export default function Home({ username, skus, clientInfo }: Props) {
     return m;
   }, [skus]);
 
-  // ✅ URL como única fuente de verdad
   const skuParam = searchParams.get("sku");
+  const imageParam = searchParams.get("image");
+
   const selectedSku: SkuWithImagesAndStatus | null = skuParam ? (bySku.get(skuParam) ?? null) : null;
 
-  // Cambia solo la URL (no estado local)
+  // ¿la imagen de la URL pertenece al sku seleccionado?
+  const selectedImageName: string | null = useMemo(() => {
+    if (!selectedSku || !imageParam) return null;
+    return selectedSku.images.some((i) => i.name === imageParam) ? imageParam : null;
+  }, [selectedSku, imageParam]);
+
+  // Normaliza la URL: si hay image pero no pertenece a ese sku, la quitamos
+  useEffect(() => {
+    if (!selectedSku) return;
+    if (!imageParam) return;
+    const belongs = selectedSku.images.some((i) => i.name === imageParam);
+    if (!belongs) {
+      const next = new URLSearchParams(searchParams.toString());
+      next.delete("image");
+      router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
+    }
+  }, [selectedSku, imageParam, searchParams, pathname, router]);
+
+  // Cambia solo la URL (manteniendo URL como fuente de verdad)
   const selectSku = useCallback((sku: SkuWithImagesAndStatus | null) => {
     const next = new URLSearchParams(searchParams.toString());
     if (sku) {
       next.set("sku", sku.sku);
+      // Preserva 'image' solo si pertenece al nuevo sku; si no, la quita
+      const img = next.get("image");
+      if (img && !sku.images.some((i) => i.name === img)) {
+        next.delete("image");
+      }
     } else {
       next.delete("sku");
       next.delete("image");
     }
-    router.replace(
-      `${pathname}${next.toString() ? `?${next.toString()}` : ""}`,
-      { scroll: false }
-    );
+    router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
   }, [searchParams, pathname, router]);
 
+  // Cambiar solo la imagen en la URL
+  const selectImage = useCallback((imageName: string | null) => {
+    const next = new URLSearchParams(searchParams.toString());
+    if (imageName) next.set("image", imageName);
+    else next.delete("image");
+    router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
+  }, [searchParams, pathname, router]);
+
+  // Abrir SKU desde notificaciones / toasts
   const onOpenSku = useCallback(
     (sku: string) => selectSku(bySku.get(sku) ?? null),
     [selectSku, bySku]
   );
 
-  const onOpenImage = useCallback((sku: string, _img: string) => {
+  // Abrir SKU + imagen directamente desde notificación
+  const onOpenImage = useCallback((sku: string, img: string) => {
     const s = bySku.get(sku);
     if (!s) return;
-    selectSku(s);
-  }, [bySku, selectSku]);
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("sku", s.sku);
+    if (s.images.some((i) => i.name === img)) next.set("image", img);
+    else next.delete("image");
+    router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
+  }, [bySku, pathname, router, searchParams]);
 
   useGlobalRealtimeToasts({ onOpenSku, onOpenImage });
 
@@ -96,6 +131,8 @@ export default function Home({ username, skus, clientInfo }: Props) {
             key={selectedSku.sku}
             sku={selectedSku}
             selectSku={selectSku}
+            selectedImageName={selectedImageName}
+            onSelectImage={selectImage}
           />
         ) : (
           <div className={styles.placeholder}>
@@ -119,13 +156,12 @@ export default function Home({ username, skus, clientInfo }: Props) {
                       <ImageWithSkeleton
                         src={sku.images[0]?.listingImageUrl}
                         alt={sku.sku}
-                        width={200}
-                        height={200}
+                        width={600}
+                        height={600}
                         className={styles.thumbnail}
                         sizes="(max-width: 900px) 50vw, 260px"
                         quality={100}
                         minSkeletonMs={180}
-                        loading="lazy"
                         fallbackText={sku.sku.slice(0, 2).toUpperCase()}
                       />
                       <span className={styles.skuBadge}>{sku.sku}</span>

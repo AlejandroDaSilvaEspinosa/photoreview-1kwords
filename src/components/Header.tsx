@@ -98,10 +98,10 @@ export default function Header({
 
         {/* Centro: título + buscador */}
         <div className={styles.center}>
-          <div className={styles.heading}>
+          {/* <div className={styles.heading}>
             <h2>Revisión de Productos</h2>
             <p>Selecciona una SKU para comenzar el proceso de revisión.</p>
-          </div>
+          </div> */}
 
           <SkuSearch
             skus={skus}

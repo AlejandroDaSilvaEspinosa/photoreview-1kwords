@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseFromRequest } from "@/lib/supabase/route";
 import { unstable_noStore as noStore } from "next/cache";
-import { Thread, ThreadMessage } from "@/types/review";
+import { Thread, ThreadMessage, ThreadStatus } from "@/types/review";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,8 +26,8 @@ export async function GET(
       "id, sku, image_name, x, y, status, created_by:app_users(username, display_name)"
     )
     .eq("sku", sku)
+    .not("status", "eq", "deleted")
     .order("id", { ascending: true });
-  console.log(e1)
 
   if (e1) return NextResponse.json({ error: e1.message }, { status: 500, headers: res.headers });
   if (!threads?.length) return NextResponse.json({}, { status: 200, headers: res.headers });
@@ -42,7 +42,6 @@ export async function GET(
     )
     .in("thread_id", threadIds)
     .order("created_at", { ascending: true });
-  console.log(e2)
   if (e2) return NextResponse.json({ error: e2.message }, { status: 500, headers: res.headers });
 
   const msgsByThread = new Map<number, ThreadMessage[]>();
