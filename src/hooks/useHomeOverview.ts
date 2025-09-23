@@ -132,7 +132,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
         const receipts =
           (row.review_message_receipts || []) as { user_id: string; read_at: string | null }[];
         const rec = receipts.find((r) => r.user_id === selfId);
-        const isUnread = !rec || !rec.read_at;
+        const isUnread = rec && !rec.read_at;
         if (isUnread) anyUnread[sku] = true;
       }
       setUnread(anyUnread);
