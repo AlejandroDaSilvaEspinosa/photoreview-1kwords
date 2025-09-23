@@ -49,7 +49,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   const confirmCreate = useThreadsStore((s) => s.confirmCreate);
   const rollbackCreate = useThreadsStore((s) => s.rollbackCreate);
   const setActiveThreadIdStore = useThreadsStore((s) => s.setActiveThreadId);
-  const pendingStatusMap = useThreadsStore((s) => s.pendingStatus); // 👈
+  const pendingStatusMap = useThreadsStore((s) => s.pendingStatus);
 
   const setMsgsForThread   = useMessagesStore((s) => s.setForThread);
   const addOptimisticMsg   = useMessagesStore((s) => s.addOptimistic);
@@ -69,7 +69,6 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
-  // ⏳ hilo en creación (id temporal) → bloquea el envío en ese hilo
   const [creatingThreadId, setCreatingThreadId] = useState<number | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -90,9 +89,9 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         const sb = supabaseBrowser();
         const { data: authInfo } = await sb.auth.getUser();
         const myId = authInfo.user?.id ?? null;
-        setSelfAuthId(myId); // 👈 importantísimo para wire realtime
+        setSelfAuthId(myId);
 
-        // 1) Cargar threads
+        // 1) Threads
         const res = await fetch(`/api/reviews/${sku.sku}`, { cache: "no-store" });
         if (!res.ok) throw new Error("No se pudieron cargar las anotaciones");
         const payload: ReviewsPayload = await res.json();
@@ -175,9 +174,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   }, [byImage, msgsByThread, selectedImage]);
 
   const resolvedActiveThreadId: number | null = useMemo(() => {
-    if(!activeThreadId){  
-      return null
-    } 
+    if (!activeThreadId) return null;
     if (!selectedImage?.name) return null;
     const list = byImage[selectedImage.name] || [];
     if (list.some((t) => t.id === activeThreadId)) return activeThreadId;
@@ -188,16 +185,16 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
     return null;
   }, [byImage, selectedImage, activeThreadId, activeKey]);
 
-  // Crear hilo + sistema
+  // Crear hilo
   const createThreadAt = useCallback(
     async (imgName: string, x: number, y: number) => {
       const rx = round3(x);
       const ry = round3(y);
 
       const tempId = createThreadOptimistic(imgName, rx, ry);
-      setCreatingThreadId(tempId); // ⏳ bloquea envío en este hilo
+      setCreatingThreadId(tempId);
       setActiveThreadId(tempId);
-      setActiveThreadIdStore(tempId); // 👈 sincroniza store
+      setActiveThreadIdStore(tempId);
       setActiveKey(`${imgName}|${rx}|${ry}`);
 
       const sysText = `**@${username ?? "desconocido"}** ha creado un nuevo hilo de revisión.`;
@@ -226,7 +223,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         rollbackCreate(tempId);
         setActiveThreadId(null);
         setActiveThreadIdStore(null);
-        setCreatingThreadId(null); // 🔓
+        setCreatingThreadId(null);
         return;
       }
 
@@ -248,7 +245,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         setActiveThreadIdStore(n ?? null);
         return n;
       });
-      setCreatingThreadId(null); // 🔓 ya confirmado el hilo
+      setCreatingThreadId(null);
 
       // Mensaje de sistema persistido
       const sysCreated = await fetch("/api/messages", {
@@ -279,7 +276,6 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
 
   const addMessage = useCallback(
     async (threadId: number, text: string) => {
-      // ⛔ Si el hilo aún es temporal/creándose, no mandamos
       if (creatingThreadId != null && threadId === creatingThreadId) return;
 
       const tempId = -Date.now();
@@ -324,14 +320,12 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
 
   const toggleThreadStatus = useCallback(
     async (_imgName: string, threadId: number, next: ThreadStatus) => {
-      // ⛔ Evitar doble clic si ya hay un cambio pendiente
       if (useThreadsStore.getState().pendingStatus.has(threadId)) return;
 
       const { byImage, threadToImage, beginStatusOptimistic, clearPendingStatus } = useThreadsStore.getState();
       const img = threadToImage.get(threadId) || "";
       const prev = byImage[img]?.find((t) => t.id === threadId)?.status ?? "pending";
 
-      // 🟩 marca optimista “pegajoso” y aplica local
       beginStatusOptimistic(threadId, prev, next);
       setThreadStatus(threadId, next);
 
@@ -358,11 +352,9 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         .catch(() => false);
 
       if (!ok) {
-        // 🟩 si falló, revertir y limpiar pendiente
         clearPendingStatus(threadId);
         setThreadStatus(threadId, prev);
       }
-      // si OK, esperamos al realtime para limpiar pendingStatus
     },
     [setThreadStatus, addOptimisticMsg, username]
   );
@@ -376,14 +368,12 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
     }).catch(() => {});
   }, [setThreadStatus]);
 
-  // marcar lectura cuando se enfoca un hilo
   useEffect(() => {
     if (resolvedActiveThreadId) {
       markThreadRead(resolvedActiveThreadId).catch(() => {});
     }
   }, [resolvedActiveThreadId, markThreadRead]);
 
-  // UI
   const [zoomOverlay, setZoomOverlay] =
     useState<null | { x: number; y: number; ax: number; ay: number }>(null);
 
@@ -416,18 +406,16 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   const selectImage = (index: number) => {
     setSelectedImageIndex(index);
     setActiveThreadId(null);
-    setActiveThreadIdStore(null); // 👈 reset global
+    setActiveThreadIdStore(null);
     setActiveKey(null);
     requestAnimationFrame(update);
   };
 
   const parentCursor = tool === "pin" ? "crosshair" : "zoom-in";
 
-  // ⛳ ¿El hilo activo está bloqueado por creación?
   const composeLocked =
     creatingThreadId != null && resolvedActiveThreadId != null && creatingThreadId === resolvedActiveThreadId;
 
-  // ⛳ ¿Hay un cambio de estado pendiente en el hilo activo?
   const statusLocked =
     resolvedActiveThreadId != null && pendingStatusMap.has(resolvedActiveThreadId);
 
@@ -435,10 +423,12 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
     <div className={styles.viewerContainer}>
       <div className={styles.mainViewer}>
         <div className={styles.imageHeader}>
-          <button className={styles.toolBtn} onClick={() => selectSku(null)}>🏠</button>
-          <h1>Revisión de SKU: {sku.sku}</h1>
+          <button className={styles.toolBtn} onClick={() => selectSku(null)} title="Volver">
+            🏠
+          </button>
+          <h1 className={styles.title}>Revisión de SKU: <span className={styles.titleSku}>{sku.sku}</span></h1>
           <div className={styles.imageCounter}>
-            {selectedImageIndex + 1} de {images.length}
+            {selectedImageIndex + 1} / {images.length}
           </div>
         </div>
 
@@ -498,7 +488,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
               return (
                 <div
                   key={th.id}
-                  className={`${styles.annotationNode} ${isActive ? "activeNode" : ""}`}
+                  className={`${styles.annotationNode} ${isActive ? styles.nodeActive : ""}`}
                   style={{
                     top: `${topPx}px`,
                     left: `${leftPx}px`,
@@ -508,16 +498,10 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
                   onClick={(e) => {
                     e.stopPropagation();
                     setActiveThreadId(th.id);
-                    setActiveThreadIdStore(th.id); // 👈
+                    setActiveThreadIdStore(th.id);
                     if (selectedImage?.name) setActiveKey(fp(selectedImage.name, th.x, th.y));
                   }}
-                  title={
-                    th.status === "corrected"
-                      ? "Corregido"
-                      : th.status === "reopened"
-                      ? "Reabierto"
-                      : "Pendiente"
-                  }
+                  title={th.status === "corrected" ? "Corregido" : th.status === "reopened" ? "Reabierto" : "Pendiente"}
                 >
                   {index + 1}
                 </div>
@@ -557,7 +541,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         onDeleteThread={(id: number) => removeThread(id)}
         onFocusThread={(id: number | null) => {
           setActiveThreadId(id);
-          setActiveThreadIdStore(id); 
+          setActiveThreadIdStore(id);
           if (id) markThreadRead(id).catch(() => {});
           if (selectedImage?.name && id) {
             const t = (byImage[selectedImage.name] || []).find((x) => x.id === id);
@@ -573,8 +557,13 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
           if (selectedImage?.name) toggleThreadStatus(selectedImage.name, id, status);
         }}
         loading={loading}
-        composeLocked={composeLocked}
-        statusLocked={statusLocked}
+        /* Si tu SidePanel admite estos flags visuales, ya los tienes aquí */
+        composeLocked={
+          creatingThreadId != null && resolvedActiveThreadId != null && creatingThreadId === resolvedActiveThreadId
+        }
+        statusLocked={
+          resolvedActiveThreadId != null && pendingStatusMap.has(resolvedActiveThreadId)
+        }
       />
 
       {zoomOverlay && selectedImage?.url && (
@@ -589,7 +578,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
             if (id) markThreadRead(id).catch(() => {});
           }}
           onAddThreadMessage={(threadId: number, text: string) => {
-            if (creatingThreadId != null && threadId === creatingThreadId) return; // ⛔ también aquí
+            if (creatingThreadId != null && threadId === creatingThreadId) return;
             if (selectedImage?.name) addMessage(threadId, text);
           }}
           onToggleThreadStatus={(id, status) => {
