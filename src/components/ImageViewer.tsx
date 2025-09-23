@@ -75,6 +75,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [tool, setTool] = useState<"zoom" | "pin">("zoom");
+  const [showThreads, setShowThreads] = useState(true);
   const { wrapperRef, imgRef, box: imgBox, update } = useImageGeometry();
   const onlineUsers = usePresence(sku.sku, username);
 
@@ -179,8 +180,10 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
         setTool("zoom");
       } else if (e.key === "p" || e.key === "P") {
         setTool("pin");
+      } else if (e.key === "t" || e.key === "T") {
+        // 👈 toggle hilos
+        setShowThreads((v) => !v);
       } else if (e.key === "Enter") {
-        // abre el zoom centrado si no está ya abierto
         if (!zoomOverlay) setZoomOverlay({ x: 50, y: 50, ax: 0.5, ay: 0.5 });
       } else if (e.key === "Escape") {
         if (zoomOverlay) setZoomOverlay(null);
@@ -189,6 +192,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [images.length, selectedImageIndex, zoomOverlay]);
+
   
   const threadsInImage: Thread[] = useMemo(() => {
     if (!selectedImage?.name) return [];
@@ -435,6 +439,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
       openZoomAtEvent(e);
       return;
     }
+    setShowThreads(true)
     await createThreadAt(selectedImage.name, xPct, yPct);
   };
 
@@ -481,6 +486,12 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
               title="Añadir nuevo hilo"
               onClick={() => setTool("pin")}
             >📍</button>
+            <button
+              className={`${styles.toolBtn} ${showThreads ? styles.toolActive : ""}`}
+              aria-pressed={showThreads}
+              title={`${showThreads ? "Ocultar" : "Mostrar"} hilos — T`}
+              onClick={() => setShowThreads((v) => !v)}
+            >🧵</button>
           </div>
 
           <button
@@ -515,7 +526,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
               fallbackText={(selectedImage?.name || "").slice(0, 2).toUpperCase()}
             />
 
-            {threadsInImage.map((th, index) => {
+            {showThreads && threadsInImage.map((th, index) => {
               const topPx = imgBox.offsetTop + (th.y / 100) * imgBox.height;
               const leftPx = imgBox.offsetLeft + (th.x / 100) * imgBox.width;
               const bg = colorByStatus(th.status);
@@ -550,8 +561,8 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
             disabled={selectedImageIndex === images.length - 1}
             aria-label="Imagen siguiente"
           >❯</button>
-          <div className={styles.shortcutHint} aria-hidden>
-            ←/→ imagen · <b>Z</b> lupa · <b>P</b> anotar · <b>Enter</b> zoom · <b>Esc</b> cerrar
+           <div className={styles.shortcutHint} aria-hidden>
+            ←/→ imagen · <b>Z</b> lupa · <b>P</b> anotar · <b>T</b> hilos on/off · <b>Enter</b> zoom · <b>Esc</b> cerrar
           </div>
         </div>
 
@@ -610,6 +621,8 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
           threads={threadsInImage}
           activeThreadId={resolvedActiveThreadId}
           currentUsername={username}
+          hideThreads={!showThreads} //
+          setHideThreads={setShowThreads}
           onFocusThread={(id: number | null) => {
             setActiveThreadId(id);
             setActiveThreadIdStore(id);

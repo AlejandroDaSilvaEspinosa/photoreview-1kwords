@@ -3,6 +3,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Dispatch,SetStateAction } from "react";
 import styles from "./ZoomOverlay.module.css";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import ThreadChat from "./ThreadChat";
@@ -14,6 +15,8 @@ type Props = {
   activeThreadId: number | null;
   initial?: { xPct: number; yPct: number; zoom?: number; ax?: number; ay?: number };
   currentUsername?: string;
+  hideThreads?: boolean;
+  setHideThreads: Dispatch<SetStateAction<boolean>>;
   onCreateThreadAt: (xPct: number, yPct: number) => void;
   onFocusThread: (id: number | null) => void;
   onAddThreadMessage: (threadId: number, text: string) => void;
@@ -42,9 +45,11 @@ export default function ZoomOverlay({
   onAddThreadMessage,
   onToggleThreadStatus,
   onCreateThreadAt,
+  setHideThreads,
   onDeleteThread,
   onClose,
   initial,
+  hideThreads,
   currentUsername
 }: Props) {
   // Tamaño real de la imagen
@@ -330,6 +335,7 @@ function normalize(s?: string | null) {
     const yImgPx = (e.clientY - rect.top - ty) / zoom;
     const xPct = clamp((xImgPx / imgW) * 100, 0, 100);
     const yPct = clamp((yImgPx / imgH) * 100, 0, 100);
+    setHideThreads(true)
     onCreateThreadAt(xPct, yPct);
   };
 
@@ -634,6 +640,12 @@ function normalize(s?: string | null) {
         >
           📍
         </button>
+        <button
+          className={`${styles.toolBtn} ${hideThreads ?  "":styles.toolActive}`}
+          aria-pressed={hideThreads}
+          title={`${hideThreads ? "Ocultar" : "Mostrar"} hilos — T`}
+          onClick={()=> setHideThreads((v) => !v)}
+        >🧵</button>
       </div>
 
       {/* Viewport principal */}
@@ -682,8 +694,7 @@ function normalize(s?: string | null) {
             />
           </div>
 
-          {/* Puntos */}
-          {dots.map((d) => (
+          {!hideThreads && dots.map((d) => (
             <button
               key={d.id}
               className={`${styles.dot} ${activeThreadId === d.id ? styles.dotActive : ""}`}
@@ -738,7 +749,7 @@ function normalize(s?: string | null) {
             </button>
           </div>
           <div className={styles.hint}>
-            🖐️ mover · 📍 anotar · rueda/gestos para zoom · doble-tap (móvil) · Esc para cerrar
+            🖐️ mover · 📍 anotar ·🧵 mostrar/ocultar hilos · rueda/gestos para zoom · doble-tap (móvil) · Esc para cerrar
           </div>
 
           {activeThread ? (
@@ -759,9 +770,6 @@ function normalize(s?: string | null) {
                     <button className={styles.threadRowMain} onClick={() => centerToThread(t)}>
                       <span className={styles.dotMini} style={{ background: colorByStatus(t.status) }} />
                       <span className={styles.threadName}>Hilo #{i + 1}</span>
-                      {/* <span className={styles.threadCoords}>
-                        ({t.x.toFixed(1)}%, {t.y.toFixed(1)}%)
-                      </span> */}
                     </button>
                     <button className={styles.stateBtn} onClick={() => onToggleThreadStatus(t.id, nextStatus(t.status))} title={toggleLabel(t.status)}>
                       {toggleLabel(t.status)}
