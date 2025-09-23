@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState, useMemo } from "react";
 import styles from "./ThreadChat.module.css";
 import ReactMarkdown from "react-markdown";
 import { Thread, ThreadMessage, ThreadStatus } from "@/types/review";
-import { format } from "timeago.js";
-import "@/lib/timeago";
+// ❌ Quitamos timeago
+// import { format } from "timeago.js";
+// import "@/lib/timeago";
 import AutoGrowTextarea from "../AutoGrowTextarea";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 
@@ -16,10 +17,7 @@ type Props = {
   onFocusThread: (threadId: number | null) => void;
   onToggleThreadStatus: (threadId: number, next: ThreadStatus) => void;
   onDeleteThread: (id: number) => void;
-
-  /** ⛔ Bloquea el envío mientras el hilo está en creación */
   composeLocked?: boolean;
-  /** ⛔ Bloquea el botón de cambiar estado mientras hay un cambio pendiente */
   statusLocked?: boolean;
 };
 
@@ -76,7 +74,7 @@ export default function ThreadChat({
     });
   }, [activeThread?.messages, activeThread?.id]);
 
-  // isMine SIEMPRE por id: meta.isMine (optimista/merge) OR sending OR createdByAuthId === selfAuthId
+  // isMine: por meta.isMine OR sending OR createdByAuthId === selfAuthId
   const isMine = (m: ThreadMessage) => {
     const meta = (m.meta || {}) as any;
     if (meta.isMine === true) return true;
@@ -86,7 +84,7 @@ export default function ThreadChat({
   };
 
   const handleSend = async () => {
-    if (composeLocked) return; // ⛔ bloqueado mientras se crea el hilo
+    if (composeLocked) return;
     const id = activeThread?.id;
     if (!id) return;
     const draft = getDraft(id);
@@ -94,6 +92,60 @@ export default function ThreadChat({
     clearDraft(id);
     await onAddThreadMessage(id, draft.trim());
   };
+
+  /* ========= NUEVO: helpers de fecha ========= */
+
+  // yyyy-mm-dd para agrupar
+  const dateKey = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  const labelFor = (d: Date) => {
+    const now = new Date();
+    const todayKey = dateKey(now);
+    const yest = new Date(now);
+    yest.setDate(now.getDate() - 1);
+    const yestKey = dateKey(yest);
+
+    const k = dateKey(d);
+    if (k === todayKey) return "Hoy";
+    if (k === yestKey) return "Ayer";
+    return d.toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
+  };
+
+  const timeHHmm = (d: Date) =>
+    d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+  // Construimos una lista con separadores de día
+  type Row =
+    | { kind: "divider"; key: string; label: string }
+    | { kind: "msg"; msg: ThreadMessage };
+
+  const rows: Row[] = useMemo(() => {
+    const out: Row[] = [];
+    let lastKey: string | null = null;
+    const list = activeThread?.messages ?? [];
+
+    for (const m of list) {
+      const dt = new Date(m.createdAt);
+      const k = dateKey(dt);
+      if (k !== lastKey) {
+        out.push({ kind: "divider", key: k, label: labelFor(dt) });
+        lastKey = k;
+      }
+      out.push({ kind: "msg", msg: m });
+    }
+    return out;
+  }, [activeThread?.messages]);
+
+  /* =========================================== */
 
   return (
     <div
@@ -121,7 +173,18 @@ export default function ThreadChat({
       </div>
 
       <div ref={listRef} className={styles.chatList}>
-        {activeThread.messages?.map((m: ThreadMessage) => {
+        {rows.map((row, i) => {
+          if (row.kind === "divider") {
+            return (
+              <div key={`div-${row.key}-${i}`} className={styles.dayDivider} role="separator" aria-label={row.label}>
+                <span className={styles.dayDividerLine} />
+                <span className={styles.dayDividerLabel}>{row.label}</span>
+                <span className={styles.dayDividerLine} />
+              </div>
+            );
+          }
+
+          const m = row.msg;
           const mine = isMine(m);
           const meta = (m.meta || {}) as any;
           const delivery = meta.localDelivery as DeliveryState | undefined;
@@ -132,6 +195,9 @@ export default function ThreadChat({
             delivery === "read"      ? "✓✓" :
             delivery === "delivered" ? "✓✓"  :
                                        "✓"; // "sent" → ✓
+
+          const dt = new Date(m.createdAt);
+          const hhmm = timeHHmm(dt);
 
           return (
             <div
@@ -149,8 +215,10 @@ export default function ThreadChat({
                   {sys ? "Sistema" : mine ? "Tú" : m.createdByName || "Desconocido"}
                 </span>
                 <span className={styles.messageMeta}>
-                  <span className={styles.timeago}>{format(m.createdAt, "es")}</span>
-                  {!sys && mine && <span className={`${styles.ticks} ${delivery === "read" && styles.read}` }>{ticks}</span>}
+                  <span className={styles.time}>{hhmm}</span>
+                  {!sys && mine && (
+                    <span className={`${styles.ticks} ${delivery === "read" && styles.read}`}>{ticks}</span>
+                  )}
                 </span>
               </div>
             </div>
@@ -166,7 +234,7 @@ export default function ThreadChat({
           minRows={1}
           maxRows={5}
           growsUp
-          onEnter={composeLocked ? undefined : handleSend} // ⛔ sin Enter mientras se crea
+          onEnter={composeLocked ? undefined : handleSend}
         />
         <button
           onClick={handleSend}
@@ -174,14 +242,8 @@ export default function ThreadChat({
           aria-busy={composeLocked}
           className={composeLocked ? `${styles.buttonLoading}` : undefined}
           title={composeLocked ? "Guardando el nuevo hilo…" : "Enviar mensaje"}
-        > 
-          {composeLocked ? (
-            <>
-              <span className={styles.spinner} aria-hidden /> 
-            </>
-          ) : (
-            "Enviar"
-          )}
+        >
+          {composeLocked ? <span className={styles.spinner} aria-hidden /> : "Enviar"}
         </button>
       </div>
 
@@ -193,13 +255,7 @@ export default function ThreadChat({
           disabled={statusLocked}
           aria-busy={statusLocked}
         >
-          {statusLocked ? (
-            <>
-              <span  className={styles.spinner} aria-hidden /> Actualizando…
-            </>
-          ) : (
-            toggleLabel(activeThread.status)
-          )}
+          {statusLocked ? (<><span className={styles.spinner} aria-hidden /> Actualizando…</>) : (toggleLabel(activeThread.status))}
         </button>
 
         <button

@@ -48,15 +48,15 @@ strong {
 /* ===== Scrollbar theme (global) ===== */
 :root {
   --sb-size: 10px;
-  --sb-track: #1e1f24;
+  --sb-track: #222;
   /* fondo oscuro */
-  --sb-thumb: #3a3d45;
+  --sb-thumb: #333;
   /* pulgar normal */
   --sb-thumb-hover: #4a4f59;
   /* hover */
   --sb-thumb-active: #5b6170;
   /* active */
-  --sb-corner: #1e1f24;
+  --sb-corner: #333;
 }
 
 /* Firefox */
