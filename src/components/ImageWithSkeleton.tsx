@@ -56,7 +56,7 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
       };
     }, []);
 
-    const handleLoaded = (img:any) => {
+    const handleLoaded = (img:HTMLImageElement) => {
       if (error) return;
       const elapsed = Date.now() - mountedAt;
       const remaining = Math.max(0, minSkeletonMs - elapsed);

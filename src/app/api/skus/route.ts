@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 
 export async function GET() {
   // protege con cookie
-  const session = cookies().get("session");
+  const session = cookies().then(c => c.get("session"));
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
     const skus = await getCachedSkus();

@@ -11,7 +11,7 @@ type Params = { params: { fileId: string } }
 //ESTO ES UTIL CUANDO KAS IMAGENES ESTAN PROTEGIDAS EN DRIVE
 export async function GET(_: Request, { params }: Params) {
     // protege con cookie
-  const session = cookies().get("session");
+  const session = cookies().then(c => c.get("session"));
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
     const meta = await drive.files.get({ fileId: params.fileId, fields: 'mimeType' });

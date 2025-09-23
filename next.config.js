@@ -28,7 +28,6 @@ const nextConfig = {
 
   // Configuración de imágenes para permitir dominios externos
   images: {
-    minimumCacheTTL: 60 * 60 * 24 * 7, // 7 días
     remotePatterns: [
       {
         protocol: "https",

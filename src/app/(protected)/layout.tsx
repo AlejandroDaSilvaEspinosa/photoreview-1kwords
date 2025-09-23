@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const supabase = supabaseServer();
+  const supabase = await supabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {

@@ -8,7 +8,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 export default async function HomePage() {
   const clientInfo = { name: "Castejon Joyeros", project: "Catalogo comercial joyeria" };
 
-  const supabase = supabaseServer();
+  const supabase = await supabaseServer();
   const { data: { user } } = await supabase.auth.getUser();
   const username: string = (user?.user_metadata?.display_name as string) || user?.email || "user";
 
