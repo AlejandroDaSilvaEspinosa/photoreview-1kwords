@@ -91,7 +91,7 @@ export function useWireSkuRealtime(sku: string) {
                     body: JSON.stringify({ messageIds: [row.id], mark: "read" }),
                   });
                 }
-              } catch {}
+              } catch { console.log("error")}
             }
           }
         }

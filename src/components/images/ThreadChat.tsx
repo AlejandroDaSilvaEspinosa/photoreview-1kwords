@@ -132,7 +132,6 @@ export default function ThreadChat({
     const out: Row[] = [];
     let lastKey: string | null = null;
     const list = activeThread?.messages ?? [];
-
     for (const m of list) {
       const dt = new Date(m.createdAt);
       const k = dateKey(dt);
@@ -183,7 +182,6 @@ export default function ThreadChat({
               </div>
             );
           }
-
           const m = row.msg;
           const mine = isMine(m);
           const meta = (m.meta || {}) as any;
@@ -195,7 +193,6 @@ export default function ThreadChat({
             delivery === "read"      ? "✓✓" :
             delivery === "delivered" ? "✓✓"  :
                                        "✓"; // "sent" → ✓
-
           const dt = new Date(m.createdAt);
           const hhmm = timeHHmm(dt);
 

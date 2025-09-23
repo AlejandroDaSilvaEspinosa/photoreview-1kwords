@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseFromRequest } from "@/lib/supabase/route";
 import { unstable_noStore as noStore } from "next/cache";
-import type { Thread, ThreadMessage, ThreadStatus } from "@/types/review";
+import type { Thread, ThreadMessage, ThreadStatus,DeliveryState } from "@/types/review";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,51 +27,39 @@ export async function GET(
   // Threads del SKU
   const { data: threads, error: e1 } = await sb
     .from("review_threads")
-    .select(
-      "id, sku, image_name, x, y, status, created_by:app_users(username, display_name)"
-    )
+      .select(`
+        id, 
+        sku,
+        image_name,
+        x,
+        y,
+        status,        
+        messages:review_messages!inner(
+          id,          
+          text,
+          createdAt:created_at,
+          isSystem:is_system,
+          createdByName:app_users!review_messages_created_by_fkey(display_name),
+          meta:review_message_receipts!review_message_receipts_message_fkey(
+            user_id,
+            delivered_at,
+            read_at
+          )
+        )
+      `)
     .eq("sku", decodedSku)
     .not("status", "eq", "deleted")
     .order("id", { ascending: true });
-
   if (e1)
     return NextResponse.json(
-      { error: e1.message },
+      { error: threads },
       { status: 500, headers: res.headers }
     );
+    
   if (!threads?.length)
     return NextResponse.json({}, { status: 200, headers: res.headers });
 
-  const threadIds = threads.map((t) => t.id);
 
-  // Mensajes de esos threads
-  const { data: messages, error: e2 } = await sb
-    .from("review_messages")
-    .select(
-      "id, thread_id, text, created_at, created_by:app_users!review_messages_created_by_fkey (username, display_name)"
-    )
-    .in("thread_id", threadIds)
-    .order("created_at", { ascending: true });
-
-  if (e2)
-    return NextResponse.json(
-      { error: e2.message },
-      { status: 500, headers: res.headers }
-    );
-
-  const msgsByThread = new Map<number, ThreadMessage[]>();
-
-  for (const m of messages ?? []) {
-    const arr = msgsByThread.get(m.thread_id) ?? [];
-    arr.push({
-      id: m.id,
-      text: m.text,
-      createdAt: m.created_at,
-      createdByName: m.created_by?.display_name || m.created_by?.username,
-      isSystem: (m.created_by?.username || "").toLowerCase() === "system",
-    });
-    msgsByThread.set(m.thread_id, arr);
-  }
 
   const byImage: Payload = {};
   for (const t of threads) {
@@ -80,7 +68,25 @@ export async function GET(
       x: Number(t.x),
       y: Number(t.y),
       status: t.status as ThreadStatus,
-      messages: msgsByThread.get(t.id) ?? [],
+      messages: t.messages.map(m=> {
+        const receipt = m.meta || []
+        const localDelivery: DeliveryState =
+          receipt.some(r => r.read_at) ? "read" :
+          receipt.some(r => r.delivered_at) ? "delivered" :
+          "sent";
+
+        return {
+          id: m.id,
+          createdAt: m.createdAt,
+          text:m.text,
+          createdByName: m.createdByName?.display_name ?? "desconocido",
+          isSystem: m.isSystem,
+          meta: {
+            localDelivery: localDelivery,            
+          }
+        }
+        
+      }),
     };
     (byImage[t.image_name] ||= { points: [] }).points.push(thread);
   }

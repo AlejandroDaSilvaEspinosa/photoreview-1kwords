@@ -9,13 +9,12 @@ type Props = Omit<ImageProps, "onError"> & {
   minSkeletonMs?: number;
   fallbackText?: string;
   forceSkeletonOnSrcChange?: boolean;
-  onReady?: (img:any) => void; // callback cuando quedó visible
+  onReady?: (img:any) => void; 
 };
 
-function srcToString(src: ImageProps["src"]): string {
+function srcToString(src: any): string {
   if (typeof src === "string") return src;
-  // @ts-ignore: StaticImport
-  return src?.src ?? "";
+  return src?.src  ?? "";
 }
 
 const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(

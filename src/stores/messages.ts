@@ -177,7 +177,9 @@ export const useMessagesStore = create<State & Actions>()(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ messageIds: toMark, mark: "read" }),
         });
-      } catch {}
+      } catch {
+        console.log("error")
+      }
     },
 
     upsertFromRealtime: (row) =>

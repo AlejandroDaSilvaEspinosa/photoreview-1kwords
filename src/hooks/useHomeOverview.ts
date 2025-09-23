@@ -196,7 +196,9 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
       async (p) => {
         const merged = { ...(p.old as any), ...(p.new as any) };
         if (!merged.message_id || !selfId) return;
+        console.log(merged)
         const data = await checkHasReceiptForThisMessage(merged.message_id);
+        console.log(data)
         if(data){
           const {sku, hasReceipt} = data;
           setUnread((prev) => ({ ...prev, [sku]: hasReceipt }));

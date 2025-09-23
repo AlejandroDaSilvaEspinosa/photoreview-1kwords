@@ -63,10 +63,10 @@ export default function SidePanel({
     try {
       const v = localStorage.getItem(LS_KEY);
       if (v != null) setCollapsed(v === "1");
-    } catch {}
+    } catch { console.log("error")}
   }, []);
   useEffect(() => {
-    try { localStorage.setItem(LS_KEY, collapsed ? "1" : "0"); } catch {}
+    try { localStorage.setItem(LS_KEY, collapsed ? "1" : "0"); } catch {console.log("error")}
   }, [collapsed]);
 
   const selected = useMemo(

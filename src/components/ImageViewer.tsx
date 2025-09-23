@@ -13,6 +13,8 @@ import type {
   Thread,
   MessageMeta,
   ThreadRow,
+  ThreadMessage,
+  DeliveryState,
 } from "@/types/review";
 
 import { usePresence } from "@/lib/usePresence";
@@ -148,7 +150,7 @@ export default function ImageViewer({
   //  HIDRATACIÓN (solo cuando falte y solo por SKU)
   // ==========================
   useEffect(() => {
-    let cancelled = false;
+    const cancelled = false;
 
     (async () => {
       const storeNow = useThreadsStore.getState();
@@ -195,7 +197,13 @@ export default function ImageViewer({
           const { data: msgs, error } = await sb
             .from("review_messages")
             .select(
-              "id,thread_id,text,created_at,updated_at,created_by,created_by_username,created_by_display_name,is_system"
+              `id,thread_id,text,created_at,updated_at,created_by,created_by_username,created_by_display_name,is_system,
+                meta:review_message_receipts!review_message_receipts_message_fkey(
+                user_id,
+                read_at,
+                delivered_at
+              )
+              `
             )
             .in("thread_id", allThreadIds)
             .order("created_at", { ascending: true });
@@ -203,12 +211,13 @@ export default function ImageViewer({
           if (error) throw error;
 
           const grouped: Record<number, Msg[]> = {};
-          (msgs || []).forEach((m: any) => {
+          (msgs || []).forEach((m) => {
+            const deliveryStatus: DeliveryState = m.meta.some(mm=> mm.read_at) ? "read" : m.meta.some(mm=> mm.delivered_at) ? "delivered" : "sent"
             const mine = !!myId && m.created_by === myId;
             const mm: Msg = {
               ...m,
               updated_at: m.updated_at ?? m.created_at,
-              meta: { localDelivery: "sent", isMine: mine } as any,
+              meta: { localDelivery: deliveryStatus, isMine: mine } as MessageMeta,
             };
             (grouped[m.thread_id] ||= []).push(mm);
           });
