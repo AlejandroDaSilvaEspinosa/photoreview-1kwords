@@ -453,7 +453,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
             onClick={() => selectImage(selectedImageIndex - 1)}
             disabled={selectedImageIndex === 0}
             aria-label="Imagen anterior"
-          >‹</button>
+          >❮</button>
 
           <div className={styles.mainImageWrapper} ref={wrapperRef} style={{ cursor: parentCursor }}>
             {loading && (
@@ -514,7 +514,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
             onClick={() => selectImage(selectedImageIndex + 1)}
             disabled={selectedImageIndex === images.length - 1}
             aria-label="Imagen siguiente"
-          >›</button>
+          >❯</button>
         </div>
 
         <ThumbnailGrid

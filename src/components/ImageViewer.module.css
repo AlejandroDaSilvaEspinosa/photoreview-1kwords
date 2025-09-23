@@ -84,23 +84,20 @@
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  background: #222;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
   border: 1px solid var(--border-1);
-  color: #eee;
-  width: 44px;
-  height: 44px;
-  border-radius: 999px;
   font-size: 20px;
+  line-height: 0;
+  background: #222;
+  color: #eee;
   cursor: pointer;
-  z-index: 10;
-  transition: background .15s ease, transform .06s ease, border-color .15s ease, opacity .15s ease;
-  display: grid;
-  place-items: center;
+  transition: background .2s ease, transform .08s ease;
 }
 
 .navButton:hover:not(:disabled) {
   background: #2a2a2a;
-  border-color: var(--accent-red);
 }
 
 .navButton:active {
@@ -195,9 +192,9 @@
 .parentToolbox {
   position: absolute;
   left: 12px;
-  top: 50%;
+  top: 35%;
   transform: translateY(-50%);
-  z-index: 12;
+  z-index: 5;
   display: grid;
   gap: 8px;
   background: rgba(18, 18, 18, .95);
