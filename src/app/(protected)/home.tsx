@@ -1,3 +1,4 @@
+// src/app/(whatever)/home.tsx
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
@@ -6,10 +7,13 @@ import ImageViewer from "@/components/ImageViewer";
 import Header from "@/components/Header";
 import styles from "./home.module.css";
 import type { SkuWithImagesAndStatus, SkuStatus } from "@/types/review";
-import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import { useGlobalRealtimeToasts } from "@/hooks/useRealtimeToasts";
-import { useStatusesStore } from "@/stores/statuses";
 import { useWireAllStatusesRealtime } from "@/lib/realtime/useWireAllStatusesRealtime";
+import { useStatusesStore } from "@/stores/statuses";
+import { useHomeOverview } from "@/hooks/useHomeOverview";
+import FilterPills from "@/components/home/FilterPills";
+import StatusHeading from "@/components/home/StatusHeading";
+import SkuCard from "@/components/home/SkuCard";
 
 type Prefetched = { items: any[]; unseen: number } | null;
 
@@ -19,56 +23,26 @@ type Props = {
   clientInfo: { name: string; project: string };
 };
 
-/** Orden de grupos (ajústalo si quieres otra prioridad) */
-const STATUS_ORDER: SkuStatus[] = [
-  "pending_validation",
-  "needs_correction",
-  "reopened",
-  "validated",
-];
-
 const STATUS_LABEL: Record<SkuStatus, string> = {
   pending_validation: "Pendiente de validación",
   needs_correction: "Con correcciones",
-  reopened: "Reabierto",
   validated: "Validado",
+  reopened: "Reabierto",
 };
+
+const ALL: SkuStatus[] = ["pending_validation", "needs_correction", "validated", "reopened"];
+const LS_KEY = "home.filters.statuses.v1";
 
 export default function Home({ username, skus, clientInfo }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // 🔸 Prefetch notificaciones
-  const [notifPrefetch, setNotifPrefetch] = useState<Prefetched>(null);
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const res = await fetch("/api/notifications?limit=30", { cache: "no-store" }).catch(() => null);
-      if (!alive) return;
-      if (res?.ok) {
-        const json = await res.json();
-        setNotifPrefetch({ items: json.items ?? [], unseen: json.unseen ?? 0 });
-      } else {
-        setNotifPrefetch({ items: [], unseen: 0 });
-      }
-    })();
-    return () => { alive = false; };
-  }, []);
-
-  // Índice por sku
-  const bySku = useMemo(() => {
-    const m = new Map<string, SkuWithImagesAndStatus>();
-    for (const s of skus) m.set(s.sku, s);
-    return m;
-  }, [skus]);
-
-    // 🔌 engancha realtime global de status
+  // Realtime (status SKUs/Imágenes)
   useWireAllStatusesRealtime();
-
   const liveBySku = useStatusesStore((s) => s.bySku);
 
-    // decide el estado efectivo por SKU: live si existe, si no el de props
+  // Mezcla props con estado live
   const effectiveSkus = useMemo(() => {
     return skus.map((s) => {
       const live = liveBySku[s.sku];
@@ -86,29 +60,36 @@ export default function Home({ username, skus, clientInfo }: Props) {
     });
   }, [skus, liveBySku]);
 
-  // grupos ordenados
-  const groups = useMemo(() => {
-    const map = new Map<SkuStatus, SkuWithImagesAndStatus[]>();
-    for (const s of effectiveSkus) {
-      (map.get(s.status) || (map.set(s.status, []), map.get(s.status)!)).push(s);
-    }
-    const orderIndex = (k: SkuStatus) => STATUS_ORDER.indexOf(k);
-    return Array.from(map.entries()).sort((a,b) => orderIndex(a[0]) - orderIndex(b[0]));
-  }, [effectiveSkus]);
+  // Resúmenes por imagen y “unread”
+  const { stats, unread } = useHomeOverview(effectiveSkus);
 
+  // Prefetch notifs
+  const [notifPrefetch, setNotifPrefetch] = useState<Prefetched>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const res = await fetch("/api/notifications?limit=30", { cache: "no-store" }).catch(() => null);
+      if (!alive) return;
+      if (res?.ok) {
+        const json = await res.json();
+        setNotifPrefetch({ items: json.items ?? [], unseen: json.unseen ?? 0 });
+      } else {
+        setNotifPrefetch({ items: [], unseen: 0 });
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
 
-  // URL → selección
-  const skuParam   = searchParams.get("sku");
+  // URL ↔ selección
+  const skuParam = searchParams.get("sku");
   const imageParam = searchParams.get("image");
+  const bySku = useMemo(() => new Map(effectiveSkus.map(s => [s.sku, s])), [effectiveSkus]);
   const selectedSku: SkuWithImagesAndStatus | null = skuParam ? (bySku.get(skuParam) ?? null) : null;
-
-  // ¿la imagen de la URL pertenece al sku seleccionado?
   const selectedImageName: string | null = useMemo(() => {
     if (!selectedSku || !imageParam) return null;
     return selectedSku.images.some((i) => i.name === imageParam) ? imageParam : null;
   }, [selectedSku, imageParam]);
 
-  // Normaliza si ?image no pertenece al sku
   useEffect(() => {
     if (!selectedSku || !imageParam) return;
     const belongs = selectedSku.images.some((i) => i.name === imageParam);
@@ -119,16 +100,13 @@ export default function Home({ username, skus, clientInfo }: Props) {
     }
   }, [selectedSku, imageParam, searchParams, pathname, router]);
 
-  // Cambios de URL
   const selectSku = useCallback((sku: SkuWithImagesAndStatus | null) => {
     const next = new URLSearchParams(searchParams.toString());
     if (sku) {
       next.set("sku", sku.sku);
       const img = next.get("image");
       if (img && !sku.images.some((i) => i.name === img)) next.delete("image");
-    } else {
-      next.delete("sku"); next.delete("image");
-    }
+    } else { next.delete("sku"); next.delete("image"); }
     router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
   }, [searchParams, pathname, router]);
 
@@ -138,43 +116,68 @@ export default function Home({ username, skus, clientInfo }: Props) {
     router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
   }, [searchParams, pathname, router]);
 
-  // Toasters
-  const onOpenSku   = useCallback((sku: string) => selectSku(bySku.get(sku) ?? null), [selectSku, bySku]);
+  const onOpenSku = useCallback((sku: string) => selectSku(bySku.get(sku) ?? null), [selectSku, bySku]);
   const onOpenImage = useCallback((sku: string, img: string) => {
     const s = bySku.get(sku); if (!s) return;
     const next = new URLSearchParams(searchParams.toString());
     next.set("sku", s.sku);
-    if (s.images.some((i) => i.name === img)) next.set("image", img); else next.delete("image");
+    if (s.images.some((i) => i.name === img)) next.set("image", img);
+    else next.delete("image");
     router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
   }, [bySku, pathname, router, searchParams]);
+
   useGlobalRealtimeToasts({ onOpenSku, onOpenImage });
 
-  // ===== Agrupación por estado =====
-  const allStatuses = useMemo<SkuStatus[]>(() => {
-    const set = new Set<SkuStatus>();
-    for (const s of skus) set.add(s.status);
-    return Array.from(set);
-  }, [skus]);
+  /* ===== Filtros (píldoras) ===== */
+  const ALL: SkuStatus[] = ["pending_validation", "needs_correction", "validated", "reopened"];
+  const LS_KEY = "home.filters.statuses.v1";
+  const [active, setActive] = useState<Set<SkuStatus>>(() => new Set(ALL));
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const arr = JSON.parse(raw) as SkuStatus[];
+      if (Array.isArray(arr) && arr.length) {
+        setActive(new Set(arr));
+      }
+    } catch {
+      /* noop */
+    }
+  }, []);
 
-  // visibilidad de estados (multi-selección)
-  const [visibleStatuses, setVisibleStatuses] = useState<Set<SkuStatus>>(new Set(allStatuses));
-  useEffect(() => { setVisibleStatuses(new Set(allStatuses)); }, [allStatuses.join("|")]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LS_KEY, JSON.stringify(Array.from(active)));
+    } catch {
+      /* noop */
+    }
+  }, [active]);
 
-  const toggleStatus = (key: SkuStatus) => {
-    setVisibleStatuses(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
+  const toggle = (s: SkuStatus) =>
+    setActive((prev) => {
+      const n = new Set(prev);
+      n.has(s) ? n.delete(s) : n.add(s);
+      if (n.size === 0) ALL.forEach((x) => n.add(x));
+      return n;
     });
-  };
-  const showAll = () => setVisibleStatuses(new Set(allStatuses));
 
 
+  const filtered = useMemo(
+    () => effectiveSkus.filter((s) => active.has(s.status)),
+    [effectiveSkus, active]
+  );
+
+  // agrupado por estado
+  const grouped = useMemo(() => {
+    const m = new Map<SkuStatus, SkuWithImagesAndStatus[]>();
+    for (const s of filtered) (m.get(s.status) || (m.set(s.status, []), m.get(s.status)!)).push(s);
+    return m;
+  }, [filtered]);
 
   return (
     <main className={styles.main}>
       <Header
-        skus={skus}
+        skus={effectiveSkus}
         loading={false}
         clientName={clientInfo.name}
         clientProject={clientInfo.project}
@@ -199,85 +202,39 @@ export default function Home({ username, skus, clientInfo }: Props) {
               <h2>Revisión de Productos</h2>
               <p>Selecciona una SKU para comenzar el proceso de revisión.</p>
 
-              {/* ===== Filtros (píldoras) por estado ===== */}
-              <div className={styles.filtersBar} role="group" aria-label="Filtrar por estado">
-                <button
-                  type="button"
-                  className={`${styles.pill} ${visibleStatuses.size === allStatuses.length ? styles.pillActive : ""}`}
-                  onClick={showAll}
-                  title="Mostrar todos los estados"
-                >
-                  Todos
-                </button>
-                {STATUS_ORDER
-                  .filter(k => allStatuses.includes(k))
-                  .map((k) => {
-                    const count = effectiveSkus.reduce((acc, s) => acc + (s.status === k ? 1 : 0), 0);
-                    const active = visibleStatuses.has(k);
-                    return (
-                      <button
-                        key={k}
-                        type="button"
-                        className={`${styles.pill} ${active ? styles.pillActive : ""}`}
-                        aria-pressed={active}
-                        onClick={() => toggleStatus(k)}
-                        title={`${active ? "Ocultar" : "Mostrar"} ${STATUS_LABEL[k]}`}
-                      >
-                        <span className={styles.pillDot} data-status={k} />
-                        {STATUS_LABEL[k]}
-                        <span className={styles.pillCount}>{count}</span>
-                      </button>
-                    );
-                  })}
-              </div>
-              {/* ===== Listado con separadores por estado ===== */}
-              {groups
-                .filter(([k]) => visibleStatuses.has(k))
-                .map(([k, items]) => (
-              <section key={k} className={styles.section}>
-                <div
-                  className={styles.statusHeading}
-                  role="separator"
-                  aria-label={`${STATUS_LABEL[k]} · ${items.length}`}
-                >
-                  {STATUS_LABEL[k]} · {items.length}
-                </div>
-                <div className={styles.skuGrid} role="list">
-                    {items.map((sku) => (
-                      <button
-                        key={sku.sku}
-                        type="button"
-                        role="listitem"
-                        className={styles.skuCard}
-                        onClick={() => selectSku(sku)}
-                        title={`Abrir SKU ${sku.sku}`}
-                      >
-                        <div className={styles.thumbWrap}>
-                          <ImageWithSkeleton
-                            src={sku.images[0]?.listingImageUrl}
-                            alt={sku.sku}
-                            width={600}
-                            height={600}
-                            className={styles.thumbnail}
-                            sizes="(max-width: 900px) 50vw, 260px"
-                            quality={100}
-                            minSkeletonMs={180}
-                            fallbackText={sku.sku.slice(0, 2).toUpperCase()}
-                          />
-                          <span className={styles.skuBadge}>{sku.sku}</span>
-                        </div>
-                        <span className={styles.openHint}>Abrir</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-                ))}
+              <FilterPills
+                all={ALL}
+                labels={STATUS_LABEL}
+                totals={Object.fromEntries(
+                  ALL.map(s  => [s, effectiveSkus.filter(x => x.status === s).length])
+                ) as  Record<SkuStatus, number>} 
+                active={active}
+                onToggle={toggle}
+              />
 
-              {(skus.length === 0 || visibleStatuses.size === 0) && (
-                <div className={styles.emptyState}>
-                  No hay SKUs para los filtros seleccionados.
-                </div>
-              )}
+              {ALL.map((k) => {
+                const items = grouped.get(k) ?? [];
+                if (!items.length) return null;
+
+                return (
+                  <section key={k} className={styles.section}>
+                    {/* separador con el mismo estilo “simple” del chat */}
+                    <StatusHeading label={`${STATUS_LABEL[k]} · ${items.length}`} />
+
+                    <div className={styles.skuGrid} role="list">
+                      {items.map((sku) => (
+                        <SkuCard
+                          key={sku.sku}
+                          sku={sku}
+                          unread={!!unread[sku.sku]}
+                          perImageStats={stats[sku.sku] || {}}
+                          onOpen={() => selectSku(sku)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
             </div>
           </div>
         )}

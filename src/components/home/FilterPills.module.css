@@ -1,0 +1,59 @@
+/* src/components/home/FilterPills.module.css */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 14px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #1b1b1b;
+  color: var(--text-1);
+  border: 1px solid var(--border-1);
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, box-shadow .12s ease;
+}
+
+.pill:hover {
+  background: #202020;
+}
+
+.pillActive {
+  border-color: var(--red-border);
+  box-shadow: 0 0 0 2px rgba(255, 0, 64, .22);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot_validated {
+  background: var(--green-border);
+}
+
+.dot_needs_correction {
+  background: var(--orange-border);
+}
+
+.dot_reopened {
+  background: var(--red-border);
+}
+
+.dot_pending_validation {
+  background: #9aa;
+}
+
+.count {
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid var(--border-1);
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 12px;
+}

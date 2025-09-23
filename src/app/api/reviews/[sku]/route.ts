@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseFromRequest } from "@/lib/supabase/route";
 import { unstable_noStore as noStore } from "next/cache";
-import { Thread, ThreadMessage, ThreadStatus } from "@/types/review";
+import type { Thread, ThreadMessage, ThreadStatus } from "@/types/review";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,13 +10,18 @@ type Payload = Record<string, { points: Thread[] }>;
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { sku: string } }
+  ctx: { params: Promise<{ sku: string }> } 
 ) {
   noStore();
-  const sku = decodeURIComponent(params.sku);
+
+  const { sku } = await ctx.params;         
+  const decodedSku = decodeURIComponent(sku);
+
   const { client: sb, res } = supabaseFromRequest(req);
 
-  const { data: { user } } = await sb.auth.getUser();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // Threads del SKU
@@ -25,12 +30,17 @@ export async function GET(
     .select(
       "id, sku, image_name, x, y, status, created_by:app_users(username, display_name)"
     )
-    .eq("sku", sku)
+    .eq("sku", decodedSku)
     .not("status", "eq", "deleted")
     .order("id", { ascending: true });
 
-  if (e1) return NextResponse.json({ error: e1.message }, { status: 500, headers: res.headers });
-  if (!threads?.length) return NextResponse.json({}, { status: 200, headers: res.headers });
+  if (e1)
+    return NextResponse.json(
+      { error: e1.message },
+      { status: 500, headers: res.headers }
+    );
+  if (!threads?.length)
+    return NextResponse.json({}, { status: 200, headers: res.headers });
 
   const threadIds = threads.map((t) => t.id);
 
@@ -42,7 +52,12 @@ export async function GET(
     )
     .in("thread_id", threadIds)
     .order("created_at", { ascending: true });
-  if (e2) return NextResponse.json({ error: e2.message }, { status: 500, headers: res.headers });
+
+  if (e2)
+    return NextResponse.json(
+      { error: e2.message },
+      { status: 500, headers: res.headers }
+    );
 
   const msgsByThread = new Map<number, ThreadMessage[]>();
 
@@ -64,11 +79,10 @@ export async function GET(
       id: t.id,
       x: Number(t.x),
       y: Number(t.y),
-      status: t.status,
+      status: t.status as ThreadStatus,
       messages: msgsByThread.get(t.id) ?? [],
     };
-    if (!byImage[t.image_name]) byImage[t.image_name] = { points: [] };
-    byImage[t.image_name].points.push(thread);
+    (byImage[t.image_name] ||= { points: [] }).points.push(thread);
   }
 
   return NextResponse.json(byImage, { headers: res.headers });

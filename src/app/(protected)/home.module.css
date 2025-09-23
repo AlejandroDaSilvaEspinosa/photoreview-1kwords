@@ -1,4 +1,4 @@
-/* ===== Layout principal ===== */
+/* src/app/(whatever)/home.module.css */
 .main {
   min-height: 100vh;
   background: var(--surface-0);
@@ -15,7 +15,6 @@
   align-items: stretch;
 }
 
-/* ===== Placeholder / landing ===== */
 .placeholder {
   display: grid;
   place-items: center;
@@ -34,7 +33,7 @@
 }
 
 .placeholderInner h2 {
-  margin: 0 0 6px 0;
+  margin: 0 0 6px;
   font-size: 18px;
   font-weight: 700;
   color: #fff;
@@ -42,247 +41,29 @@
 }
 
 .placeholderInner p {
-  margin: 0 0 10px 0;
+  margin: 0 0 10px;
   color: var(--text-2);
   font-size: 14px;
 }
 
-/* ===== Divider acorde a tu estilo ===== */
-.sectionDivider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 16px 0 14px;
-  font-size: 12px;
-  letter-spacing: .02em;
-  color: var(--text-2);
+.section {
+  margin-top: 8px;
 }
 
-.sectionDivider::before,
-.sectionDivider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background:
-    linear-gradient(to right, transparent, rgba(255, 255, 255, .2));
-}
-
-.sectionDivider::after {
-  background:
-    linear-gradient(to left, transparent, rgba(255, 255, 255, .2));
-}
-
-.sectionDivider>span {
-  white-space: nowrap;
-  font-weight: 600;
-  color: var(--text-1);
-  opacity: .9;
-}
-
-/* ===== Grid de SKUs ===== */
 .skuGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 14px;
   width: 100%;
 }
 
-/* ===== Card de SKU (button accesible) ===== */
-.skuCard {
-  appearance: none;
-  border: 1px solid var(--border-1);
-  background: var(--surface-3);
-  color: inherit;
-  border-radius: 12px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  cursor: pointer;
-  text-align: left;
-  transition:
-    background .15s ease,
-    border-color .15s ease,
-    transform .06s ease,
-    box-shadow .15s ease;
-}
-
-.skuCard:hover {
-  background: #1b1b1b;
-  border-color: var(--border-2);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, .35);
-}
-
-.skuCard:active {
-  transform: translateY(1px);
-}
-
-.skuCard:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
-}
-
-/* Contenedor de la imagen con badge superpuesto */
-.thumbWrap {
-  position: relative;
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid var(--border-1);
-  background: #0d0d0d;
-}
-
-.thumbnail {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  aspect-ratio: 1;
-  display: block;
-}
-
-/* SKU como badge flotante */
-.skuBadge {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  background: rgba(0, 0, 0, .7);
-  border: 1px solid rgba(255, 255, 255, .15);
-  color: #fff;
-  padding: 4px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .3px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
-}
-
-/* Hint secundario */
-.openHint {
-  font-size: 12px;
-  color: var(--text-2);
-}
-
-/* Empty state */
-.emptyState {
-  grid-column: 1 / -1;
-  text-align: center;
-  color: var(--text-2);
-  border: 1px dashed var(--border-1);
-  border-radius: 12px;
-  padding: 16px;
-}
-
-/* Loader a pantalla completa (si lo necesitas) */
-.fullPageLoader {
-  display: grid;
-  place-items: center;
-  min-height: 100vh;
-  font-size: 1rem;
-  color: var(--text-2);
-}
-
-/* Responsive fino */
-@media (max-width: 720px) {
-  .content {
-    padding: 8px;
-  }
-
+@media (max-width:720px) {
   .placeholderInner {
     padding: 14px 10px;
   }
 
   .skuGrid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 10px;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
 }
-
-/* ===== Separador  ===== */
-.statusHeading {
-  font-size: 24px;
-  font-weight: 600;
-  color: #ddd;
-  padding: 16px 2px 8px;
-  margin: 2px 0 4px;
-}
-
-.statusHeading:not(:first-child) {
-  margin-top: 10px;
-}
-
-/* ===== Barra de filtros (píldoras) ===== */
-.filtersBar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 12px 0 8px;
-}
-
-.pill {
-  appearance: none;
-  border: 1px solid var(--border-1);
-  background: #222;
-  color: var(--text-1);
-  border-radius: 999px;
-  padding: 6px 10px;
-  font-size: 12px;
-  line-height: 1;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  transition: background .12s ease, border-color .12s ease, box-shadow .12s ease, transform .06s ease;
-}
-
-.pill:hover {
-  background: #2a2a2a;
-}
-
-.pill:active {
-  transform: translateY(1px);
-}
-
-.pillActive {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
-}
-
-.pillDot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, .65);
-}
-
-/* Colores por SkuStatus */
-.pillDot[data-status="pending_validation"] {
-  background: #7fb3ff;
-}
-
-/* azul suave = por validar */
-.pillDot[data-status="needs_correction"] {
-  background: #FF0040;
-}
-
-/* rojo = necesita corrección */
-.pillDot[data-status="reopened"] {
-  background: #FFB000;
-}
-
-/* ámbar = reabierto */
-.pillDot[data-status="validated"] {
-  background: #0FA958;
-}
-
-/* verde = validado */
-
-.pillCount {
-  font-variant-numeric: tabular-nums;
-  color: var(--text-2);
-  border: 1px solid var(--border-1);
-  background: #1b1b1b;
-  border-radius: 999px;
-  padding: 2px 6px;
-}
-
-/* (resto de tu CSS queda igual) */

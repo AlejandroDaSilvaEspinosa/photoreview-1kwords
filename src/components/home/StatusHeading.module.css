@@ -1,0 +1,13 @@
+/* src/components/home/StatusHeading.module.css */
+/* Igual que el título "Hoy" del chat: texto a la izq, sin líneas */
+.heading {
+    font-size: 32px;
+    font-weight: 700;
+    color: #ddd;
+    padding: 24px 2px 16px;
+    margin: 2px 0 4px;
+}
+
+.heading:not(:first-child) {
+    margin-top: 10px;
+}
