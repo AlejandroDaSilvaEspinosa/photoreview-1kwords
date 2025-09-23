@@ -196,3 +196,93 @@
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
 }
+
+/* ===== Separador  ===== */
+.statusHeading {
+  font-size: 24px;
+  font-weight: 600;
+  color: #ddd;
+  padding: 16px 2px 8px;
+  margin: 2px 0 4px;
+}
+
+.statusHeading:not(:first-child) {
+  margin-top: 10px;
+}
+
+/* ===== Barra de filtros (píldoras) ===== */
+.filtersBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 8px;
+}
+
+.pill {
+  appearance: none;
+  border: 1px solid var(--border-1);
+  background: #222;
+  color: var(--text-1);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background .12s ease, border-color .12s ease, box-shadow .12s ease, transform .06s ease;
+}
+
+.pill:hover {
+  background: #2a2a2a;
+}
+
+.pill:active {
+  transform: translateY(1px);
+}
+
+.pillActive {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.pillDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .65);
+}
+
+/* Colores por SkuStatus */
+.pillDot[data-status="pending_validation"] {
+  background: #7fb3ff;
+}
+
+/* azul suave = por validar */
+.pillDot[data-status="needs_correction"] {
+  background: #FF0040;
+}
+
+/* rojo = necesita corrección */
+.pillDot[data-status="reopened"] {
+  background: #FFB000;
+}
+
+/* ámbar = reabierto */
+.pillDot[data-status="validated"] {
+  background: #0FA958;
+}
+
+/* verde = validado */
+
+.pillCount {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  border: 1px solid var(--border-1);
+  background: #1b1b1b;
+  border-radius: 999px;
+  padding: 2px 6px;
+}
+
+/* (resto de tu CSS queda igual) */

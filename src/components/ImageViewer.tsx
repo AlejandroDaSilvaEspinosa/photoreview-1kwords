@@ -43,7 +43,7 @@ interface ImageViewerProps {
   sku: SkuWithImagesAndStatus;
   username: string;
   selectSku: (sku: SkuWithImagesAndStatus | null) => void;
-  selectedImageName?: string | null;             // ← nombre desde URL
+  selectedImageName?: string | null; // ← nombre desde URL
   onSelectImage?: (name: string | null) => void; // ← escribe a URL
 }
 
@@ -63,7 +63,6 @@ export default function ImageViewer({
   const [currentImageName, setCurrentImageName] = useState<string | null>(
     selectedImageName ?? images[0]?.name ?? null
   );
-  // Guarda el último nombre que empujamos a la URL para ignorar props obsoletas
   const pendingUrlImageRef = useRef<string | null>(null);
 
   // Si cambia el SKU, resetea la imagen actual
@@ -73,23 +72,16 @@ export default function ImageViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sku.sku]);
 
-  // Sincroniza con la URL, ignorando props "viejas" mientras hay navegación pendiente
+  // Sincroniza con la URL, ignorando props “viejas” mientras hay navegación pendiente
   useEffect(() => {
     if (!selectedImageName) return;
-    if (pendingUrlImageRef.current && selectedImageName !== pendingUrlImageRef.current) {
-      // Prop aún no ha alcanzado el valor que enviamos → ignorar
-      return;
-    }
-    if (selectedImageName !== currentImageName) {
-      setCurrentImageName(selectedImageName);
-    }
-    if (pendingUrlImageRef.current === selectedImageName) {
-      pendingUrlImageRef.current = null; // la URL ya alcanzó a la UI
-    }
+    if (pendingUrlImageRef.current && selectedImageName !== pendingUrlImageRef.current) return;
+    if (selectedImageName !== currentImageName) setCurrentImageName(selectedImageName);
+    if (pendingUrlImageRef.current === selectedImageName) pendingUrlImageRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedImageName]);
 
-  // Índice e imagen derivados SIEMPRE del nombre (evita rebotes visuales)
+  // Índice e imagen derivados SIEMPRE del nombre
   const selectedImageIndex = useMemo(() => {
     if (!currentImageName) return 0;
     const idx = images.findIndex((i) => i.name === currentImageName);
@@ -99,7 +91,10 @@ export default function ImageViewer({
   const selectedImage = images[selectedImageIndex] ?? null;
 
   // ===== UI state =====
-  const [activeThreadId, setActiveThreadId] = useState<number | null>(null);
+  // 👉 Fuente ÚNICA: store (sin useState local)
+  const activeThreadId = useThreadsStore((s) => s.activeThreadId);
+  const setActiveThreadId = useThreadsStore((s) => s.setActiveThreadId);
+
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [creatingThreadId, setCreatingThreadId] = useState<number | null>(null);
 
@@ -147,7 +142,6 @@ export default function ImageViewer({
   const createThreadOptimistic = useThreadsStore((s) => s.createOptimistic);
   const confirmCreate          = useThreadsStore((s) => s.confirmCreate);
   const rollbackCreate         = useThreadsStore((s) => s.rollbackCreate);
-  const setActiveThreadIdStore = useThreadsStore((s) => s.setActiveThreadId);
   const pendingStatusMap       = useThreadsStore((s) => s.pendingStatus);
 
   // ==========================
@@ -309,8 +303,7 @@ export default function ImageViewer({
 
       const tempId = createThreadOptimistic(imgName, rx, ry);
       setCreatingThreadId(tempId);
-      setActiveThreadId(tempId);
-      setActiveThreadIdStore(tempId);
+      setActiveThreadId(tempId); // solo store
       setActiveKey(`${imgName}|${rx}|${ry}`);
 
       const sysText = `**@${username ?? "desconocido"}** ha creado un nuevo hilo de revisión.`;
@@ -338,7 +331,6 @@ export default function ImageViewer({
       if (!created?.threadId) {
         rollbackCreate(tempId);
         setActiveThreadId(null);
-        setActiveThreadIdStore(null);
         setCreatingThreadId(null);
         return;
       }
@@ -356,11 +348,13 @@ export default function ImageViewer({
 
       confirmCreate(tempId, realRow);
       moveThreadMessages(tempId, realId);
-      setActiveThreadId((prev) => {
-        const n = prev === tempId ? realId : prev;
-        setActiveThreadIdStore(n ?? null);
-        return n;
-      });
+
+      // sincroniza store: si el activo era el temp, cámbialo al real
+      {
+        const current = useThreadsStore.getState().activeThreadId;
+        const nextId = current === tempId ? realId : current;
+        setActiveThreadId(nextId ?? null);
+      }
       setCreatingThreadId(null);
 
       // Mensaje de sistema persistido
@@ -396,7 +390,7 @@ export default function ImageViewer({
       addOptimisticMsg,
       confirmMessage,
       moveThreadMessages,
-      setActiveThreadIdStore,
+      setActiveThreadId,
     ]
   );
 
@@ -521,8 +515,7 @@ export default function ImageViewer({
   const selectImage = (index: number) => {
     const name = images[index]?.name ?? null;
 
-    setActiveThreadId(null);
-    setActiveThreadIdStore(null);
+    setActiveThreadId(null); // solo store
     setActiveKey(null);
 
     if (name) {
@@ -555,6 +548,17 @@ export default function ImageViewer({
 
   const parentCursor = tool === "pin" ? "crosshair" : "zoom-in";
 
+  const thumbThreads = useMemo(
+    () =>
+      Object.fromEntries(
+        images.map((img) => [
+          img.name,
+          (threadsByNeededImages[img.name] || []).map((t) => ({ ...t, messages: [] })),
+        ])
+      ),
+    [images, threadsByNeededImages]
+  );
+
   return (
     <div className={styles.viewerContainer}>
       <div className={styles.mainViewer}>
@@ -583,6 +587,7 @@ export default function ImageViewer({
             {loadError && !loading && <div className={styles.overlayError}>{loadError}</div>}
 
             <ImageWithSkeleton
+              priority
               ref={imgRef}
               src={selectedImage?.url}
               onClick={handleImageClick}
@@ -614,8 +619,7 @@ export default function ImageViewer({
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setActiveThreadId(th.id);
-                    setActiveThreadIdStore(th.id);
+                    setActiveThreadId(th.id); // solo store
                     if (selectedImage?.name) setActiveKey(fp(selectedImage.name, th.x, th.y));
                   }}
                   title={th.status === "corrected" ? "Corregido" : th.status === "reopened" ? "Reabierto" : "Pendiente"}
@@ -637,16 +641,7 @@ export default function ImageViewer({
           images={images}
           selectedIndex={selectedImageIndex}
           onSelect={selectImage}
-          threads={useMemo(
-            () =>
-              Object.fromEntries(
-                images.map((img) => [
-                  img.name,
-                  (threadsByNeededImages[img.name] || []).map((t) => ({ ...t, messages: [] })),
-                ])
-              ),
-            [images, threadsByNeededImages]
-          )}
+          threads={thumbThreads}
           validatedImages={{}}
         />
       </div>
@@ -663,8 +658,7 @@ export default function ImageViewer({
         }}
         onDeleteThread={(id: number) => removeThread(id)}
         onFocusThread={(id: number | null) => {
-          setActiveThreadId(id);
-          setActiveThreadIdStore(id);
+          setActiveThreadId(id); // solo store
           if (id) markThreadRead(id).catch(() => {});
           if (selectedImage?.name && id) {
             const t = (threadsRaw || []).find((x) => x.id === id);
@@ -697,8 +691,7 @@ export default function ImageViewer({
           hideThreads={!showThreads}
           setHideThreads={setShowThreads}
           onFocusThread={(id: number | null) => {
-            setActiveThreadId(id);
-            setActiveThreadIdStore(id);
+            setActiveThreadId(id); // solo store
             if (id) markThreadRead(id).catch(() => {});
           }}
           onAddThreadMessage={(threadId: number, text: string) => {
