@@ -1,7 +1,10 @@
-/* Fichero: app/page.module.css */
-
+/* ===== Layout principal ===== */
 .main {
   min-height: 100vh;
+  background: var(--surface-0);
+  color: var(--text-1);
+  display: flex;
+  flex-direction: column;
 }
 
 .content {
@@ -9,68 +12,50 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
+  padding: 16px;
 }
 
+/* ===== Placeholder / landing ===== */
 .placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
+  display: grid;
+  place-items: center;
   flex: 1;
-  /* Ocupa el espacio restante */
   width: 100%;
-  max-width: 1600px;
-  margin-bottom: 2rem;
-  background-color: #1f1f1f;
-  border: 2px dashed #444;
-  border-radius: 12px;
-  color: #888;
 }
 
-.fullPageLoader {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  font-size: 1.2rem;
-  color: #a0a0a0;
+.placeholderInner {
+  width: min(1400px, 100%);
+  background: var(--surface-2);
+  border: 1px solid var(--border-1);
+  border-radius: 14px;
+  padding: 20px 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
 }
 
-.skuCard {
-  border: 1px solid #E5E5E5;
-  border-radius: 6px;
-  padding: 10px;
-  margin: 8px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  max-width: 200px;
+.placeholderInner h2 {
+  margin: 0 0 6px 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: .2px;
 }
 
-.skuGrid {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 16px;
+.placeholderInner p {
+  margin: 0 0 10px 0;
+  color: var(--text-2);
+  font-size: 14px;
 }
 
-.thumbnail {
-  max-width: 100%;
-  aspect-ratio: 1;
-  height: auto;
-}
-
+/* ===== Divider acorde a tu estilo ===== */
 .sectionDivider {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 24px 0 12px;
+  margin: 16px 0 14px;
   font-size: 12px;
-  opacity: 0.9;
-  letter-spacing: 0.02em;
-  color: var(--muted-foreground, #bbb);
+  letter-spacing: .02em;
+  color: var(--text-2);
 }
 
 .sectionDivider::before,
@@ -78,16 +63,136 @@
   content: "";
   flex: 1;
   height: 1px;
-  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.22));
+  background:
+    linear-gradient(to right, transparent, rgba(255, 255, 255, .2));
 }
 
 .sectionDivider::after {
-  background: linear-gradient(to left, transparent, rgba(255, 255, 255, 0.22));
+  background:
+    linear-gradient(to left, transparent, rgba(255, 255, 255, .2));
 }
 
 .sectionDivider>span {
   white-space: nowrap;
-  font-weight: 500;
-  color: var(--foreground, #ddd);
-  opacity: 0.85;
+  font-weight: 600;
+  color: var(--text-1);
+  opacity: .9;
+}
+
+/* ===== Grid de SKUs ===== */
+.skuGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+
+/* ===== Card de SKU (button accesible) ===== */
+.skuCard {
+  appearance: none;
+  border: 1px solid var(--border-1);
+  background: var(--surface-3);
+  color: inherit;
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background .15s ease,
+    border-color .15s ease,
+    transform .06s ease,
+    box-shadow .15s ease;
+}
+
+.skuCard:hover {
+  background: #1b1b1b;
+  border-color: var(--border-2);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .35);
+}
+
+.skuCard:active {
+  transform: translateY(1px);
+}
+
+.skuCard:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* Contenedor de la imagen con badge superpuesto */
+.thumbWrap {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-1);
+  background: #0d0d0d;
+}
+
+.thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  aspect-ratio: 1;
+  display: block;
+}
+
+/* SKU como badge flotante */
+.skuBadge {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  background: rgba(0, 0, 0, .7);
+  border: 1px solid rgba(255, 255, 255, .15);
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .3px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+
+/* Hint secundario */
+.openHint {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* Empty state */
+.emptyState {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--text-2);
+  border: 1px dashed var(--border-1);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+/* Loader a pantalla completa (si lo necesitas) */
+.fullPageLoader {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  font-size: 1rem;
+  color: var(--text-2);
+}
+
+/* Responsive fino */
+@media (max-width: 720px) {
+  .content {
+    padding: 8px;
+  }
+
+  .placeholderInner {
+    padding: 14px 10px;
+  }
+
+  .skuGrid {
+    gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
 }

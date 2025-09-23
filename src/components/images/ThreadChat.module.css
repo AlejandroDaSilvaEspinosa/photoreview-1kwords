@@ -103,9 +103,9 @@
     max-height: 120px;
     padding: 8px 10px;
     border-radius: 8px;
-    background: #1c1c1c;
+    background: #222;
     color: #eee;
-    border: 1px solid #2a2a2a;
+    border: 1px solid var(--border-1);
     outline: none;
 }
 
@@ -113,8 +113,8 @@
     flex: 0 0 auto;
     padding: 0 12px;
     border-radius: 8px;
-    border: 1px solid #2a2a2a;
-    background: #2a2a2a;
+    border: 1px solid var(--border-1);
+    background: #222;
     color: #eee;
     cursor: pointer;
     max-height: 54px;
@@ -213,6 +213,10 @@
 
 .composer button:hover {
     background: #333;
+}
+
+.composer button:active {
+    transform: translateY(1px);
 }
 
 .mine {

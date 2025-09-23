@@ -141,3 +141,16 @@ body,
   --text-2: #a0a0a0;
   --accent-red: #FF0040;
 }
+
+/* ===== Paleta consistente con el resto ===== */
+:root {
+  --surface-0: #1a1a1a;
+  --surface-1: #151515;
+  --surface-2: #141414;
+  --surface-3: #131313;
+  --border-1: #2a2a2a;
+  --border-2: #242424;
+  --text-1: #ddd;
+  --text-2: #a0a0a0;
+  --accent: #FF0040;
+}

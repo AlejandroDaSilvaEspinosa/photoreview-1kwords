@@ -1,4 +1,3 @@
-// src/app/(whatever)/home.tsx  (tu fichero Home)
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
@@ -29,7 +28,6 @@ export default function Home({ username, skus, clientInfo }: Props) {
   const [notifPrefetch, setNotifPrefetch] = useState<Prefetched>(null);
   useEffect(() => {
     let alive = true;
-    // fondo (no bloquea render); si quieres aún más suave: requestIdleCallback
     (async () => {
       const res = await fetch("/api/notifications?limit=30", { cache: "no-store" }).catch(() => null);
       if (!alive) return;
@@ -65,7 +63,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
   };
 
   const onOpenSku = useCallback((sku: string) => selectSku(bySku.get(sku) ?? null), [selectSku, bySku]);
-  const onOpenImage = useCallback((sku: string, img: string) => {
+  const onOpenImage = useCallback((sku: string, _img: string) => {
     const s = bySku.get(sku);
     if (!s) return; selectSku(s);
   }, [bySku, selectSku]);
@@ -83,6 +81,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
         onOpenSku={onOpenSku}
         notificationsInitial={notifPrefetch}
       />
+
       <div className={styles.content}>
         {selectedSku ? (
           <ImageViewer
@@ -93,23 +92,45 @@ export default function Home({ username, skus, clientInfo }: Props) {
           />
         ) : (
           <div className={styles.placeholder}>
-            <h2>Revisión de Productos</h2>
-            <p>Selecciona una SKU para comenzar el proceso de revisión.</p>
-            <div className={styles.skuGrid}>
-              {skus.map((sku) => (
-                <div key={sku.sku} className={styles.skuCard} onClick={() => selectSku(sku)}>
-                  <ImageWithSkeleton
-                    src={sku.images[0]?.listingImageUrl}
-                    alt={sku.sku}
-                    width={600}
-                    height={600}
-                    className={styles.thumbnail}
-                    sizes="100%"
-                    quality={100}
-                  />
-                  <p>{sku.sku}</p>
-                </div>
-              ))}
+            <div className={styles.placeholderInner}>
+              <h2>Revisión de Productos</h2>
+              <p>Selecciona una SKU para comenzar el proceso de revisión.</p>
+
+              <div className={styles.sectionDivider}><span>Listado de SKUs</span></div>
+
+              <div className={styles.skuGrid} role="list">
+                {skus.map((sku) => (
+                  <button
+                    key={sku.sku}
+                    type="button"
+                    role="listitem"
+                    className={styles.skuCard}
+                    onClick={() => selectSku(sku)}
+                    title={`Abrir SKU ${sku.sku}`}
+                  >
+                    <div className={styles.thumbWrap}>
+                      <ImageWithSkeleton
+                        src={sku.images[0]?.listingImageUrl}
+                        alt={sku.sku}
+                        width={600}
+                        height={600}
+                        className={styles.thumbnail}
+                        sizes="(max-width: 900px) 50vw, 260px"
+                        quality={100}
+                        minSkeletonMs={180}
+                        fallbackText={sku.sku.slice(0, 2).toUpperCase()}
+                      />
+                      <span className={styles.skuBadge}>{sku.sku}</span>
+                    </div>
+                    <span className={styles.openHint}>Abrir</span>
+                  </button>
+                ))}
+                {skus.length === 0 && (
+                  <div className={styles.emptyState}>
+                    No hay SKUs disponibles por ahora.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

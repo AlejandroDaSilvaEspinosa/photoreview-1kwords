@@ -21,6 +21,15 @@
     transition: background .2s ease, transform .08s ease;
 }
 
+.bellBtn:hover {
+    background: #333;
+}
+
+.bellBtn:active {
+    transform: translateY(1px);
+}
+
+
 .badge {
     position: absolute;
     top: -2px;
