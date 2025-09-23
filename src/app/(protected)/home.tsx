@@ -119,12 +119,13 @@ export default function Home({ username, skus, clientInfo }: Props) {
                       <ImageWithSkeleton
                         src={sku.images[0]?.listingImageUrl}
                         alt={sku.sku}
-                        width={600}
-                        height={600}
+                        width={200}
+                        height={200}
                         className={styles.thumbnail}
                         sizes="(max-width: 900px) 50vw, 260px"
                         quality={100}
                         minSkeletonMs={180}
+                        loading="lazy"
                         fallbackText={sku.sku.slice(0, 2).toUpperCase()}
                       />
                       <span className={styles.skuBadge}>{sku.sku}</span>
