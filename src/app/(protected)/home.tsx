@@ -30,14 +30,11 @@ const STATUS_LABEL: Record<SkuStatus, string> = {
   reopened: "Reabierto",
 };
 
-const ALL: SkuStatus[] = ["pending_validation", "needs_correction", "validated", "reopened"];
-const LS_KEY = "home.filters.statuses.v1";
 
 export default function Home({ username, skus, clientInfo }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-
   // Realtime (status SKUs/Imágenes)
   useWireAllStatusesRealtime();
   const liveBySku = useStatusesStore((s) => s.bySku);

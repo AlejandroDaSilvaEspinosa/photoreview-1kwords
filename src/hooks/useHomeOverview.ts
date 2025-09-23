@@ -5,11 +5,24 @@ import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import type { SkuWithImagesAndStatus, ThreadStatus } from "@/types/review";
 
-type ImageStats = { pending: number; corrected: number; reopened: number; total: number };
+/** Solo contamos estos estados (no 'deleted') */
+type StatusKey = Exclude<ThreadStatus, "deleted">;
+
+/** Stats por imagen */
+export type ImageStats = { total: number } & Record<StatusKey, number>;
 export type StatsBySku = Record<string, Record<string, ImageStats>>; // sku -> image_name -> stats
 export type UnreadBySku = Record<string, boolean>;
 
-const emptyStats = (): ImageStats => ({ pending: 0, corrected: 0, reopened: 0, total: 0 });
+const emptyStats = (): ImageStats => ({
+  total: 0,
+  pending: 0,
+  corrected: 0,
+  reopened: 0,
+});
+
+/** Type-guard para indexar de forma segura */
+const isStatusKey = (s: unknown): s is StatusKey =>
+  s === "pending" || s === "corrected" || s === "reopened";
 
 export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
   const skuList = useMemo(() => skus.map((s) => s.sku), [skus]);
@@ -19,7 +32,8 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
 
   // auth id
   useEffect(() => {
-    supabaseBrowser().auth.getUser()
+    supabaseBrowser()
+      .auth.getUser()
       .then(({ data }) => setSelfId(data.user?.id ?? null))
       .catch(() => setSelfId(null));
   }, []);
@@ -31,7 +45,6 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
 
     (async () => {
       const sb = supabaseBrowser();
-      // traemos los hilos relevantes y agregamos en cliente
       const { data: rows } = await sb
         .from("review_threads")
         .select("sku,image_name,status")
@@ -44,13 +57,17 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
       for (const r of rows as { sku: string; image_name: string; status: ThreadStatus }[]) {
         const byImg = (map[r.sku] ||= {});
         const st = (byImg[r.image_name] ||= emptyStats());
-        st[r.status as keyof ImageStats]++ as unknown as number;
-        st.total++;
+        if (isStatusKey(r.status)) {
+          st[r.status] += 1;
+          st.total += 1;
+        }
       }
       setStats(map);
     })();
 
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [skuList]);
 
   // carga inicial de no leídos (boolean por sku)
@@ -61,8 +78,6 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
     (async () => {
       const sb = supabaseBrowser();
 
-      // Mensajes de esos SKUs (join con threads) y receipts del usuario
-      // Nota: usamos left join y filtramos receipts nulos del usuario.
       const { data } = await sb
         .from("review_messages")
         .select(`
@@ -77,11 +92,10 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
 
       const anyUnread: UnreadBySku = {};
       for (const row of data as any[]) {
-        const sku = row.review_threads?.sku;
-        const receipts = (row.review_message_receipts || []) as { user_id: string; read_at: string | null }[];
-        const mine = row.created_by === selfId;
-        if (!sku || mine) continue;
-
+        const sku = row.review_threads?.sku as string | undefined;
+        if (!sku || row.created_by === selfId) continue;
+        const receipts =
+          (row.review_message_receipts || []) as { user_id: string; read_at: string | null }[];
         const rec = receipts.find((r) => r.user_id === selfId);
         const isUnread = !rec || !rec.read_at;
         if (isUnread) anyUnread[sku] = true;
@@ -89,10 +103,12 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
       setUnread(anyUnread);
     })();
 
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [skuList, selfId]);
 
-  // realtime (threads + messages + receipts)
+  // realtime (threads + receipts)
   useEffect(() => {
     const sb = supabaseBrowser();
     const ch = sb.channel("home-overview", { config: { broadcast: { ack: true } } });
@@ -102,27 +118,36 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
       "postgres_changes",
       { event: "*", schema: "public", table: "review_threads" },
       (p) => {
-        const row = (p.eventType === "DELETE" ? p.old : p.new) as any;
-        if (!row || !row.sku || !skuList.includes(row.sku)) return;
-        if (row.status === "deleted") return;
+        const evt = p.eventType;
+        const row =
+          (evt === "DELETE" ? (p as any).old : (p as any).new) as {
+            sku?: string;
+            image_name?: string;
+            status?: ThreadStatus;
+          } | null;
+
+        if (!row?.sku || !row.image_name || !skuList.includes(row.sku)) return;
 
         setStats((prev) => {
           const next: StatsBySku = { ...prev };
-          const byImg = (next[row.sku] ||= {});
-          const key = row.image_name as string;
-          const st = (byImg[key] ||= emptyStats());
+          const byImg = (next[row.sku!] ||= {});
+          const st = (byImg[row.image_name!] ||= emptyStats());
 
-          // recalcular con simplicidad: restar/añadir según evento
-          if (p.eventType === "INSERT") {
-            st[row.status] = (st[row.status]  ?? 0) + 1;
-            st.total++;
-          } else if (p.eventType === "UPDATE") {
-            const old = (p as any).old?.status;
-            const neu = (p as any).new?.status;
-            if (old && old !== "deleted") st[old] = Math.max(0, (st[old] ?? 0) - 1);
-            if (neu && neu !== "deleted") st[neu] = (st[neu] ?? 0) + 1;
-          } else if (p.eventType === "DELETE") {
-            st[row.status] = Math.max(0, (st[row.status] ?? 0) - 1);
+          if (evt === "INSERT") {
+            if (isStatusKey(row.status)) {
+              st[row.status] = (st[row.status] ?? 0) + 1;
+              st.total += 1;
+            }
+          } else if (evt === "UPDATE") {
+            const oldStatus = (p as any).old?.status as ThreadStatus | undefined;
+            const newStatus = (p as any).new?.status as ThreadStatus | undefined;
+            if (isStatusKey(oldStatus)) st[oldStatus] = Math.max(0, (st[oldStatus] ?? 0) - 1);
+            if (isStatusKey(newStatus)) st[newStatus] = (st[newStatus] ?? 0) + 1;
+            // total no cambia en UPDATE
+          } else if (evt === "DELETE") {
+            if (isStatusKey(row.status)) {
+              st[row.status] = Math.max(0, (st[row.status] ?? 0) - 1);
+            }
             st.total = Math.max(0, st.total - 1);
           }
           return next;
@@ -130,24 +155,11 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
       }
     );
 
-    // Messages / receipts → badge de no leídos
-    ch.on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "review_messages" },
-      (p) => {
-        const row = (p.eventType === "DELETE" ? p.old : p.new) as any;
-        const sku = row?.review_threads?.sku; // no viene por defecto en payload
-        // Si el trigger no trae join, hacemos una consulta rápida
-        if (!sku || !selfId) return;
-      }
-    );
-
+    // Receipts → badge de no leídos (refetch simple)
     ch.on(
       "postgres_changes",
       { event: "*", schema: "public", table: "review_message_receipts" },
       () => {
-        // Para mantenerlo simple, forzamos un refetch rápido de unread.
-        // (pudiendo optimizar si lo necesitas)
         if (!selfId || !skuList.length) return;
         (async () => {
           const { data } = await supabaseBrowser()
@@ -159,15 +171,17 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
             `)
             .in("review_threads.sku", skuList as string[])
             .neq("created_by", selfId);
-
+          console.log(data)
           if (!data) return;
           const anyUnread: UnreadBySku = {};
           for (const row of data as any[]) {
-            const sku = row.review_threads?.sku;
-            const receipts = (row.review_message_receipts || []) as { user_id: string; read_at: string | null }[];
+            const sku = row.review_threads?.sku as string | undefined;
+            if (!sku || row.created_by === selfId) continue;
+            const receipts =
+              (row.review_message_receipts || []) as { user_id: string; read_at: string | null }[];
             const rec = receipts.find((r) => r.user_id === selfId);
             const isUnread = !rec || !rec.read_at;
-            if (row.created_by !== selfId && sku && isUnread) anyUnread[sku] = true;
+            if (isUnread) anyUnread[sku] = true;
           }
           setUnread(anyUnread);
         })();
@@ -175,7 +189,9 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
     );
 
     ch.subscribe();
-    return () => { sb.removeChannel(ch); };
+    return () => {
+      sb.removeChannel(ch);
+    };
   }, [skuList, selfId]);
 
   return { stats, unread };
