@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import type { SkuWithImagesAndStatus, ThreadStatus } from "@/types/review";
+import type { SkuWithImagesAndStatus, ThreadStatus,MessageMetaRow } from "@/types/review";
 
 /** Solo contamos estos estados (no 'deleted') */
 type StatusKey = Exclude<ThreadStatus, "deleted">;
@@ -24,6 +24,8 @@ const emptyStats = (): ImageStats => ({
 const isStatusKey = (s: unknown): s is StatusKey =>
   s === "pending" || s === "corrected" || s === "reopened";
 
+
+
 export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
   const skuList = useMemo(() => skus.map((s) => s.sku), [skus]);
   const [stats, setStats] = useState<StatsBySku>({});
@@ -37,6 +39,39 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
       .then(({ data }) => setSelfId(data.user?.id ?? null))
       .catch(() => setSelfId(null));
   }, []);
+
+  const checkHasReceiptForThisMessage = async (messageId: number) => {
+    if (!selfId) return null;
+
+    const { data, error } = await supabaseBrowser()
+      .from("review_threads")
+      .select(`
+        id,
+        sku,
+        messages:review_messages!inner(
+          id,
+          created_by,
+          receipts:review_message_receipts!review_message_receipts_message_fkey(
+            user_id,
+            read_at
+          )
+        )
+      `)
+      .eq("messages.id", messageId)
+      .eq("messages.receipts.user_id", selfId);
+
+    if (error) {
+      console.warn("checkHasReceiptForThisMessage error", error);
+      return null;
+    }
+    const {sku} = data[0];
+    // Si trae algo, ese mensaje concreto ya tiene receipt del usuario
+    return {sku:sku, hasReceipt: (data ?? []).some((t: any) =>
+      (t.messages ?? []).some((m: any) =>
+        (m.receipts ?? []).some((r: any) => r.user_id === selfId)
+      )
+    )};
+  };
 
   // carga inicial (resúmenes por imagen)
   useEffect(() => {
@@ -86,7 +121,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
           review_message_receipts!left(user_id, read_at)
         `)
         .in("review_threads.sku", skuList as string[])
-        .neq("created_by", selfId);
+        .eq("review_message_receipts.user_id", selfId);
 
       if (!alive || !data) return;
 
@@ -155,36 +190,17 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
       }
     );
 
-    // Receipts → badge de no leídos (refetch simple)
     ch.on(
       "postgres_changes",
       { event: "*", schema: "public", table: "review_message_receipts" },
-      () => {
-        if (!selfId || !skuList.length) return;
-        (async () => {
-          const { data } = await supabaseBrowser()
-            .from("review_messages")
-            .select(`
-              id, created_by, thread_id,
-              review_threads!inner(sku),
-              review_message_receipts!left(user_id, read_at)
-            `)
-            .in("review_threads.sku", skuList as string[])
-            .neq("created_by", selfId);
-          console.log(data)
-          if (!data) return;
-          const anyUnread: UnreadBySku = {};
-          for (const row of data as any[]) {
-            const sku = row.review_threads?.sku as string | undefined;
-            if (!sku || row.created_by === selfId) continue;
-            const receipts =
-              (row.review_message_receipts || []) as { user_id: string; read_at: string | null }[];
-            const rec = receipts.find((r) => r.user_id === selfId);
-            const isUnread = !rec || !rec.read_at;
-            if (isUnread) anyUnread[sku] = true;
-          }
-          setUnread(anyUnread);
-        })();
+      async (p) => {
+        const merged = { ...(p.old as any), ...(p.new as any) };
+        if (!merged.message_id || !selfId) return;
+        const data = await checkHasReceiptForThisMessage(merged.message_id);
+        if(data){
+          const {sku, hasReceipt} = data;
+          setUnread((prev) => ({ ...prev, [sku]: hasReceipt }));
+        }
       }
     );
 
