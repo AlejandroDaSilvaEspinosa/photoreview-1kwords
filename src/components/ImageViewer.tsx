@@ -453,12 +453,6 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
 
   const parentCursor = tool === "pin" ? "crosshair" : "zoom-in";
 
-  const composeLocked =
-    creatingThreadId != null && resolvedActiveThreadId != null && creatingThreadId === resolvedActiveThreadId;
-
-  const statusLocked =
-    resolvedActiveThreadId != null && pendingStatusMap.has(resolvedActiveThreadId);
-
   return (
     <div className={styles.viewerContainer}>
       <div className={styles.mainViewer}>

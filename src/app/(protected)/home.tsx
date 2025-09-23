@@ -18,8 +18,6 @@ type Props = {
 };
 
 export default function Home({ username, skus, clientInfo }: Props) {
-  const [selectedSku, setSelectedSku] = useState<SkuWithImagesAndStatus | null>(null);
-
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -47,25 +45,34 @@ export default function Home({ username, skus, clientInfo }: Props) {
     return m;
   }, [skus]);
 
-  useEffect(() => {
-    const skuParam = searchParams.get("sku");
-    if (!skuParam) return;
-    const fromParam = bySku.get(skuParam);
-    if (fromParam && fromParam !== selectedSku) setSelectedSku(fromParam);
-  }, [searchParams, bySku, selectedSku]);
+  // ✅ URL como única fuente de verdad
+  const skuParam = searchParams.get("sku");
+  const selectedSku: SkuWithImagesAndStatus | null = skuParam ? (bySku.get(skuParam) ?? null) : null;
 
-  const selectSku = (sku: SkuWithImagesAndStatus | null) => {
-    setSelectedSku(sku);
+  // Cambia solo la URL (no estado local)
+  const selectSku = useCallback((sku: SkuWithImagesAndStatus | null) => {
     const next = new URLSearchParams(searchParams.toString());
-    if (sku) next.set("sku", sku.sku);
-    else { next.delete("sku"); next.delete("image"); }
-    router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
-  };
+    if (sku) {
+      next.set("sku", sku.sku);
+    } else {
+      next.delete("sku");
+      next.delete("image");
+    }
+    router.replace(
+      `${pathname}${next.toString() ? `?${next.toString()}` : ""}`,
+      { scroll: false }
+    );
+  }, [searchParams, pathname, router]);
 
-  const onOpenSku = useCallback((sku: string) => selectSku(bySku.get(sku) ?? null), [selectSku, bySku]);
+  const onOpenSku = useCallback(
+    (sku: string) => selectSku(bySku.get(sku) ?? null),
+    [selectSku, bySku]
+  );
+
   const onOpenImage = useCallback((sku: string, _img: string) => {
     const s = bySku.get(sku);
-    if (!s) return; selectSku(s);
+    if (!s) return;
+    selectSku(s);
   }, [bySku, selectSku]);
 
   useGlobalRealtimeToasts({ onOpenSku, onOpenImage });
