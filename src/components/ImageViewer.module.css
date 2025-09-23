@@ -79,6 +79,39 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
 }
 
+/* Pista de atajos (look coherente) */
+.shortcutHint {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  background: rgba(18, 18, 18, 0.95);
+  border-top: 1px solid var(--border-1);
+  border-left: 1px solid var(--border-1);
+  color: var(--text-2);
+  padding: 8px 16px;
+  border-radius: 8px 0 0 0;
+  font-size: 14px;
+  letter-spacing: .2px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.shortcutHint b {
+  color: var(--text-1);
+  font-weight: 800;
+}
+
+@media (max-width: 720px) {
+  .shortcutHint {
+    display: none;
+  }
+}
+
+
 /* ===== Navegación lateral ===== */
 .navButton {
   position: absolute;
@@ -92,6 +125,7 @@
   line-height: 0;
   background: #222;
   color: #eee;
+  z-index: 5;
   cursor: pointer;
   transition: background .2s ease, transform .08s ease;
 }

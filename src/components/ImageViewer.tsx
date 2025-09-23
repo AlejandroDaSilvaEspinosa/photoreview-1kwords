@@ -78,6 +78,9 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
   const { wrapperRef, imgRef, box: imgBox, update } = useImageGeometry();
   const onlineUsers = usePresence(sku.sku, username);
 
+  const [zoomOverlay, setZoomOverlay] =
+    useState<null | { x: number; y: number; ax: number; ay: number }>(null);
+
   // Hidratar threads + mensajes + selfAuthId
   useEffect(() => {
     let cancelled = false;
@@ -154,6 +157,39 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
     };
   }, [sku.sku, images, hydrateForImage, setMsgsForThread, setThreadMsgIds, setSelfAuthId]);
 
+   // ⌨️ Atajos de teclado globales (ignora cuando se está escribiendo)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase();
+      const typing =
+        el?.isContentEditable ||
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select";
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        if (selectedImageIndex > 0) selectImage(selectedImageIndex - 1);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        if (selectedImageIndex < images.length - 1) selectImage(selectedImageIndex + 1);
+      } else if (e.key === "z" || e.key === "Z") {
+        setTool("zoom");
+      } else if (e.key === "p" || e.key === "P") {
+        setTool("pin");
+      } else if (e.key === "Enter") {
+        // abre el zoom centrado si no está ya abierto
+        if (!zoomOverlay) setZoomOverlay({ x: 50, y: 50, ax: 0.5, ay: 0.5 });
+      } else if (e.key === "Escape") {
+        if (zoomOverlay) setZoomOverlay(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [images.length, selectedImageIndex, zoomOverlay]);
+  
   const threadsInImage: Thread[] = useMemo(() => {
     if (!selectedImage?.name) return [];
     const rows = byImage[selectedImage.name] || [];
@@ -374,8 +410,7 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
     }
   }, [resolvedActiveThreadId, markThreadRead]);
 
-  const [zoomOverlay, setZoomOverlay] =
-    useState<null | { x: number; y: number; ax: number; ay: number }>(null);
+
 
   const openZoomAtEvent = (e: React.MouseEvent) => {
     const r =
@@ -515,6 +550,9 @@ export default function ImageViewer({ sku, username, selectSku }: ImageViewerPro
             disabled={selectedImageIndex === images.length - 1}
             aria-label="Imagen siguiente"
           >❯</button>
+          <div className={styles.shortcutHint} aria-hidden>
+            ←/→ imagen · <b>Z</b> lupa · <b>P</b> anotar · <b>Enter</b> zoom · <b>Esc</b> cerrar
+          </div>
         </div>
 
         <ThumbnailGrid

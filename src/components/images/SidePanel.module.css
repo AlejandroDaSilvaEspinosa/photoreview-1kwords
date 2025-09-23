@@ -44,18 +44,20 @@
 }
 
 .railExpandBtn {
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
     border-radius: 8px;
-    border: 1px solid #2a2a2a;
-    background: #2a2a2a;
+    border: 1px solid var(--border-1);
+    font-size: 20px;
+    line-height: 0;
+    background: #222;
     color: #eee;
     cursor: pointer;
     transition: background .2s ease, transform .08s ease;
 }
 
 .railExpandBtn:hover {
-    background: #333;
+    background: #2a2a2a;
 }
 
 .railExpandBtn:active {
