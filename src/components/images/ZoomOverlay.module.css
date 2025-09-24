@@ -51,6 +51,7 @@
     transform-origin: top left;
     user-select: none;
     cursor: grab;
+    --zoom: 1;
 }
 
 .stage:active {
@@ -73,7 +74,8 @@
 /* Puntos */
 .dot {
     position: absolute;
-    transform: translate(-50%, -50%);
+    transform-origin: center;
+    transform: translate(-50%, -50%) scale(calc(1 / var(--zoom)));
     width: 30px;
     height: 30px;
     border-radius: 50%;
@@ -95,7 +97,8 @@
 .dotActive {
     box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35),
         0 0 10px rgba(255, 255, 255, 0.2);
-    transform: translate(-50%, -50%) scale(2);
+    /* Mantén el doble de tamaño real sin importar el zoom */
+    transform: translate(-50%, -50%) scale(calc(2 / var(--zoom)));
 }
 
 .dotNum {

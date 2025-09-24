@@ -664,15 +664,17 @@ function normalize(s?: string | null) {
         onTouchEnd={onTouchEnd}
         onTouchCancel={onTouchEnd}
       >
-        <div
-          className={styles.stage}
-          style={{
-            width: imgW || "100%",
-            height: imgH || "100%",
-            transform: imgReady ? `translate(${tx}px, ${ty}px) scale(${zoom})` : "none",
-            cursor,
-          }}
-        >
+      <div
+        className={styles.stage}
+        style={{
+          width: imgW || "100%",
+          height: imgH || "100%",
+          transform: imgReady ? `translate(${tx}px, ${ty}px) scale(${zoom})` : "none",
+          cursor,
+          // pasa el zoom como variable CSS para que los dots lo compensen
+          ['--zoom' as any]: zoom,
+        }}
+      >
           {/* Imagen principal */}
           <div className={styles.imgWrap}>
             <ImageWithSkeleton

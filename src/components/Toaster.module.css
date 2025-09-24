@@ -1,41 +1,79 @@
+/* === Stack en forma de “pila” === */
 .wrap {
     position: fixed;
     right: max(16px, env(safe-area-inset-right));
     bottom: max(16px, env(safe-area-inset-bottom));
     display: flex;
     flex-direction: column-reverse;
+    /* el más nuevo abajo */
     align-items: flex-end;
-    gap: 10px;
+    gap: 0;
     z-index: 9999;
-    pointer-events: none;
+    pointer-events: auto;
     max-height: calc(100vh - 32px);
     overflow: visible;
 }
 
+:root {
+    --toastW: 365px;
+    --toastH: 80px;
+    --pileOverlapY: 32px;
+    --pileShiftX: -2px;
+    --pileScaleStep: 0.015;
+    --gapHoverY: 2px;
+    --peekY: 12px;
+}
+
 .toast {
-    pointer-events: auto;
     --bg: #171717;
     --fg: #e7e7e7;
     --border: #2a2a2a;
     --accent: #3b82f6;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    gap: 5px;
-    min-width: 280px;
-    max-width: 380px;
+
+    position: relative;
+    width: var(--toastW);
+    height: var(--toastH);
     padding: 12px 12px 10px 10px;
     background: var(--bg);
     color: var(--fg);
     border: 1px solid var(--border);
     border-radius: 14px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, .35),
+        0 0 0 1px rgba(255, 255, 255, .04) inset;
+
     animation: slideInUp .18s ease-out;
-    position: relative;
+
+    /* Pila superpuesta (en reposo) */
+    margin-top: calc(-1 * var(--pileOverlapY));
+
+    /* Efecto “debajo”: cada capa se desplaza a la izquierda y reduce escala */
+    transform:
+        translateX(calc(var(--i) * -1 * var(--pileShiftX))) scale(calc(1 - (var(--i) * var(--pileScaleStep))));
+    transform-origin: bottom right;
+
+    transition:
+        margin-top .18s ease,
+        transform .18s ease,
+        box-shadow .18s ease;
+
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    overflow: hidden;
 }
 
-.toast * {
-    margin: 0;
+/* El más nuevo (abajo) no se solapa con nadie */
+.toast:first-child {
+    margin-top: 0;
+}
+
+/* Al hover del stack → despliega (quita solape y offsets) */
+.wrap:hover .toast {
+    margin-top: var(--gapHoverY);
+    transform: translateX(0) scale(1);
+    box-shadow:
+        0 12px 28px rgba(0, 0, 0, .45),
+        0 0 0 1px rgba(255, 255, 255, .05) inset;
 }
 
 @keyframes slideInUp {
@@ -50,35 +88,42 @@
     }
 }
 
+/* ----- contenido y controles (igual que antes, con clamps) ----- */
 
-.icon {
-    width: 22px;
-    height: 22px;
-    display: grid;
-    place-items: center;
-    margin-top: 2px;
-    font-size: 14px;
+.toast * {
+    margin: 0;
 }
 
 .body {
     display: grid;
-    gap: 4px;
+    grid-template-rows: auto 1fr;
+    gap: 6px;
+    min-height: 0;
 }
 
 .title {
     font-weight: 600;
     font-size: 13px;
-    opacity: .95
+    opacity: .95;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
 }
 
 .desc {
     font-size: 12px;
     opacity: .85;
-    line-height: 1.25
+    line-height: 1.25;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
 }
 
 .action {
-    margin-top: 6px;
+    justify-self: start;
+    align-self: end;
     font-size: 12px;
     background: transparent;
     border: 1px solid var(--accent);
@@ -86,6 +131,7 @@
     padding: 5px 8px;
     border-radius: 8px;
     cursor: pointer;
+    max-width: 100%;
 }
 
 .close {
@@ -97,14 +143,14 @@
     line-height: 1;
     cursor: pointer;
     position: absolute;
-    right: 5px;
-    top: 5px;
+    right: 6px;
+    top: 6px;
 }
 
 .progress {
     position: absolute;
-    left: 0px;
-    bottom: 0px;
+    left: 0;
+    bottom: 0;
     height: 2px;
     background: linear-gradient(90deg, var(--accent), transparent);
     border-radius: 2px;
@@ -141,3 +187,66 @@
 .error {
     --accent: #ef4444;
 }
+
+.wrap {
+    position: fixed;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(16px, env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    /* ← normal, no reverse */
+    align-items: flex-end;
+    /* ancladas a la derecha */
+    gap: 0;
+    z-index: 9999;
+    pointer-events: auto;
+    max-height: calc(100vh - 32px);
+    overflow: visible;
+}
+
+
+.toast {
+    position: relative;
+    width: var(--toastW);
+    height: var(--toastH);
+    padding: 12px 12px 10px 10px;
+    background: #171717;
+    color: #e7e7e7;
+    border: 1px solid #2a2a2a;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+    animation: slideInUp .18s ease-out;
+
+    /* 🔑 apilado desde ABAJO:
+     cada toast deja ver sólo una franja bajo él */
+    margin-bottom: calc(-1 * (var(--toastH) - var(--peekY)));
+
+    transition: margin-bottom .18s ease, box-shadow .18s ease;
+}
+
+/* la ÚLTIMA (más nueva, abajo) no se solapa con nadie */
+.toast:last-child {
+    margin-bottom: 0;
+}
+
+.wrap:hover .toast {
+    /* desplegar hacia arriba */
+    margin-bottom: var(--gapHoverY);
+    box-shadow:
+        0 12px 28px rgba(0, 0, 0, .45),
+        0 0 0 1px rgba(255, 255, 255, .05) inset;
+}
+
+@keyframes slideInUp {
+    from {
+        transform: translateY(6px);
+        opacity: 0
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1
+    }
+}
+
+/* resto de estilos (title/desc/action/close/progress/variants) como ya los tienes */
