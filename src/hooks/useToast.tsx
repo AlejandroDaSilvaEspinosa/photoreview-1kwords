@@ -9,6 +9,7 @@ export type ToastVariant = "info" | "success" | "warning" | "error";
 
 export type ToastInput = {
   title?: string;
+  timeAgo?: string;      
   description?: string;
   variant?: ToastVariant;
   durationMs?: number;
@@ -21,6 +22,9 @@ export type Toast = Required<Omit<ToastInput, "durationMs">> & {
   createdAt: number;
   durationMs: number;
 };
+
+
+const defaultNoop = () => {};
 
 type Ctx = {
   toasts: Toast[];
@@ -70,14 +74,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     const toast: Toast = {
       id,
       title: input.title ?? "",
+      timeAgo: input.timeAgo ?? "",     // ⬅️ NUEVO
       description: input.description ?? "",
       variant: input.variant ?? "info",
       durationMs: input.durationMs ?? 10000,
       actionLabel: input.actionLabel ?? "",
-      onAction: input.onAction ?? (() => {}),
+      onAction: input.onAction ?? defaultNoop,
       createdAt: Date.now(),
     };
-    setToasts(prev => [toast,...prev]);
+    setToasts(prev => [toast, ...prev]);
+
 
     timersRef.current[id] = { start: Date.now(), remaining: toast.durationMs };
     if (!pausedAll) schedule(id);

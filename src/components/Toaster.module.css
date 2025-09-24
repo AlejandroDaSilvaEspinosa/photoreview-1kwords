@@ -85,7 +85,7 @@
 .body {
     display: flex;
     flex-direction: column;
-
+    width: 100%;
     gap: 6px;
     min-height: 0;
 }
@@ -98,6 +98,22 @@
     display: -webkit-box;
     -webkit-line-clamp: 1;
     -webkit-box-orient: vertical;
+}
+
+.bottomRow {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    min-width: 100%;
+}
+
+.bottomRight {
+    font-size: 11px;
+    opacity: .6;
+    white-space: nowrap;
+    flex: 0 0 auto;
 }
 
 .desc {

@@ -7,7 +7,6 @@ import ImageViewer from "@/components/ImageViewer";
 import Header from "@/components/Header";
 import styles from "./home.module.css";
 import type { SkuWithImagesAndStatus, SkuStatus } from "@/types/review";
-import { useGlobalRealtimeToasts } from "@/hooks/useRealtimeToasts";
 import { useWireAllStatusesRealtime } from "@/lib/realtime/useWireAllStatusesRealtime";
 import { useStatusesStore } from "@/stores/statuses";
 import { useHomeOverview } from "@/hooks/useHomeOverview";
@@ -83,10 +82,10 @@ export default function Home({ username, skus, clientInfo }: Props) {
   const imageParam = searchParams.get("image");
   const threadParam = searchParams.get("thread");
   const selectedThreadId: number | null = useMemo(
-    () => (threadParam && /^\d+$/.test(threadParam) ? Number(threadParam) : null),
+    () => (threadParam && /^-?\d+$/.test(threadParam) ? Number(threadParam) : null),
     [threadParam]
   );
-
+  
   const bySku = useMemo(() => new Map(effectiveSkus.map((s) => [s.sku, s])), [effectiveSkus]);
   const selectedSku: SkuWithImagesAndStatus | null = skuParam ? bySku.get(skuParam) ?? null : null;
   const selectedImageName: string | null = useMemo(() => {
@@ -159,7 +158,6 @@ export default function Home({ username, skus, clientInfo }: Props) {
     [bySku, pathname, router, searchParams]
   );
 
-  useGlobalRealtimeToasts({ onOpenSku, onOpenImage });
 
   /* ===== Filtros (píldoras) ===== */
   const ALL: SkuStatus[] = ["pending_validation", "needs_correction", "validated", "reopened"];

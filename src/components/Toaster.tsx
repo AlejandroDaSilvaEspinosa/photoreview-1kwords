@@ -31,20 +31,25 @@ export default function Toaster() {
               } as React.CSSProperties}
             >
               <div className={s.body}>
-                {t.title && <div className={s.title}>{t.title}</div>}
+                {t.title && (
+                  <div className={s.title}>{t.title}</div>
+                )}
                 {t.description && (
                   <div className={s.desc}>
                     <ReactMarkdown>{t.description}</ReactMarkdown>
                   </div>
                 )}
-                {t.actionLabel && (
-                  <button
+                <div className={s.bottomRow}>
+                  {t.actionLabel && (
+                    <button
                     className={s.action}
                     onClick={() => { t.onAction?.(); dismiss(t.id); }}
-                  >
-                    {t.actionLabel}
-                  </button>
-                )}
+                    >
+                      {t.actionLabel}
+                    </button>
+                    )}
+                    {t.timeAgo ? <div className={s.bottomRight}>{t.timeAgo}</div> : null}
+                </div>
               </div>
               <button aria-label="Cerrar" className={s.close} onClick={() => dismiss(t.id)}>×</button>
               <div
