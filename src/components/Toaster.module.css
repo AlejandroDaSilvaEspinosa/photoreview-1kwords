@@ -12,9 +12,6 @@
     pointer-events: auto;
     max-height: calc(100vh - 32px);
     overflow: visible;
-}
-
-:root {
     --toastW: 365px;
     --toastH: 88px;
     --pileOverlapY: 32px;
@@ -23,6 +20,8 @@
     --gapHoverY: 2px;
     --peekY: 12px;
 }
+
+
 
 .toast {
     --bg: #171717;
