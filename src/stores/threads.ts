@@ -31,6 +31,71 @@ type State = {
   pendingStatus: Map<number, PendingStatus>;
 };
 
+// 🗄️ LocalStorage – Stale-While-Revalidate helpers
+const THREADS_CACHE_VER = 2;
+const threadsCacheKey = (image: string) => `rev_threads:v${THREADS_CACHE_VER}:${image}`;
+
+type ThreadsCachePayload = {
+  v: number;
+  at: number;
+  rows: Thread[];
+};
+
+const safeParse = <T,>(raw: string | null): T | null => {
+  if (!raw) return null;
+  try { return JSON.parse(raw) as T; } catch { return null; }
+};
+
+const loadThreadsCache = (image: string): Thread[] | null => {
+  if (typeof window === "undefined") return null;
+  const payload = safeParse<ThreadsCachePayload>(localStorage.getItem(threadsCacheKey(image)));
+  return payload?.rows ?? null;
+};
+
+const saveThreadsCache = (image: string, rows: Thread[]) => {
+  if (typeof window === "undefined") return;
+  try {
+    const payload: ThreadsCachePayload = { v: THREADS_CACHE_VER, at: Date.now(), rows };
+    localStorage.setItem(threadsCacheKey(image), JSON.stringify(payload));
+  } catch { console.log("error")}
+};
+
+const clearThreadsCache = (image: string) => {
+  if (typeof window === "undefined") return;
+  try { localStorage.removeItem(threadsCacheKey(image)); } catch { console.log("error")}
+};
+// === Helpers de diff/reconciliación ===
+const eqArr = (a?: number[], b?: number[]) => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+};
+
+const sameThread = (a: Thread, b: Thread) =>
+  a.id === b.id &&
+  a.status === b.status &&
+  a.x === b.x &&
+  a.y === b.y &&
+  eqArr(a.messageIds, b.messageIds);
+
+// Defer: usa requestIdleCallback si existe, si no setTimeout(0)
+const defer = (fn: () => void) => {
+  const ric = (globalThis as any)?.requestIdleCallback as undefined | ((cb: () => void) => any);
+  if (typeof ric === "function") ric(fn);
+  else setTimeout(fn, 0);
+};
+
+
+// Si quieres usarlo desde otros componentes:
+export const threadsCache = {
+  load: loadThreadsCache,
+  save: saveThreadsCache,
+  clear: clearThreadsCache,
+};
+
+
 type Actions = {
   hydrateForImage: (imageName: string, rows: Thread[]) => void;
 
@@ -61,19 +126,99 @@ export const useThreadsStore = create<State & Actions>()(
 
     setActiveThreadId: (id) => set({ activeThreadId: id }),
 
-    hydrateForImage: (image, rows) =>
-      set((s) => {
-        const list: Thread[] = rows.map((r) => ({
-          id: r.id,
-          x: round3(r.x),
-          y: round3(r.y),
-          status: r.status as ThreadStatus,
-        }));
-        const next = { ...s.byImage, [image]: list };
-        const m = new Map(s.threadToImage);
-        list.forEach((t) => m.set(t.id, image));
-        return { byImage: next, threadToImage: m };
-      }),
+    hydrateForImage: (image, rows) => {
+      // Normaliza entrada → Thread[]
+      const incoming: Thread[] = rows.map((r) => ({
+        id: r.id,
+        x: round3(r.x),
+        y: round3(r.y),
+        status: r.status as ThreadStatus,
+        // messageIds no viene en rows, pero si existían en store se preservan abajo
+      }));
+
+      // Lee estado actual fuera de set() para calcular el diff sin bloquear
+      const sNow = useThreadsStore.getState();
+      const prev = sNow.byImage[image] || [];
+
+      // Mantén optimistas (ids negativos) que aún estén en UI
+      const optimistic = prev.filter((t) => t.id < 0);
+
+      // Mapa previo por id para preservar identidad y messageIds
+      const prevById = new Map(prev.map((t) => [t.id, t]));
+
+      let changed = false;
+      const nextBase: Thread[] = incoming.map((t) => {
+        const old = prevById.get(t.id);
+        if (!old) {
+          changed = true;
+          return t;
+        }
+        // Compara incluyendo messageIds; si no cambió, conserva la misma referencia
+        const merged: Thread = {
+          ...old, // preserva messageIds y cualquier otro campo previo
+          x: t.x,
+          y: t.y,
+          status: t.status,
+        };
+        if (!sameThread(old, merged)) changed = true;
+        return sameThread(old, merged) ? old : merged;
+      });
+
+      // Remociones: si había hilos prev (id >= 0) que ya no llegan
+      if (!changed) {
+        const incomingIds = new Set(incoming.map((t) => t.id));
+        for (const old of prev) {
+          if (old.id >= 0 && !incomingIds.has(old.id)) {
+            changed = true;
+            break;
+          }
+        }
+      }
+
+      // Combina base + optimistas no duplicadas
+      const nextCombined =
+        optimistic.length
+          ? [
+              ...nextBase,
+              ...optimistic.filter((o) => !nextBase.some((t) => t.id === o.id)),
+            ]
+          : nextBase;
+
+      // Si no hay cambios materiales, no dispares set() (evita re-render)
+      if (!changed) {
+        // Si quieres refrescar sólo el caché, puedes hacerlo aquí sin tocar el estado:
+        saveThreadsCache(image, nextCombined);
+        return;
+      }
+
+      // Actualiza estado y caché en “idle” para no bloquear la UI
+      defer(() => {
+        // Re-lee dentro por si cambió algo entre tanto
+        useThreadsStore.setState((s) => {
+          const prevLatest = s.byImage[image] || [];
+          // Si ya quedó igual, no hagas nada
+          if (prevLatest === prev || prevLatest.length === prev.length) {
+            // Reconfirma igualdad profunda rápida
+            let stillSame = prevLatest.length === nextCombined.length;
+            if (stillSame) {
+              for (let i = 0; i < prevLatest.length; i++) {
+                if (!sameThread(prevLatest[i], nextCombined[i])) { stillSame = false; break; }
+              }
+            }
+            if (stillSame) return {};
+          }
+
+          const byImage = { ...s.byImage, [image]: nextCombined };
+          const m = new Map(s.threadToImage);
+          nextCombined.forEach((t) => m.set(t.id, image));
+
+          // Persistencia
+          saveThreadsCache(image, nextCombined);
+
+          return { byImage, threadToImage: m };
+        }, false);
+      });
+    },
 
     createOptimistic: (image, x, y) => {
       const tempId = -Date.now() - Math.floor(Math.random() * 1e6);
@@ -88,6 +233,8 @@ export const useThreadsStore = create<State & Actions>()(
 
         const p = new Map(s.pendingByKey);
         p.set(keyOf(image, x, y), tempId);
+
+        saveThreadsCache(image, next); // 🗄️ persist
 
         return { byImage, threadToImage: m, pendingByKey: p };
       });
@@ -131,8 +278,11 @@ export const useThreadsStore = create<State & Actions>()(
           (get().setActiveThreadId)(real.id);
         }
 
+        saveThreadsCache(image, nextList); // 🗄️ persist
+
         return { byImage, threadToImage: m, pendingByKey: p };
       }),
+
 
     rollbackCreate: (tempId) =>
       set((s) => {
@@ -150,23 +300,22 @@ export const useThreadsStore = create<State & Actions>()(
 
         if (s.activeThreadId === tempId) (get().setActiveThreadId)(null);
 
+        // Si queda vacío, limpia el caché
+        nextList.length ? saveThreadsCache(image, nextList) : clearThreadsCache(image); // 🗄️ persist
+
         return { byImage, threadToImage: m, pendingByKey: p };
       }),
+
 
     upsertFromRealtime: (r) =>
       set((s) => {
         const image = r.image_name;
         const list = s.byImage[image] || [];
 
-        // 🟩 si hay un cambio de estado pendiente, filtra eventos "viejos"
         const pending = s.pendingStatus.get(r.id);
         if (pending) {
           const incoming = r.status as ThreadStatus;
-          if (incoming === pending.from) {
-            // evento “eco” con el estado anterior → ignorar
-            return {};
-          }
-          // si llega el estado esperado o uno diferente (otro usuario), seguimos y limpiamos
+          if (incoming === pending.from) return {};
         }
 
         let idx = list.findIndex((t) => t.id === r.id);
@@ -200,12 +349,14 @@ export const useThreadsStore = create<State & Actions>()(
           if (vv < 0 && !list.some((t) => t.id === vv)) p.delete(kk);
         }
 
-        // 🟩 limpiar pendiente si ya hemos llegado al estado “to”, o si cambió a otra cosa
         const ps = new Map(s.pendingStatus);
         if (pending) ps.delete(r.id);
 
+        saveThreadsCache(image, nextList); // 🗄️ persist
+
         return { byImage, threadToImage: m, pendingByKey: p, pendingStatus: ps };
       }),
+
 
     removeFromRealtime: (r) =>
       set((s) => {
@@ -217,19 +368,25 @@ export const useThreadsStore = create<State & Actions>()(
         const m = new Map(s.threadToImage);
         m.delete(r.id);
 
-        const ps = new Map(s.pendingStatus); // 🟩
-        ps.delete(r.id); // 🟩
+        const ps = new Map(s.pendingStatus);
+        ps.delete(r.id);
 
         if (s.activeThreadId === r.id) (get().setActiveThreadId)(null);
 
+        nextList.length ? saveThreadsCache(image, nextList) : clearThreadsCache(image); // 🗄️ persist
+
         return { byImage, threadToImage: m, pendingStatus: ps };
       }),
+
 
     setStatus: (threadId, status) =>
       set((s) => {
         const image = s.threadToImage.get(threadId);
         if (!image) return {};
         const nextList = (s.byImage[image] || []).map((t) => (t.id === threadId ? { ...t, status } : t));
+
+        saveThreadsCache(image, nextList); // 🗄️ persist
+
         return { byImage: { ...s.byImage, [image]: nextList } };
       }),
 
@@ -238,8 +395,13 @@ export const useThreadsStore = create<State & Actions>()(
         const image = s.threadToImage.get(threadId);
         if (!image) return {};
         const nextList = (s.byImage[image] || []).map((t) => (t.id === threadId ? { ...t, messageIds: ids } : t));
+
+        // opcional: también persistir messageIds en el caché
+        saveThreadsCache(image, nextList); // 🗄️ persist
+
         return { byImage: { ...s.byImage, [image]: nextList } };
       }),
+
 
     // 🟩 marcar inicio del optimismo de status
     beginStatusOptimistic: (threadId, from, to) =>

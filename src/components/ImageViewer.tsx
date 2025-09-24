@@ -1,3 +1,4 @@
+// src/components/ImageViewer.tsx
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -13,7 +14,6 @@ import type {
   Thread,
   MessageMeta,
   ThreadRow,
-  ThreadMessage,
   DeliveryState,
 } from "@/types/review";
 
@@ -21,9 +21,9 @@ import { usePresence } from "@/lib/usePresence";
 import { useImageGeometry } from "@/lib/useImageGeometry";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 
-import { useThreadsStore } from "@/stores/threads";
-import { useMessagesStore } from "@/stores/messages";
-import type { Msg } from "@/stores/messages";
+import { useThreadsStore, threadsCache } from "@/stores/threads";
+import { useMessagesStore, Msg, messagesCache } from "@/stores/messages";
+
 import { useWireSkuRealtime } from "@/lib/realtime/wireSkuRealtime";
 import { useShallow } from "zustand/react/shallow";
 
@@ -39,7 +39,7 @@ const STATUS_LABEL: Record<ThreadStatus, string> = {
 };
 
 type ReviewsPayload = Record<string, { points?: ThreadRow[] }>;
-const EMPTY_ARR: any[] = [];
+const EMPTY_ARR: [] = [];
 
 interface ImageViewerProps {
   sku: SkuWithImagesAndStatus;
@@ -129,44 +129,67 @@ export default function ImageViewer({
   );
 
   // Mensajes
-  const setMsgsForThread   = useMessagesStore((s) => s.setForThread);
-  const addOptimisticMsg   = useMessagesStore((s) => s.addOptimistic);
-  const confirmMessage     = useMessagesStore((s) => s.confirmMessage);
+  const setMsgsForThread = useMessagesStore((s) => s.setForThread);
+  const addOptimisticMsg = useMessagesStore((s) => s.addOptimistic);
+  const confirmMessage = useMessagesStore((s) => s.confirmMessage);
   const moveThreadMessages = useMessagesStore((s) => s.moveThreadMessages);
-  const markThreadRead     = useMessagesStore((s) => s.markThreadRead);
-  const setSelfAuthId      = useMessagesStore((s) => s.setSelfAuthId);
-  const msgsByThread       = useMessagesStore((s) => s.byThread);
+  const markThreadRead = useMessagesStore((s) => s.markThreadRead);
+  const setSelfAuthId = useMessagesStore((s) => s.setSelfAuthId);
+  const msgsByThread = useMessagesStore((s) => s.byThread);
 
   // Threads store helpers
-  const hydrateForImage        = useThreadsStore((s) => s.hydrateForImage);
-  const setThreadMsgIds        = useThreadsStore((s) => s.setMessageIds);
-  const setThreadStatus        = useThreadsStore((s) => s.setStatus);
+  const hydrateForImage = useThreadsStore((s) => s.hydrateForImage);
+  const setThreadMsgIds = useThreadsStore((s) => s.setMessageIds);
+  const setThreadStatus = useThreadsStore((s) => s.setStatus);
   const createThreadOptimistic = useThreadsStore((s) => s.createOptimistic);
-  const confirmCreate          = useThreadsStore((s) => s.confirmCreate);
-  const rollbackCreate         = useThreadsStore((s) => s.rollbackCreate);
-  const pendingStatusMap       = useThreadsStore((s) => s.pendingStatus);
+  const confirmCreate = useThreadsStore((s) => s.confirmCreate);
+  const rollbackCreate = useThreadsStore((s) => s.rollbackCreate);
+  const pendingStatusMap = useThreadsStore((s) => s.pendingStatus);
 
   // ==========================
-  //  HIDRATACIÓN (solo cuando falte y solo por SKU)
+  //  HIDRATACIÓN (SWR: hilos + mensajes)
   // ==========================
   useEffect(() => {
-    const cancelled = false;
+    let cancelled = false;
 
     (async () => {
       const storeNow = useThreadsStore.getState();
-      const missing = images.filter(
-        (img) => img.name && !(storeNow.byImage[img.name] && storeNow.byImage[img.name].length)
-      );
 
-      if (missing.length === 0) {
-        setLoadError(null);
-        setLoading(false);
-        return;
+      // 1) Qué imágenes faltan en la store (por nombre)
+      // const missing = images.filter(
+      //   (img) => img.name && !(storeNow.byImage[img.name] && storeNow.byImage[img.name].length)
+      // );
+
+      // 2) Sirve copia rancia de HILOS desde localStorage (por imagen)
+      let servedFromCache = false;
+      const cachedThreadIds: number[] = [];
+      for (const img of images) {
+        const name = img.name!;
+        const cached = threadsCache.load(name);
+        if (cached && cached.length) {
+          hydrateForImage(name, cached);
+          cached.forEach((t) => cachedThreadIds.push(t.id));
+          servedFromCache = true;
+        }
       }
 
-      setLoading(true);
+      // 2bis) Sirve copia rancia de MENSAJES por thread_id (si tenemos ids cacheados)
+      if (cachedThreadIds.length) {
+        for (const tid of cachedThreadIds) {
+          const cachedMsgs = messagesCache.load(tid);
+          if (cachedMsgs && cachedMsgs.length) {
+            setMsgsForThread(tid, cachedMsgs);
+            setThreadMsgIds(tid, cachedMsgs.map((m) => m.id as number).filter(Boolean));
+          }
+        }
+      }
+
+      // Si hemos servido algo del caché, no tapes la UI con loader
       setLoadError(null);
+      setLoading(!servedFromCache);
+
       try {
+        // 3) Revalida en background contra la API
         const sb = supabaseBrowser();
         const { data: authInfo } = await sb.auth.getUser();
         const myId = authInfo.user?.id ?? null;
@@ -176,10 +199,9 @@ export default function ImageViewer({
         if (!res.ok) throw new Error("No se pudieron cargar las anotaciones");
         const payload: ReviewsPayload = await res.json();
 
+        // Hidrata SOLO las que faltaban (ahora con datos frescos)
         const allThreadIds: number[] = [];
-
-        // Hidratar solo las que faltan
-        for (const img of missing) {
+        for (const img of images) {
           const name = img.name!;
           const raw = payload[name]?.points ?? [];
           const rows: Thread[] = raw.map((t: ThreadRow) => ({
@@ -189,21 +211,30 @@ export default function ImageViewer({
             status: t.status as ThreadStatus,
           }));
 
-          hydrateForImage(name, rows);
+          hydrateForImage(name, rows); // (persiste en localStorage)
           raw.forEach((r) => allThreadIds.push(r.id));
         }
 
+        // 3bis) Sirve copia rancia de MENSAJES también para los threads devueltos por red
+        if (allThreadIds.length) {
+          for (const tid of allThreadIds) {
+            const cachedMsgs = messagesCache.load(tid);
+            if (cachedMsgs && cachedMsgs.length) {
+              setMsgsForThread(tid, cachedMsgs);
+              setThreadMsgIds(tid, cachedMsgs.map((m) => m.id as number).filter(Boolean));
+            }
+          }
+        }
+
+        // 4) Pide mensajes a Supabase (frescos) y sobreescribe
         if (allThreadIds.length) {
           const { data: msgs, error } = await sb
             .from("review_messages")
             .select(
               `id,thread_id,text,created_at,updated_at,created_by,created_by_username,created_by_display_name,is_system,
                 meta:review_message_receipts!review_message_receipts_message_fkey(
-                user_id,
-                read_at,
-                delivered_at
-              )
-              `
+                  user_id, read_at, delivered_at
+                )`
             )
             .in("thread_id", allThreadIds)
             .order("created_at", { ascending: true });
@@ -211,8 +242,13 @@ export default function ImageViewer({
           if (error) throw error;
 
           const grouped: Record<number, Msg[]> = {};
-          (msgs || []).forEach((m) => {
-            const deliveryStatus: DeliveryState = m.meta.some(mm=> mm.read_at) ? "read" : m.meta.some(mm=> mm.delivered_at) ? "delivered" : "sent"
+          (msgs || []).forEach((m: any) => {
+            const deliveryStatus: DeliveryState =
+              (m.meta || []).some((mm: any) => mm.read_at)
+                ? "read"
+                : (m.meta || []).some((mm: any) => mm.delivered_at)
+                ? "delivered"
+                : "sent";
             const mine = !!myId && m.created_by === myId;
             const mm: Msg = {
               ...m,
@@ -228,13 +264,24 @@ export default function ImageViewer({
             setThreadMsgIds(tid, grouped[tid].map((x) => x.id));
           }
         }
+
+        if (!cancelled) {
+          setLoadError(null);
+          setLoading(false);
+        }
       } catch (e: any) {
-        if (!cancelled) setLoadError(e?.message || "Error de carga");
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoadError(
+            servedFromCache ? "No se pudo actualizar (modo sin conexión)" : e?.message || "Error de carga"
+          );
+          setLoading(false);
+        }
       }
     })();
 
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sku.sku]);
 
@@ -282,10 +329,10 @@ export default function ImageViewer({
           id: m.id,
           text: m.text,
           createdAt: m.created_at,
-          createdByName: m.created_by_display_name || m.created_by_username || "Usuario",
-          createdByAuthId: (m as any).created_by ?? null,
+          createdByName: m.created_by_display_name || m.created_by_username || "Desconocido",
+          createdByAuthId: m.created_by ?? null,
           isSystem: !!m.is_system,
-          meta: { localDelivery: m.meta?.localDelivery ?? "sent", isMine: (m.meta as any)?.isMine ?? false } as any,
+          meta: { localDelivery: m.meta?.localDelivery ?? "sent", isMine: m.meta?.isMine ?? false } as MessageMeta,
         }));
         return { id: t.id, x: t.x, y: t.y, status: t.status, messages: list };
       });
@@ -529,8 +576,8 @@ export default function ImageViewer({
 
     if (name) {
       pendingUrlImageRef.current = name; // marca navegación pendiente
-      setCurrentImageName(name);         // UI inmediata sin flash
-      onSelectImage?.(name);             // URL se actualiza
+      setCurrentImageName(name); // UI inmediata sin flash
+      onSelectImage?.(name); // URL se actualiza
     } else {
       pendingUrlImageRef.current = null;
       const fallback = images[0]?.name ?? null;
@@ -572,19 +619,53 @@ export default function ImageViewer({
     <div className={styles.viewerContainer}>
       <div className={styles.mainViewer}>
         <div className={styles.imageHeader}>
-          <button className={styles.toolBtn} onClick={() => selectSku(null)} title="Volver">🏠</button>
-          <h1 className={styles.title}>Revisión de SKU: <span className={styles.titleSku}>{sku.sku}</span></h1>
-          <div className={styles.imageCounter}>{selectedImageIndex + 1} / {images.length}</div>
+          <button className={styles.toolBtn} onClick={() => selectSku(null)} title="Volver">
+            🏠
+          </button>
+          <h1 className={styles.title}>
+            Revisión de SKU: <span className={styles.titleSku}>{sku.sku}</span>
+          </h1>
+          <div className={styles.imageCounter}>
+            {selectedImageIndex + 1} / {images.length}
+          </div>
         </div>
 
         <div className={styles.mainImageContainer}>
           <div className={styles.parentToolbox} aria-label="Herramientas">
-            <button className={`${styles.toolBtn} ${tool === "zoom" ? styles.toolActive : ""}`} aria-pressed={tool === "zoom"} title="Lupa (abrir zoom)" onClick={() => setTool("zoom")}>🔍</button>
-            <button className={`${styles.toolBtn} ${tool === "pin" ? styles.toolActive : ""}`} aria-pressed={tool === "pin"} title="Añadir nuevo hilo" onClick={() => setTool("pin")}>📍</button>
-            <button className={`${styles.toolBtn} ${showThreads ? styles.toolActive : ""}`} aria-pressed={showThreads} title={`${showThreads ? "Ocultar" : "Mostrar"} hilos — T`} onClick={() => setShowThreads((v) => !v)}>🧵</button>
+            <button
+              className={`${styles.toolBtn} ${tool === "zoom" ? styles.toolActive : ""}`}
+              aria-pressed={tool === "zoom"}
+              title="Lupa (abrir zoom)"
+              onClick={() => setTool("zoom")}
+            >
+              🔍
+            </button>
+            <button
+              className={`${styles.toolBtn} ${tool === "pin" ? styles.toolActive : ""}`}
+              aria-pressed={tool === "pin"}
+              title="Añadir nuevo hilo"
+              onClick={() => setTool("pin")}
+            >
+              📍
+            </button>
+            <button
+              className={`${styles.toolBtn} ${showThreads ? styles.toolActive : ""}`}
+              aria-pressed={showThreads}
+              title={`${showThreads ? "Ocultar" : "Mostrar"} hilos — T`}
+              onClick={() => setShowThreads((v) => !v)}
+            >
+              🧵
+            </button>
           </div>
 
-          <button className={`${styles.navButton} ${styles.navLeft}`} onClick={() => selectImage(selectedImageIndex - 1)} disabled={selectedImageIndex === 0} aria-label="Imagen anterior">❮</button>
+          <button
+            className={`${styles.navButton} ${styles.navLeft}`}
+            onClick={() => selectImage(selectedImageIndex - 1)}
+            disabled={selectedImageIndex === 0}
+            aria-label="Imagen anterior"
+          >
+            ❮
+          </button>
 
           <div className={styles.mainImageWrapper} ref={wrapperRef} style={{ cursor: parentCursor }}>
             {loading && (
@@ -611,38 +692,49 @@ export default function ImageViewer({
               fallbackText={(selectedImage?.name || "").slice(0, 2).toUpperCase()}
             />
 
-            {showThreads && threadsInImage.map((th, index) => {
-              const topPx = imgBox.offsetTop + (th.y / 100) * imgBox.height;
-              const leftPx = imgBox.offsetLeft + (th.x / 100) * imgBox.width;
-              const bg = colorByStatus(th.status);
-              const isActive = resolvedActiveThreadId === th.id;
-              return (
-                <div
-                  key={th.id}
-                  className={`${styles.annotationNode} ${isActive ? styles.nodeActive : ""}`}
-                  style={{
-                    top: `${topPx}px`,
-                    left: `${leftPx}px`,
-                    background: bg,
-                    boxShadow: isActive ? `0 0 0 3px rgba(255,255,255,.35), 0 0 10px ${bg}` : "none",
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveThreadId(th.id); // solo store
-                    if (selectedImage?.name) setActiveKey(fp(selectedImage.name, th.x, th.y));
-                  }}
-                  title={th.status === "corrected" ? "Corregido" : th.status === "reopened" ? "Reabierto" : "Pendiente"}
-                >
-                  {index + 1}
-                </div>
-              );
-            })}
+            {showThreads &&
+              threadsInImage.map((th, index) => {
+                const topPx = imgBox.offsetTop + (th.y / 100) * imgBox.height;
+                const leftPx = imgBox.offsetLeft + (th.x / 100) * imgBox.width;
+                const bg = colorByStatus(th.status);
+                const isActive = resolvedActiveThreadId === th.id;
+                return (
+                  <div
+                    key={th.id}
+                    className={`${styles.annotationNode} ${isActive ? styles.nodeActive : ""}`}
+                    style={{
+                      top: `${topPx}px`,
+                      left: `${leftPx}px`,
+                      background: bg,
+                      boxShadow: isActive ? `0 0 0 3px rgba(255,255,255,.35), 0 0 10px ${bg}` : "none",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveThreadId(th.id); // solo store
+                      if (selectedImage?.name) setActiveKey(fp(selectedImage.name, th.x, th.y));
+                    }}
+                    title={
+                      th.status === "corrected" ? "Corregido" : th.status === "reopened" ? "Reabierto" : "Pendiente"
+                    }
+                  >
+                    {index + 1}
+                  </div>
+                );
+              })}
           </div>
 
-          <button className={`${styles.navButton} ${styles.navRight}`} onClick={() => selectImage(selectedImageIndex + 1)} disabled={selectedImageIndex === images.length - 1} aria-label="Imagen siguiente">❯</button>
+          <button
+            className={`${styles.navButton} ${styles.navRight}`}
+            onClick={() => selectImage(selectedImageIndex + 1)}
+            disabled={selectedImageIndex === images.length - 1}
+            aria-label="Imagen siguiente"
+          >
+            ❯
+          </button>
 
           <div className={styles.shortcutHint} aria-hidden>
-            ←/→ imagen · <b>Z</b> lupa · <b>P</b> anotar · <b>T</b> hilos on/off · <b>Enter</b> zoom · <b>Esc</b> cerrar
+            ←/→ imagen · <b>Z</b> lupa · <b>P</b> anotar · <b>T</b> hilos on/off · <b>Enter</b> zoom · <b>Esc</b>{" "}
+            cerrar
           </div>
         </div>
 
@@ -684,9 +776,7 @@ export default function ImageViewer({
         }}
         loading={loading}
         composeLocked={
-          creatingThreadId != null &&
-          resolvedActiveThreadId != null &&
-          creatingThreadId === resolvedActiveThreadId
+          creatingThreadId != null && resolvedActiveThreadId != null && creatingThreadId === resolvedActiveThreadId
         }
         statusLocked={resolvedActiveThreadId != null && pendingStatusMap.has(resolvedActiveThreadId)}
       />

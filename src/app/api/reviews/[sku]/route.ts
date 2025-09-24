@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { supabaseFromRequest } from "@/lib/supabase/route";
 import { unstable_noStore as noStore } from "next/cache";
-import type { Thread, ThreadMessage, ThreadStatus,DeliveryState } from "@/types/review";
+import type { Thread, ThreadStatus,DeliveryState } from "@/types/review";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
