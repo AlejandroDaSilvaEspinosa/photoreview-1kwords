@@ -45,7 +45,6 @@
     right: 0;
     margin-top: 8px;
     width: 360px;
-    max-height: 420px;
     overflow: auto;
     background: #111;
     color: #fff;
@@ -72,6 +71,8 @@
 
 .list {
     padding: 8px;
+    max-height: 420px;
+    overflow: auto;
 }
 
 .item {

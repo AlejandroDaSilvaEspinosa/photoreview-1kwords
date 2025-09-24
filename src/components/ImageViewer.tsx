@@ -24,7 +24,7 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { useThreadsStore, threadsCache } from "@/stores/threads";
 import { useMessagesStore, Msg, messagesCache } from "@/stores/messages";
 
-import { useWireSkuRealtime } from "@/lib/realtime/wireSkuRealtime";
+import { useWireSkuRealtime } from "@/lib/realtime/useWireSkuRealtime";
 import { useShallow } from "zustand/react/shallow";
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;

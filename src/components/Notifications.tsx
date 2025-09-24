@@ -5,7 +5,7 @@ import { format } from "timeago.js";
 import "@/lib/timeago";
 import styles from "./Notifications.module.css";
 
-import { useWireNotificationsRealtime } from "@/lib/realtime/wireNotifications";
+import { useWireNotificationsRealtime } from "@/lib/realtime/useWireNotificationsRealtime";
 import {
   useNotificationsStore,
   type NotificationRow,
