@@ -2,18 +2,17 @@
 
 import { useEffect } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { useNotificationsStore, type NotificationRow } from "@/stores/notifications";
+import { useNotificationsStore, type NotificationRow, notificationsCache } from "@/stores/notifications";
 
 /**
- * Realtime de notificaciones del usuario autenticado.
- * Opcionalmente puedes pasar "prefetch" para hidratar desde tu API.
+ * Realtime + SWR:
+ * - Lee caché local inmediatamente (stale).
+ * - Opcionalmente prefetch a /api/notifications para la primera página (fresh).
+ * - Después escucha realtime (INSERT/UPDATE).
  */
 export function useWireNotificationsRealtime(opts?: {
-  /** Si pasas initial, hidrata de inmediato. */
   initial?: { items: NotificationRow[]; unseen?: number } | null;
-  /** Límite de elementos en hidrato remoto si haces fetch desde aquí. (No requerido) */
   limit?: number;
-  /** Si true, hace fetch /api/notifications al montar (si no hay initial) */
   prefetchFromApi?: boolean;
 }) {
   const hydrate = useNotificationsStore((s) => s.hydrate);
@@ -23,61 +22,48 @@ export function useWireNotificationsRealtime(opts?: {
   useEffect(() => {
     let cancelled = false;
 
-    const run = async () => {
+    (async () => {
       const sb = supabaseBrowser();
-
-      // UID del usuario
       const { data } = await sb.auth.getUser();
       const uid = data.user?.id ?? null;
       setSelfAuthId(uid);
-      if (!uid) return; // no suscribimos si no hay auth
+      if (!uid) return;
 
-      // Hidratación inicial (prioriza "initial")
+      // 1) Stale desde localStorage
+      const cached = notificationsCache.load();
+      if (cached) hydrate(cached.rows, cached.unseen);
+
+      // 2) Fresh: initial o fetch
       if (opts?.initial) {
         hydrate(opts.initial.items || [], opts.initial.unseen ?? undefined);
-      } else if (opts?.prefetchFromApi) {
+      } else if (opts?.prefetchFromApi !== false) {
         try {
-          const res = await fetch(`/api/notifications?limit=${opts.limit ?? 30}`, { cache: "no-store" });
-          if (cancelled) return;
-          if (res.ok) {
+          const res = await fetch(`/api/notifications?limit=${opts?.limit ?? 30}`, { cache: "no-store" });
+          if (!cancelled && res.ok) {
             const json = await res.json();
             hydrate(json.items || [], json.unseen ?? undefined);
           }
-        } catch {
-          /* noop */
+        } catch { 
+          console.log("error")
         }
       }
 
-      // Canal realtime filtrado por user_id
+      // 3) Realtime
       const ch = sb.channel(`notifications-${uid}`, { config: { broadcast: { ack: true } } });
-
       ch.on(
         "postgres_changes",
-        {
-          event: "*", // INSERT/UPDATE por si cambian viewed en otros clientes
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${uid}`,
-        },
+        { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${uid}` },
         (p: any) => {
           const row = (p.eventType === "DELETE" ? p.old : p.new) as NotificationRow;
-          if (!row) return;
-          if (row.user_id !== uid) return;
+          if (!row || row.user_id !== uid) return;
           upsert(row);
         }
       );
-
       ch.subscribe();
 
-      return () => {
-        supabaseBrowser().removeChannel(ch);
-      };
-    };
+      return () => { supabaseBrowser().removeChannel(ch); };
+    })();
 
-    run();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [opts?.initial, opts?.limit, opts?.prefetchFromApi, hydrate, upsert, setSelfAuthId]);
 }

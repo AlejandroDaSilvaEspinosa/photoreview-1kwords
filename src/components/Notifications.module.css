@@ -117,3 +117,37 @@
     color: #aaa;
     text-align: center;
 }
+
+.footerState {
+    padding: 8px 0 4px;
+    text-align: center;
+    color: #aaa;
+    font-size: 12px;
+}
+
+.loadingMore {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    opacity: .9;
+}
+
+.end {
+    opacity: .6;
+}
+
+.spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #666;
+    border-top-color: transparent;
+    border-radius: 50%;
+    display: inline-block;
+    animation: spin .8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
