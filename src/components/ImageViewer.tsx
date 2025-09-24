@@ -47,6 +47,8 @@ interface ImageViewerProps {
   selectSku: (sku: SkuWithImagesAndStatus | null) => void;
   selectedImageName?: string | null; // ← nombre desde URL
   onSelectImage?: (name: string | null) => void; // ← escribe a URL
+  selectedThreadId?: number | null; // ← id de thread desde URL
+  onSelectThread?: (id: number | null) => void; // ← escribe el thread en la URL
 }
 
 export default function ImageViewer({
@@ -55,6 +57,8 @@ export default function ImageViewer({
   selectSku,
   selectedImageName = null,
   onSelectImage,
+  selectedThreadId = null,
+  onSelectThread,
 }: ImageViewerProps) {
   const { images } = sku;
 
@@ -66,6 +70,9 @@ export default function ImageViewer({
     selectedImageName ?? images[0]?.name ?? null
   );
   const pendingUrlImageRef = useRef<string | null>(null);
+
+  // 👇 Flag para ignorar UNA vez el efecto que sigue ?thread= al cambiar de imagen manualmente
+  const suppressFollowThreadOnceRef = useRef<boolean>(false);
 
   // Si cambia el SKU, resetea la imagen actual
   useEffect(() => {
@@ -128,6 +135,9 @@ export default function ImageViewer({
     })
   );
 
+  // Mapa thread -> image (para navegar si el thread pertenece a otra imagen)
+  const threadToImage = useThreadsStore((s) => s.threadToImage);
+
   // Mensajes
   const setMsgsForThread = useMessagesStore((s) => s.setForThread);
   const addOptimisticMsg = useMessagesStore((s) => s.addOptimistic);
@@ -153,13 +163,6 @@ export default function ImageViewer({
     let cancelled = false;
 
     (async () => {
-      const storeNow = useThreadsStore.getState();
-
-      // 1) Qué imágenes faltan en la store (por nombre)
-      // const missing = images.filter(
-      //   (img) => img.name && !(storeNow.byImage[img.name] && storeNow.byImage[img.name].length)
-      // );
-
       // 2) Sirve copia rancia de HILOS desde localStorage (por imagen)
       let servedFromCache = false;
       const cachedThreadIds: number[] = [];
@@ -199,7 +202,7 @@ export default function ImageViewer({
         if (!res.ok) throw new Error("No se pudieron cargar las anotaciones");
         const payload: ReviewsPayload = await res.json();
 
-        // Hidrata SOLO las que faltaban (ahora con datos frescos)
+        // Hidrata imágenes con datos frescos
         const allThreadIds: number[] = [];
         for (const img of images) {
           const name = img.name!;
@@ -215,7 +218,7 @@ export default function ImageViewer({
           raw.forEach((r) => allThreadIds.push(r.id));
         }
 
-        // 3bis) Sirve copia rancia de MENSAJES también para los threads devueltos por red
+        // 3bis) Mensajes cacheados
         if (allThreadIds.length) {
           for (const tid of allThreadIds) {
             const cachedMsgs = messagesCache.load(tid);
@@ -226,7 +229,7 @@ export default function ImageViewer({
           }
         }
 
-        // 4) Pide mensajes a Supabase (frescos) y sobreescribe
+        // 4) Mensajes frescos desde Supabase
         if (allThreadIds.length) {
           const { data: msgs, error } = await sb
             .from("review_messages")
@@ -350,6 +353,43 @@ export default function ImageViewer({
   }, [threadsRaw, selectedImage, activeThreadId, activeKey]);
 
   // ==========================
+  //  Selección forzada por URL ?thread=ID (con “suppress once”)
+  // ==========================
+  useEffect(() => {
+    // si venimos de un cambio manual de imagen, ignoramos UNA pasada
+    if (suppressFollowThreadOnceRef.current) {
+      suppressFollowThreadOnceRef.current = false;
+      return;
+    }
+
+    if (selectedThreadId == null) return;
+    const imgName = threadToImage.get(selectedThreadId) || null;
+    if (!imgName) return; // aún no hidratado
+
+    // Navegar a la imagen si no coincide
+    if (currentImageName !== imgName) {
+      pendingUrlImageRef.current = imgName;
+      setCurrentImageName(imgName);
+      onSelectImage?.(imgName);
+    }
+
+    // Seleccionar el hilo activo y fijar key
+    setActiveThreadId(selectedThreadId);
+    if (imgName === selectedImage?.name) {
+      const t = threadsRaw.find((x) => x.id === selectedThreadId);
+      if (t) setActiveKey(fp(imgName, t.x, t.y));
+    }
+  }, [
+    selectedThreadId,
+    threadToImage,
+    currentImageName,
+    onSelectImage,
+    setActiveThreadId,
+    selectedImage?.name,
+    threadsRaw,
+  ]);
+
+  // ==========================
   //  Acciones
   // ==========================
   const createThreadAt = useCallback(
@@ -413,6 +453,9 @@ export default function ImageViewer({
       }
       setCreatingThreadId(null);
 
+      // Actualiza el parámetro de URL con el nuevo thread real
+      onSelectThread?.(realId);
+
       // Mensaje de sistema persistido
       const sysCreated = await fetch("/api/messages", {
         method: "POST",
@@ -447,6 +490,7 @@ export default function ImageViewer({
       confirmMessage,
       moveThreadMessages,
       setActiveThreadId,
+      onSelectThread,
     ]
   );
 
@@ -544,8 +588,10 @@ export default function ImageViewer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threadId: id, status: "deleted" as ThreadStatus }),
       }).catch(() => {});
+      // si el eliminado era el seleccionado en URL, límpialo
+      if (resolvedActiveThreadId === id) onSelectThread?.(null);
     },
-    [setThreadStatus]
+    [setThreadStatus, resolvedActiveThreadId, onSelectThread]
   );
 
   useEffect(() => {
@@ -574,10 +620,14 @@ export default function ImageViewer({
     setActiveThreadId(null); // solo store
     setActiveKey(null);
 
+    // 👇 evita rebote del efecto de ?thread= en esta navegación
+    suppressFollowThreadOnceRef.current = true;
+    onSelectThread?.(null); // limpia ?thread= inmediatamente
+
     if (name) {
       pendingUrlImageRef.current = name; // marca navegación pendiente
       setCurrentImageName(name); // UI inmediata sin flash
-      onSelectImage?.(name); // URL se actualiza
+      onSelectImage?.(name); // URL se actualiza (y Home ya limpia thread también)
     } else {
       pendingUrlImageRef.current = null;
       const fallback = images[0]?.name ?? null;
@@ -625,6 +675,7 @@ export default function ImageViewer({
           <h1 className={styles.title}>
             Revisión de SKU: <span className={styles.titleSku}>{sku.sku}</span>
           </h1>
+          {/* 👇 conservamos tu contador original */}
           <div className={styles.imageCounter}>
             {selectedImageIndex + 1} / {images.length}
           </div>
@@ -656,6 +707,7 @@ export default function ImageViewer({
             >
               🧵
             </button>
+            {/* ❌ eliminado el image count extra que añadí aquí */}
           </div>
 
           <button
@@ -711,6 +763,7 @@ export default function ImageViewer({
                     onClick={(e) => {
                       e.stopPropagation();
                       setActiveThreadId(th.id); // solo store
+                      onSelectThread?.(th.id); // actualiza URL ?thread=
                       if (selectedImage?.name) setActiveKey(fp(selectedImage.name, th.x, th.y));
                     }}
                     title={
@@ -733,8 +786,7 @@ export default function ImageViewer({
           </button>
 
           <div className={styles.shortcutHint} aria-hidden>
-            ←/→ imagen · <b>Z</b> lupa · <b>P</b> anotar · <b>T</b> hilos on/off · <b>Enter</b> zoom · <b>Esc</b>{" "}
-            cerrar
+            ←/→ imagen · <b>Z</b> lupa · <b>P</b> anotar · <b>T</b> hilos on/off · <b>Enter</b> zoom · <b>Esc</b> cerrar
           </div>
         </div>
 
@@ -760,6 +812,7 @@ export default function ImageViewer({
         onDeleteThread={(id: number) => removeThread(id)}
         onFocusThread={(id: number | null) => {
           setActiveThreadId(id); // solo store
+          onSelectThread?.(id ?? null); // sincroniza URL ?thread=
           if (id) markThreadRead(id).catch(() => {});
           if (selectedImage?.name && id) {
             const t = (threadsRaw || []).find((x) => x.id === id);
@@ -791,6 +844,7 @@ export default function ImageViewer({
           setHideThreads={setShowThreads}
           onFocusThread={(id: number | null) => {
             setActiveThreadId(id); // solo store
+            onSelectThread?.(id ?? null); // sincroniza URL ?thread=
             if (id) markThreadRead(id).catch(() => {});
           }}
           onAddThreadMessage={(threadId: number, text: string) => {

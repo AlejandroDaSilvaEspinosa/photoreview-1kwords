@@ -1,4 +1,4 @@
-// src/app/(whatever)/home.tsx
+// src/app/(protected)/home.tsx
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
@@ -29,7 +29,6 @@ const STATUS_LABEL: Record<SkuStatus, string> = {
   validated: "Validado",
   reopened: "Reabierto",
 };
-
 
 export default function Home({ username, skus, clientInfo }: Props) {
   const router = useRouter();
@@ -74,14 +73,22 @@ export default function Home({ username, skus, clientInfo }: Props) {
         setNotifPrefetch({ items: [], unseen: 0 });
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // URL ↔ selección
   const skuParam = searchParams.get("sku");
   const imageParam = searchParams.get("image");
-  const bySku = useMemo(() => new Map(effectiveSkus.map(s => [s.sku, s])), [effectiveSkus]);
-  const selectedSku: SkuWithImagesAndStatus | null = skuParam ? (bySku.get(skuParam) ?? null) : null;
+  const threadParam = searchParams.get("thread");
+  const selectedThreadId: number | null = useMemo(
+    () => (threadParam && /^\d+$/.test(threadParam) ? Number(threadParam) : null),
+    [threadParam]
+  );
+
+  const bySku = useMemo(() => new Map(effectiveSkus.map((s) => [s.sku, s])), [effectiveSkus]);
+  const selectedSku: SkuWithImagesAndStatus | null = skuParam ? bySku.get(skuParam) ?? null : null;
   const selectedImageName: string | null = useMemo(() => {
     if (!selectedSku || !imageParam) return null;
     return selectedSku.images.some((i) => i.name === imageParam) ? imageParam : null;
@@ -93,35 +100,64 @@ export default function Home({ username, skus, clientInfo }: Props) {
     if (!belongs) {
       const next = new URLSearchParams(searchParams.toString());
       next.delete("image");
+      next.delete("thread"); // si la imagen no pertenece, el thread tampoco debe persistir
       router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
     }
   }, [selectedSku, imageParam, searchParams, pathname, router]);
 
-  const selectSku = useCallback((sku: SkuWithImagesAndStatus | null) => {
-    const next = new URLSearchParams(searchParams.toString());
-    if (sku) {
-      next.set("sku", sku.sku);
-      const img = next.get("image");
-      if (img && !sku.images.some((i) => i.name === img)) next.delete("image");
-    } else { next.delete("sku"); next.delete("image"); }
-    router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
-  }, [searchParams, pathname, router]);
+  const selectSku = useCallback(
+    (sku: SkuWithImagesAndStatus | null) => {
+      const next = new URLSearchParams(searchParams.toString());
+      if (sku) {
+        next.set("sku", sku.sku);
+        const img = next.get("image");
+        if (img && !sku.images.some((i) => i.name === img)) next.delete("image");
+      } else {
+        next.delete("sku");
+        next.delete("image");
+      }
+      next.delete("thread"); // al cambiar SKU, resetea thread
+      router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
+    },
+    [searchParams, pathname, router]
+  );
 
-  const selectImage = useCallback((imageName: string | null) => {
-    const next = new URLSearchParams(searchParams.toString());
-    if (imageName) next.set("image", imageName); else next.delete("image");
-    router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
-  }, [searchParams, pathname, router]);
+  const selectImage = useCallback(
+    (imageName: string | null) => {
+      const next = new URLSearchParams(searchParams.toString());
+      if (imageName) next.set("image", imageName);
+      else next.delete("image");
+      next.delete("thread"); // al cambiar imagen, resetea thread
+      router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
+    },
+    [searchParams, pathname, router]
+  );
+
+  const selectThread = useCallback(
+    (threadId: number | null) => {
+      const next = new URLSearchParams(searchParams.toString());
+      if (threadId != null) next.set("thread", String(threadId));
+      else next.delete("thread");
+      router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
+    },
+    [searchParams, pathname, router]
+  );
 
   const onOpenSku = useCallback((sku: string) => selectSku(bySku.get(sku) ?? null), [selectSku, bySku]);
-  const onOpenImage = useCallback((sku: string, img: string) => {
-    const s = bySku.get(sku); if (!s) return;
-    const next = new URLSearchParams(searchParams.toString());
-    next.set("sku", s.sku);
-    if (s.images.some((i) => i.name === img)) next.set("image", img);
-    else next.delete("image");
-    router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
-  }, [bySku, pathname, router, searchParams]);
+
+  const onOpenImage = useCallback(
+    (sku: string, img: string) => {
+      const s = bySku.get(sku);
+      if (!s) return;
+      const next = new URLSearchParams(searchParams.toString());
+      next.set("sku", s.sku);
+      if (s.images.some((i) => i.name === img)) next.set("image", img);
+      else next.delete("image");
+      next.delete("thread"); // navegar directamente a una imagen limpia el thread
+      router.replace(`${pathname}${next.toString() ? `?${next.toString()}` : ""}`, { scroll: false });
+    },
+    [bySku, pathname, router, searchParams]
+  );
 
   useGlobalRealtimeToasts({ onOpenSku, onOpenImage });
 
@@ -158,11 +194,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
       return n;
     });
 
-
-  const filtered = useMemo(
-    () => effectiveSkus.filter((s) => active.has(s.status)),
-    [effectiveSkus, active]
-  );
+  const filtered = useMemo(() => effectiveSkus.filter((s) => active.has(s.status)), [effectiveSkus, active]);
 
   // agrupado por estado
   const grouped = useMemo(() => {
@@ -192,6 +224,8 @@ export default function Home({ username, skus, clientInfo }: Props) {
             selectSku={selectSku}
             selectedImageName={selectedImageName}
             onSelectImage={selectImage}
+            selectedThreadId={selectedThreadId}
+            onSelectThread={selectThread}
           />
         ) : (
           <div className={styles.placeholder}>
@@ -202,9 +236,11 @@ export default function Home({ username, skus, clientInfo }: Props) {
               <FilterPills
                 all={ALL}
                 labels={STATUS_LABEL}
-                totals={Object.fromEntries(
-                  ALL.map(s  => [s, effectiveSkus.filter(x => x.status === s).length])
-                ) as  Record<SkuStatus, number>} 
+                totals={
+                  Object.fromEntries(
+                    ALL.map((s) => [s, effectiveSkus.filter((x) => x.status === s).length])
+                  ) as Record<SkuStatus, number>
+                }
                 active={active}
                 onToggle={toggle}
               />
