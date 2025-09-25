@@ -23,6 +23,18 @@ type MessagesCachePayload = {
   at: number;
   rows: Msg[];
 };
+// prioridad de estados (solo subir)
+const DELIVERY_RANK: Record<LocalDelivery, number> = {
+  sending: 0,
+  sent: 1,
+  delivered: 2,
+  read: 3,
+};
+const preferHigher = (a?: LocalDelivery, b?: LocalDelivery): LocalDelivery => {
+  const aa = a ?? "sent";
+  const bb = b ?? "sent";
+  return DELIVERY_RANK[aa] >= DELIVERY_RANK[bb] ? aa : bb;
+};
 
 const safeParse = <T,>(raw: string | null): T | null => {
   if (!raw) return null;
@@ -259,24 +271,37 @@ export const useMessagesStore = create<State & Actions>()(
         const idx = cleaned.findIndex((m: any) => m.id === row.id);
         if (idx >= 0) {
           const copy = cleaned.slice();
+          const prevLD = copy[idx].meta?.localDelivery as LocalDelivery | undefined;
+          // Si venía "sending" (optimista) y llega el row real, subir a "sent".
+          // Si ya era delivered/read, NO bajar.
+          const nextLD: LocalDelivery =
+            prevLD === "sending" ? "sent" : (prevLD ?? "sent");
+
           copy[idx] = {
             ...copy[idx],
             ...(row as any),
             meta: {
               ...(copy[idx].meta || {}),
               ...(preservedMeta || {}),
-              localDelivery: "sent",
-              isMine: (copy[idx].meta as any)?.isMine ?? (preservedMeta?.isMine ?? false),
+              localDelivery: nextLD,
+              isMine:
+                (copy[idx].meta as any)?.isMine ??
+                (preservedMeta?.isMine ?? false),
             },
           };
           copy.sort(sortByCreatedAt);
           const map = new Map(s.messageToThread);
           map.set(row.id, threadId);
 
-          saveMessagesCache(threadId, copy); // 🗄️ persist
-
+          saveMessagesCache(threadId, copy);
           return { byThread: { ...s.byThread, [threadId]: copy }, messageToThread: map };
         }
+
+        // Nuevo mensaje en la lista
+        const baseLD: LocalDelivery = "sent";
+        const nextLD: LocalDelivery = preservedMeta?.localDelivery
+          ? preferHigher(preservedMeta.localDelivery as LocalDelivery, baseLD)
+          : baseLD;
 
         const added = [
           ...cleaned,
@@ -285,7 +310,7 @@ export const useMessagesStore = create<State & Actions>()(
             meta: {
               ...(row as any).meta,
               ...(preservedMeta || {}),
-              localDelivery: "sent",
+              localDelivery: nextLD,
               isMine: preservedMeta?.isMine ?? false,
             },
           },
@@ -294,10 +319,10 @@ export const useMessagesStore = create<State & Actions>()(
         const map = new Map(s.messageToThread);
         map.set(row.id, threadId);
 
-        saveMessagesCache(threadId, added); // 🗄️ persist
-
+        saveMessagesCache(threadId, added);
         return { byThread: { ...s.byThread, [threadId]: added }, messageToThread: map };
       }),
+
 
     removeFromRealtime: (row) =>
       set((s) => {
