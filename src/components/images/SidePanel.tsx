@@ -32,6 +32,9 @@ type Props = {
   composeLocked?: boolean;
   /** ⛔ Bloquea el botón de cambiar estado del hilo activo */
   statusLocked?: boolean;
+
+  /** 🚩 Epoch que incrementa cuando llegan datos fresh (se pasa a ThreadChat) */
+  dataEpoch?: number;
 };
 
 const LS_KEY = "photoreview:sidepanel:collapsed";
@@ -56,6 +59,7 @@ export default function SidePanel({
   initialCollapsed = false,
   composeLocked = false,
   statusLocked = false,
+  dataEpoch = 0,
 }: Props) {
   const [collapsed, setCollapsed] = useState<boolean>(initialCollapsed);
 
@@ -63,10 +67,10 @@ export default function SidePanel({
     try {
       const v = localStorage.getItem(LS_KEY);
       if (v != null) setCollapsed(v === "1");
-    } catch { console.log("error")}
+    } catch {}
   }, []);
   useEffect(() => {
-    try { localStorage.setItem(LS_KEY, collapsed ? "1" : "0"); } catch {console.log("error")}
+    try { localStorage.setItem(LS_KEY, collapsed ? "1" : "0"); } catch {}
   }, [collapsed]);
 
   const selected = useMemo(
@@ -106,23 +110,23 @@ export default function SidePanel({
       {!collapsed && (
         <div className={styles.content}>
           <header className={styles.header}>
-              <div className={styles.presenceWrap}>
-                <span className={styles.dotMini} />
-                <span className={styles.presenceText}>{onlineUsers.length} en línea</span>
-              </div>
-              <button
-                type="button"
-                className={styles.collapseBtn}
-                onClick={() => setCollapsed(true)}
-                aria-label="Colapsar panel"
-                title="Colapsar panel"
-              >
-                ❯
-              </button>
+            <div className={styles.presenceWrap}>
+              <span className={styles.dotMini} />
+              <span className={styles.presenceText}>{onlineUsers.length} en línea</span>
+            </div>
+            <button
+              type="button"
+              className={styles.collapseBtn}
+              onClick={() => setCollapsed(true)}
+              aria-label="Colapsar panel"
+              title="Colapsar panel"
+            >
+              ❯
+            </button>
           </header>
 
-            <span className={styles.fileName}>Revisión de: {name}</span>
-            {isValidated && <span className={styles.validatedBadge}>Validada</span>}
+          <span className={styles.fileName}>Revisión de: {name}</span>
+          {isValidated && <span className={styles.validatedBadge}>Validada</span>}
 
           <div className={styles.validationButtons}>
             {!isValidated ? (
@@ -176,6 +180,8 @@ export default function SidePanel({
                   onDeleteThread={onDeleteThread}
                   composeLocked={composeLocked}
                   statusLocked={statusLocked}
+                  /** 🚩 prop que permite a ThreadChat actualizar el separador una sola vez al llegar fresh */
+                  dataEpoch={dataEpoch}
                 />
               )}
             </div>

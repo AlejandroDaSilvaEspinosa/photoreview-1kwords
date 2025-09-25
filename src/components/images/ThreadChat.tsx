@@ -1,12 +1,11 @@
 "use client";
 
-import React, { useRef, useEffect, useState, useMemo, useLayoutEffect } from "react";
+import React, { useRef, useEffect, useMemo, useState } from "react";
 import styles from "./ThreadChat.module.css";
 import ReactMarkdown from "react-markdown";
 import { Thread, ThreadMessage, ThreadStatus } from "@/types/review";
 import AutoGrowTextarea from "../AutoGrowTextarea";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { useMessagesStore } from "@/stores/messages";
 
 type Props = {
   activeThread: Thread;
@@ -17,6 +16,9 @@ type Props = {
   onDeleteThread: (id: number) => void;
   composeLocked?: boolean;
   statusLocked?: boolean;
+
+  /** 🚩 Epoch que incrementa 1 sola vez cuando llegan datos fresh de BBDD */
+  dataEpoch?: number;
 };
 
 type DeliveryState = "sending" | "sent" | "delivered" | "read";
@@ -30,8 +32,9 @@ export default function ThreadChat({
   onDeleteThread,
   composeLocked = false,
   statusLocked = false,
+  dataEpoch = 0,
 }: Props) {
-  // ===== Draft local por hilo
+  // ===== Draft local
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const setDraft = (threadId: number, value: string | ((prev: string) => string)) => {
     setDrafts((prev) => ({
@@ -50,7 +53,7 @@ export default function ThreadChat({
   // ===== Scroll container
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // ===== Auth uid (auth.users.id) local
+  // ===== auth uid (para detectar "es mío")
   const [selfAuthId, setSelfAuthId] = useState<string | null>(null);
   useEffect(() => {
     supabaseBrowser()
@@ -59,14 +62,13 @@ export default function ThreadChat({
       .catch(() => setSelfAuthId(null));
   }, []);
 
-  // ===== Helpers status
+  // ===== helpers
   const nextStatus = (s: ThreadStatus): ThreadStatus => (s === "corrected" ? "reopened" : "corrected");
   const toggleLabel = (s: ThreadStatus) => (s === "corrected" ? "Reabrir hilo" : "Validar correcciones");
   const colorByNextStatus = (s: ThreadStatus) => (s === "corrected" ? "orange" : "green");
   const colorByStatus = (s: ThreadStatus) =>
     s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : s === "deleted" ? "#666" : "#FF0040";
 
-  // ===== isMine
   const isMine = (m: ThreadMessage) => {
     const meta = (m.meta || {}) as any;
     if (meta.isMine === true) return true;
@@ -75,7 +77,6 @@ export default function ThreadChat({
     return !!selfAuthId && !!createdByAuthId && createdByAuthId === selfAuthId;
   };
 
-  // ===== Enviar
   const handleSend = async () => {
     if (composeLocked) return;
     const id = activeThread?.id;
@@ -86,7 +87,7 @@ export default function ThreadChat({
     await onAddThreadMessage(id, draft.trim());
   };
 
-  // ===== Fechas y etiquetas
+  // ===== fechas/formatos
   const dateKey = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -106,43 +107,31 @@ export default function ThreadChat({
   };
   const timeHHmm = (d: Date) => d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", hour12: false });
 
-  // ===== MARCA DE CORTE “MENSAJES NO LEÍDOS (N)” — snapshot robusto
-  const [unreadCutoffId, setUnreadCutoffId] = useState<number | null>(null);
-  const [unreadSnapshot, setUnreadSnapshot] = useState<number>(0);
-  const didSnapshotForRef = useRef<number | null>(null);
+  // ===== snapshot del separador (congelado) + 1 upgrade al llegar fresh
+  type UnreadSnap = {
+    tid: number;
+    cutoffId: number | null;
+    count: number;
+    idsToRead: number[];
+    epoch: number;     // dataEpoch usado para calcular este snapshot
+    upgraded: boolean; // ya hicimos el upgrade post-fresh
+  };
+  const [snap, setSnap] = useState<UnreadSnap | null>(null);
 
-  // Marcado de leído (después del scroll); obtenemos selfId del store para reintento
-  const markThreadRead = useMessagesStore((s) => s.markThreadRead);
-  const storeSelfId = useMessagesStore((s) => s.selfAuthId);
-
-  // Reset al cambiar de hilo
+  // reset al cambiar de hilo
   useEffect(() => {
-    didSnapshotForRef.current = null;
-    setUnreadCutoffId(null);
-    setUnreadSnapshot(0);
+    setSnap(null);
   }, [activeThread?.id]);
 
-  // Snapshot cuando cambia la referencia del array o sabemos quién soy
-  useLayoutEffect(() => {
+  const computeSnap = (): UnreadSnap | null => {
+    const tid = activeThread?.id;
     const list = activeThread?.messages ?? [];
-    if (!activeThread?.id) return;
-    if (!list.length) return;
-
-    if (didSnapshotForRef.current === activeThread.id) return;
+    if (!tid || !list.length) return null;
 
     let count = 0;
-    for (const m of list) {
-      const sys =
-        !!m.isSystem ||
-        (m.createdByName || "").toLowerCase() === "system" ||
-        (m.createdByName || "").toLowerCase() === "sistema";
-      if (sys) continue;
-      if (isMine(m)) continue;
-      const delivery = (m.meta?.localDelivery ?? "sent") as DeliveryState;
-      if (delivery !== "read") count++;
-    }
+    let cutoffId: number | null = null;
+    const idsToRead: number[] = [];
 
-    let firstUnreadId: number | null = null;
     for (const m of list) {
       const sys =
         !!m.isSystem ||
@@ -150,22 +139,39 @@ export default function ThreadChat({
         (m.createdByName || "").toLowerCase() === "sistema";
       if (sys) continue;
       if (isMine(m)) continue;
+
       const delivery = (m.meta?.localDelivery ?? "sent") as DeliveryState;
       if (delivery !== "read") {
-        const mid = (m.id as number) ?? null;
-        if (typeof mid === "number") {
-          firstUnreadId = mid;
-          break;
-        }
+        count++;
+        if (cutoffId == null) cutoffId = (m.id as number) ?? null;
+        const mid = (m.id as number) ?? -1;
+        if (Number.isFinite(mid) && mid >= 0) idsToRead.push(mid);
       }
     }
+    return { tid, cutoffId, count, idsToRead, epoch: dataEpoch, upgraded: false };
+  };
 
-    setUnreadSnapshot(count);
-    setUnreadCutoffId(firstUnreadId);
-    didSnapshotForRef.current = activeThread.id;
-  }, [activeThread?.id, activeThread?.messages, selfAuthId]);
+  // 1) Primer snapshot (con cache o con lo que haya)
+  useEffect(() => {
+    if (snap) return; // ya tenemos snapshot para este hilo
+    const s = computeSnap();
+    if (s) setSnap(s);
+  }, [snap, activeThread?.id, activeThread?.messages, selfAuthId, dataEpoch]);
 
-  // ===== Filas con separadores + “Mensajes no leídos (N)”
+  // 2) Upgrade EXACTAMENTE una vez cuando llega el primer fresh (dataEpoch sube)
+  useEffect(() => {
+    if (!snap) return;
+    if (dataEpoch <= snap.epoch) return;  // aún no ha llegado nada "más nuevo" que lo usado
+    if (snap.upgraded) return;            // ya hicimos el upgrade para este hilo
+
+    const s = computeSnap();
+    if (!s) return;
+
+    // conserva que ya hicimos el upgrade
+    setSnap({ ...s, upgraded: true });
+  }, [dataEpoch, snap, activeThread?.id, activeThread?.messages, selfAuthId]);
+
+  // ===== filas render (usa snapshot congelado)
   type Row =
     | { kind: "divider"; key: string; label: string }
     | { kind: "unread"; key: string; label: string }
@@ -175,6 +181,7 @@ export default function ThreadChat({
     const out: Row[] = [];
     let lastKey: string | null = null;
     const list = activeThread?.messages ?? [];
+
     for (const m of list) {
       const dt = new Date(m.createdAt);
       const k = dateKey(dt);
@@ -182,108 +189,76 @@ export default function ThreadChat({
         out.push({ kind: "divider", key: k, label: labelFor(dt) });
         lastKey = k;
       }
-      if (unreadSnapshot > 0 && unreadCutoffId != null && m.id === unreadCutoffId) {
+
+      if (
+        snap?.tid === activeThread?.id &&
+        snap.count > 0 &&
+        snap.cutoffId != null &&
+        m.id === snap.cutoffId
+      ) {
         out.push({
           kind: "unread",
           key: `unread-${m.id}`,
-          label: `Mensajes no leídos (${unreadSnapshot})`,
+          label: `Mensajes no leídos (${snap.count})`,
         });
       }
+
       out.push({ kind: "msg", msg: m });
     }
     return out;
-  }, [activeThread?.messages, unreadCutoffId, unreadSnapshot]);
+  }, [activeThread?.messages, activeThread?.id, snap]);
 
-  // ===== Auto-scroll inicial con reintentos y marcado leído (cuando haya selfId)
-  const didInitialScrollForThread = useRef<number | null>(null);
-
+  // ===== scroll inicial 1 vez por (thread, epoch usado para snap)
+  const scrolledEpochByTidRef = useRef<Map<number, number>>(new Map());
   useEffect(() => {
     const container = listRef.current;
-    const threadId = activeThread?.id;
-    if (!container || !threadId) return;
+    const tid = activeThread?.id;
+    if (!container || !tid || !snap) return;
 
-    // esperar a snapshot
-    if (didSnapshotForRef.current !== threadId) return;
-
-    // ya realizado
-    if (didInitialScrollForThread.current === threadId) return;
-
-    let cancelled = false;
-
-    const finish = () => {
-      if (cancelled) return;
-      didInitialScrollForThread.current = threadId;
-      if (storeSelfId) {
-        requestAnimationFrame(() => {
-          markThreadRead(threadId).catch(() => {});
-        });
-      }
-    };
+    const already = scrolledEpochByTidRef.current.get(tid);
+    if (already != null && already >= snap.epoch) return; // ya scrolleado con este o mayor epoch
 
     const scrollToSeparator = () => {
       const sep = container.querySelector<HTMLElement>('[data-unread-cutoff="true"]');
       if (!sep) return false;
       const contRect = container.getBoundingClientRect();
       const sepRect = sep.getBoundingClientRect();
-      const delta = sepRect.top - contRect.top;
-      container.scrollTop += delta;
+      container.scrollTop += sepRect.top - contRect.top;
       return true;
     };
 
-    const doAccurateScroll = () => {
-      if (unreadSnapshot > 0 && unreadCutoffId != null) {
-        // intentar ubicar separador con reintentos
-        let tries = 0;
-        const MAX_TRIES = 16;
+    requestAnimationFrame(() => {
+      const ok = snap.count > 0 && snap.cutoffId != null ? scrollToSeparator() : false;
+      if (!ok) container.scrollTop = container.scrollHeight;
+      scrolledEpochByTidRef.current.set(tid, snap.epoch);
+    });
+  }, [activeThread?.id, snap]);
 
-        const tryAlign = () => {
-          if (cancelled) return;
-          const ok = scrollToSeparator();
-          if (ok) {
-            requestAnimationFrame(() => {
-              scrollToSeparator();
-              finish();
-            });
-          } else if (++tries < MAX_TRIES) {
-            requestAnimationFrame(tryAlign);
-          } else {
-            container.scrollTop = container.scrollHeight;
-            finish();
-          }
-        };
-
-        requestAnimationFrame(tryAlign);
-      } else {
-        // sin no-leídos → al final (doble RAF para asegurar layout)
-        requestAnimationFrame(() => {
-          container.scrollTop = container.scrollHeight;
-          requestAnimationFrame(finish);
-        });
-      }
-    };
-
-    requestAnimationFrame(doAccurateScroll);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeThread?.id, rows, unreadSnapshot, unreadCutoffId, markThreadRead, storeSelfId]);
-
-  // 🔁 Reintento de marcado leído cuando el store obtiene selfAuthId (después del scroll)
+  // ===== marca leído 1 vez por (thread, epoch usado para snap) — sin mutar store
+  const postedReadEpochByTidRef = useRef<Map<number, number>>(new Map());
   useEffect(() => {
     const tid = activeThread?.id;
-    if (!tid) return;
-    if (didInitialScrollForThread.current === tid && storeSelfId) {
-      markThreadRead(tid).catch(() => {});
+    if (!tid || !snap) return;
+
+    const already = postedReadEpochByTidRef.current.get(tid);
+    if (already != null && already >= snap.epoch) return;
+
+    if (!snap.idsToRead.length) {
+      postedReadEpochByTidRef.current.set(tid, snap.epoch);
+      return;
     }
-  }, [storeSelfId, activeThread?.id, markThreadRead]);
 
-  // ===== Auto-scroll al FINAL cuando llega un MENSAJE NUEVO
+    fetch("/api/messages/receipts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messageIds: snap.idsToRead, mark: "read" }),
+    }).catch(() => { /* noop */ });
+
+    postedReadEpochByTidRef.current.set(tid, snap.epoch);
+  }, [activeThread?.id, snap]);
+
+  // ===== auto-scroll al final cuando llega un mensaje nuevo (simple)
   const lastMsgKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    lastMsgKeyRef.current = null;
-  }, [activeThread?.id]);
-
   useEffect(() => {
     const container = listRef.current;
     if (!container) return;
@@ -299,19 +274,6 @@ export default function ThreadChat({
       });
     }
   }, [activeThread?.messages]);
-
-  // ===== Ajuste extra: si no hay no-leídos, asegura estar al fondo ante reflows
-  useEffect(() => {
-    const container = listRef.current;
-    const tid = activeThread?.id;
-    if (!container || !tid) return;
-    if (unreadSnapshot > 0) return;
-    if (didInitialScrollForThread.current !== tid) return;
-    const raf = requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [activeThread?.id, rows.length, unreadSnapshot]);
 
   // ===== render
   const prevDeliveryRef = useRef<Map<number, DeliveryState>>(new Map());
@@ -345,7 +307,12 @@ export default function ThreadChat({
         {rows.map((row, i) => {
           if (row.kind === "divider") {
             return (
-              <div key={`div-${row.key}-${i}`} className={styles.dayDivider} role="separator" aria-label={row.label}>
+              <div
+                key={`div-${row.key}-${i}`}
+                className={styles.dayDivider}
+                role="separator"
+                aria-label={row.label}
+              >
                 <span className={styles.dayDividerLabel}>{row.label}</span>
               </div>
             );
@@ -369,13 +336,13 @@ export default function ThreadChat({
           }
 
           const m = row.msg;
-          const mine = isMine(m);
           const meta = (m.meta || {}) as any;
           const delivery = (meta.localDelivery as DeliveryState | undefined) ?? "sent";
           const sys =
             !!m.isSystem ||
             (m.createdByName || "").toLowerCase() === "system" ||
             (m.createdByName || "").toLowerCase() === "sistema";
+          const mine = isMine(m);
 
           const ticks =
             delivery === "sending" ? "⏳" : delivery === "read" ? "✓✓" : delivery === "delivered" ? "✓✓" : "✓";
@@ -391,7 +358,11 @@ export default function ThreadChat({
           return (
             <div
               key={m.id}
-              className={sys ? `${styles.bubble} ${styles.system}` : `${styles.bubble} ${mine ? styles.mine : styles.theirs}`}
+              className={
+                sys
+                  ? `${styles.bubble} ${styles.system}`
+                  : `${styles.bubble} ${mine ? styles.mine : styles.theirs}`
+              }
             >
               <div lang="es" className={styles.bubbleText}>
                 <ReactMarkdown>{m.text}</ReactMarkdown>
@@ -407,7 +378,13 @@ export default function ThreadChat({
                       } ${justRead ? styles.justRead : ""}`}
                       aria-live="polite"
                       aria-label={
-                        delivery === "read" ? "Leído" : delivery === "delivered" ? "Entregado" : delivery === "sent" ? "Enviado" : "Enviando"
+                        delivery === "read"
+                          ? "Leído"
+                          : delivery === "delivered"
+                          ? "Entregado"
+                          : delivery === "sent"
+                          ? "Enviado"
+                          : "Enviando"
                       }
                     >
                       {ticks}

@@ -36,7 +36,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
 
   // Realtime (status SKUs/Imágenes)
   useWireAllStatusesRealtime();
-  const liveBySku = useStatusesStore((s) => s.bySku);
+  const liveBySku =  ((s) => s.bySku);
 
   // Props + estado live
   const effectiveSkus = useMemo(() => {

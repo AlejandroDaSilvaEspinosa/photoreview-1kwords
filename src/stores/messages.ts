@@ -99,7 +99,7 @@ type Actions = {
   /** Marca localmente delivered si están en 'sent' y son ajenos/no-sistema */
   markDeliveredLocalIfSent: (messageIds: number[]) => void;
 
-  /** 🔧 Compatibilidad con bundle: devuelve estado rápido de un mensaje */
+  /** Compat: devuelve estado rápido de un mensaje */
   quickStateByMessageId: (id: number) => QuickState;
 };
 
@@ -282,42 +282,43 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
         return { byThread: { ...s.byThread, [threadId]: copy }, messageToThread: map, pendingReceipts: pend };
       }),
 
-    // sólo ajenos + no 'sending' + no 'read'
+    /* 🔴 IMPORTANTE: marcar leído SIN mutar el estado local del receptor.
+       Solo POST + dedupe por sesión para minimizar renders/coste.
+    */
     markThreadRead: async (threadId) => {
       const { byThread, selfAuthId } = get();
       if (!selfAuthId) return;
 
       const list = byThread[threadId] || [];
+      if (!list.length) return;
+
+      // filtra mensajes ajenos, no-sistema, con id válido,
+      // que NO estén "sending" y que NO hayan sido enviados ya en esta sesión
       const toMark = list
         .filter((m) => {
-          if ((m as any).is_system) return false;
+          const isSystem = (m as any).is_system;
+          if (isSystem) return false;
           if (m.id == null) return false;
           if (m.created_by === selfAuthId) return false;
           const ld = (m.meta?.localDelivery ?? "sent") as LocalDelivery;
-          return ld !== "sending" && ld !== "read";
+          if (ld === "sending") return false;
+          // dedupe por sesión
+          return !readInSession(m.id as number);
         })
         .map((m) => m.id as number);
 
       if (!toMark.length) return;
-
-      set((s) => {
-        const idSet = new Set(toMark);
-        const nextList = (s.byThread[threadId] || []).map((m) =>
-          !idSet.has(m.id as number)
-            ? m
-            : { ...m, meta: { ...(m.meta || {}), localDelivery: "read" as LocalDelivery } }
-        );
-        saveMessagesCache(threadId, nextList);
-        return { byThread: { ...s.byThread, [threadId]: nextList } };
-      });
 
       try {
         await fetch("/api/messages/receipts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ messageIds: toMark, mark: "read" }),
-        });
-      } catch {}
+        }).catch(() => {});
+      } finally {
+        // Marca en sessionStorage para no reenviar en esta sesión.
+        for (const id of toMark) markReadSession(id);
+      }
     },
 
     upsertFromRealtime: (row) =>
@@ -463,6 +464,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
         const msg = copy[idx];
         const isMine = !!selfId && msg.created_by === selfId;
 
+        // aplica sólo si el recibo viene del otro “lado”
         if ((isMine && fromSelf) || (!isMine && !fromSelf)) return {};
 
         const prevLD = (msg.meta?.localDelivery ?? "sent") as LocalDelivery;
@@ -537,7 +539,6 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
         return { byThread: { ...s.byThread } };
       }),
 
-    // ✅ compat con bundle viejo
     quickStateByMessageId: (id: number) => internalQuickState(get(), id),
   }))
 );
@@ -572,6 +573,17 @@ const markSession = (id: number) => {
   try { sessionStorage.setItem(SS_KEY(id), String(Date.now())); } catch {}
 };
 
+/* === Dedupe para READ por sesión === */
+const READ_SS_KEY = (id: number) => `ack:read:v1:${id}`;
+const readInSession = (id: number) => {
+  if (typeof sessionStorage === "undefined") return false;
+  try { return sessionStorage.getItem(READ_SS_KEY(id)) != null; } catch { return false; }
+};
+const markReadSession = (id: number) => {
+  if (typeof sessionStorage === "undefined") return;
+  try { sessionStorage.setItem(READ_SS_KEY(id), String(Date.now())); } catch {}
+};
+
 const runtimeDedup = new Set<number>();
 const pend = new Set<number>();
 let timer: number | null = null;
@@ -594,7 +606,7 @@ async function flushNow() {
   const eligible = ids.filter((id) => !inSession(id) && internalQuickState(s, id) === "sent");
   if (!eligible.length) { runtimeDedup.clear(); return; }
 
-  // Optimista local
+  // Optimista local (solo delivered)
   useMessagesStore.getState().markDeliveredLocalIfSent(eligible);
 
   try {
