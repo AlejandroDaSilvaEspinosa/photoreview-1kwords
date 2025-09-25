@@ -1,7 +1,13 @@
-// src/components/ImageViewer.tsx
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  startTransition,
+} from "react";
 import styles from "./ImageViewer.module.css";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import ThumbnailGrid from "./images/ThumbnailGrid";
@@ -71,8 +77,9 @@ export default function ImageViewer({
   );
   const pendingUrlImageRef = useRef<string | null>(null);
 
-  // 👇 Flag para ignorar UNA vez el efecto que sigue ?thread= al cambiar de imagen manualmente
+  // 👇 Flags de control contra rebotes por URL
   const suppressFollowThreadOnceRef = useRef<boolean>(false);
+  const lastAppliedThreadRef = useRef<number | null>(null);
 
   // Si cambia el SKU, resetea la imagen actual
   useEffect(() => {
@@ -100,7 +107,6 @@ export default function ImageViewer({
   const selectedImage = images[selectedImageIndex] ?? null;
 
   // ===== UI state =====
-  // 👉 Fuente ÚNICA: store (sin useState local)
   const activeThreadId = useThreadsStore((s) => s.activeThreadId);
   const setActiveThreadId = useThreadsStore((s) => s.setActiveThreadId);
 
@@ -187,12 +193,10 @@ export default function ImageViewer({
         }
       }
 
-      // Si hemos servido algo del caché, no tapes la UI con loader
       setLoadError(null);
       setLoading(!servedFromCache);
 
       try {
-        // 3) Revalida en background contra la API
         const sb = supabaseBrowser();
         const { data: authInfo } = await sb.auth.getUser();
         const myId = authInfo.user?.id ?? null;
@@ -214,7 +218,7 @@ export default function ImageViewer({
             status: t.status as ThreadStatus,
           }));
 
-          hydrateForImage(name, rows); // (persiste en localStorage)
+          hydrateForImage(name, rows);
           raw.forEach((r) => allThreadIds.push(r.id));
         }
 
@@ -353,18 +357,23 @@ export default function ImageViewer({
   }, [threadsRaw, selectedImage, activeThreadId, activeKey]);
 
   // ==========================
-  //  Selección forzada por URL ?thread=ID (con “suppress once”)
+  //  Selección forzada por URL ?thread=ID (con “suppress once” + dedupe)
   // ==========================
   useEffect(() => {
-    // si venimos de un cambio manual de imagen, ignoramos UNA pasada
     if (suppressFollowThreadOnceRef.current) {
       suppressFollowThreadOnceRef.current = false;
       return;
     }
+    if (selectedThreadId == null) {
+      lastAppliedThreadRef.current = null;
+      return;
+    }
 
-    if (selectedThreadId == null) return;
+    // Dedupe: si ya aplicamos este thread, salimos
+    if (lastAppliedThreadRef.current === selectedThreadId) return;
+
     const imgName = threadToImage.get(selectedThreadId) || null;
-    if (!imgName) return; // aún no hidratado
+    if (!imgName) return; // aún no mapeado/hidratado
 
     // Navegar a la imagen si no coincide
     if (currentImageName !== imgName) {
@@ -375,6 +384,8 @@ export default function ImageViewer({
 
     // Seleccionar el hilo activo y fijar key
     setActiveThreadId(selectedThreadId);
+    lastAppliedThreadRef.current = selectedThreadId;
+
     if (imgName === selectedImage?.name) {
       const t = threadsRaw.find((x) => x.id === selectedThreadId);
       if (t) setActiveKey(fp(imgName, t.x, t.y));
@@ -397,9 +408,13 @@ export default function ImageViewer({
       const rx = round3(x);
       const ry = round3(y);
 
+      // 🔑 Evita que ?thread= anterior pise la selección optimista
+      suppressFollowThreadOnceRef.current = true;
+      startTransition(() => onSelectThread?.(null)); // limpia URL en baja prioridad
+
       const tempId = createThreadOptimistic(imgName, rx, ry);
       setCreatingThreadId(tempId);
-      setActiveThreadId(tempId); // solo store
+      setActiveThreadId(tempId); // UI inmediata
       setActiveKey(`${imgName}|${rx}|${ry}`);
 
       const sysText = `**@${username ?? "desconocido"}** ha creado un nuevo hilo de revisión.`;
@@ -445,7 +460,7 @@ export default function ImageViewer({
       confirmCreate(tempId, realRow);
       moveThreadMessages(tempId, realId);
 
-      // sincroniza store: si el activo era el temp, cámbialo al real
+      // Si el activo era el temp, cámbialo al real
       {
         const current = useThreadsStore.getState().activeThreadId;
         const nextId = current === tempId ? realId : current;
@@ -453,8 +468,10 @@ export default function ImageViewer({
       }
       setCreatingThreadId(null);
 
-      // Actualiza el parámetro de URL con el nuevo thread real
-      onSelectThread?.(realId);
+      // ✅ Sincroniza URL en transición (no bloquea UI) y solo si cambia
+      startTransition(() => {
+        if (selectedThreadId !== realId) onSelectThread?.(realId);
+      });
 
       // Mensaje de sistema persistido
       const sysCreated = await fetch("/api/messages", {
@@ -491,6 +508,7 @@ export default function ImageViewer({
       moveThreadMessages,
       setActiveThreadId,
       onSelectThread,
+      selectedThreadId,
     ]
   );
 
@@ -588,8 +606,7 @@ export default function ImageViewer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threadId: id, status: "deleted" as ThreadStatus }),
       }).catch(() => {});
-      // si el eliminado era el seleccionado en URL, límpialo
-      if (resolvedActiveThreadId === id) onSelectThread?.(null);
+      if (resolvedActiveThreadId === id) startTransition(() => onSelectThread?.(null));
     },
     [setThreadStatus, resolvedActiveThreadId, onSelectThread]
   );
@@ -617,17 +634,17 @@ export default function ImageViewer({
   const selectImage = (index: number) => {
     const name = images[index]?.name ?? null;
 
-    setActiveThreadId(null); // solo store
+    setActiveThreadId(null);
     setActiveKey(null);
 
     // 👇 evita rebote del efecto de ?thread= en esta navegación
     suppressFollowThreadOnceRef.current = true;
-    onSelectThread?.(null); // limpia ?thread= inmediatamente
+    startTransition(() => onSelectThread?.(null)); // limpia ?thread=
 
     if (name) {
-      pendingUrlImageRef.current = name; // marca navegación pendiente
-      setCurrentImageName(name); // UI inmediata sin flash
-      onSelectImage?.(name); // URL se actualiza (y Home ya limpia thread también)
+      pendingUrlImageRef.current = name;
+      setCurrentImageName(name);
+      onSelectImage?.(name);
     } else {
       pendingUrlImageRef.current = null;
       const fallback = images[0]?.name ?? null;
@@ -672,10 +689,9 @@ export default function ImageViewer({
           <button className={styles.toolBtn} onClick={() => selectSku(null)} title="Volver">
             🏠
           </button>
-          <h1 className={styles.title}>
+        <h1 className={styles.title}>
             Revisión de SKU: <span className={styles.titleSku}>{sku.sku}</span>
           </h1>
-          {/* 👇 conservamos tu contador original */}
           <div className={styles.imageCounter}>
             {selectedImageIndex + 1} / {images.length}
           </div>
@@ -707,7 +723,6 @@ export default function ImageViewer({
             >
               🧵
             </button>
-            {/* ❌ eliminado el image count extra que añadí aquí */}
           </div>
 
           <button
@@ -762,8 +777,8 @@ export default function ImageViewer({
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setActiveThreadId(th.id); // solo store
-                      onSelectThread?.(th.id); // actualiza URL ?thread=
+                      setActiveThreadId(th.id); // UI primero
+                      startTransition(() => onSelectThread?.(th.id)); // URL después
                       if (selectedImage?.name) setActiveKey(fp(selectedImage.name, th.x, th.y));
                     }}
                     title={
@@ -811,8 +826,8 @@ export default function ImageViewer({
         }}
         onDeleteThread={(id: number) => removeThread(id)}
         onFocusThread={(id: number | null) => {
-          setActiveThreadId(id); // solo store
-          onSelectThread?.(id ?? null); // sincroniza URL ?thread=
+          setActiveThreadId(id); // UI primero
+          startTransition(() => onSelectThread?.(id ?? null)); // URL en transición
           if (id) markThreadRead(id).catch(() => {});
           if (selectedImage?.name && id) {
             const t = (threadsRaw || []).find((x) => x.id === id);
@@ -843,8 +858,8 @@ export default function ImageViewer({
           hideThreads={!showThreads}
           setHideThreads={setShowThreads}
           onFocusThread={(id: number | null) => {
-            setActiveThreadId(id); // solo store
-            onSelectThread?.(id ?? null); // sincroniza URL ?thread=
+            setActiveThreadId(id);
+            startTransition(() => onSelectThread?.(id ?? null));
             if (id) markThreadRead(id).catch(() => {});
           }}
           onAddThreadMessage={(threadId: number, text: string) => {
