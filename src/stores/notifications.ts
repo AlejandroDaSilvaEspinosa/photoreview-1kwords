@@ -14,14 +14,17 @@ export type NotificationRow = {
   id: number;
   user_id: string;
   author_id: string | null;
+  author_username?: string | null;
   type: NotificationType;
   sku: string | null;
   image_name: string | null;
   thread_id: number | null;
   message: string;
+  excerpt?: string | null; 
   viewed: boolean;
   created_at: string;
 };
+
 
 type State = {
   items: NotificationRow[];
@@ -56,11 +59,14 @@ const sameNotif = (a: NotificationRow, b: NotificationRow) =>
   a.id === b.id &&
   a.viewed === b.viewed &&
   a.message === b.message &&
+  a.excerpt === b.excerpt &&
+  a.author_username === b.author_username && 
   a.type === b.type &&
   a.sku === b.sku &&
   a.image_name === b.image_name &&
   a.thread_id === b.thread_id &&
   a.created_at === b.created_at;
+
 
 const defer = (fn: () => void) => {
   const ric = (globalThis as any)?.requestIdleCallback as undefined | ((cb: () => void) => any);
