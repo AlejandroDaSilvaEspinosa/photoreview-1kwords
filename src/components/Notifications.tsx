@@ -7,6 +7,7 @@ import { useWireNotificationsRealtime } from "@/lib/realtime/useWireNotification
 import { useNotificationsStore, type NotificationRow } from "@/stores/notifications";
 import { presentNotification } from "@/lib/notifications/presenter";
 import { usePathname, useRouter } from "next/navigation";
+import Image from "next/image";
 
 const PAGE_SIZE = 30;
 
@@ -97,20 +98,24 @@ export default function Notifications({ onOpenSku, initial }: { onOpenSku: (sku:
               const pres = presentNotification(n);
               return (
                 <div key={n.id} className={styles.item} onClick={() => openTarget(n)}>
-                  <div className={styles.itemTop}>
-                    <span className={styles.kind}>{pres.title}</span>
-                    <span className={styles.time}>{format(n.created_at, "es")}</span>
-                  </div>
+                  {pres.thumbUrl ?  <Image width={56} height={56} className={styles.thumb} src={pres.thumbUrl} alt="" aria-hidden /> : null}
 
-                  <div className={styles.line}>{pres.description}</div>
-
-                  {n.sku && (
-                    <div className={styles.meta}>
-                      SKU: <code>{n.sku}</code>
-                      {n.image_name ? <> — Imagen: <code>{n.image_name}</code></> : null}
-                      {typeof n.thread_id === "number" ? <> — Hilo: <code>#{n.thread_id}</code></> : null}
+                  <div className={styles.itemContent}>
+                    <div className={styles.itemTop}>
+                      <span className={styles.kind}>{pres.title}</span>
+                      <span className={styles.time}>{format(n.created_at, "es")}</span>
                     </div>
-                  )}
+
+                    <div className={styles.line}>{pres.description}</div>
+
+                    {n.sku && (
+                      <div className={styles.meta}>
+                        SKU: <code>{n.sku}</code>
+                        {n.image_name ? <> — Imagen: <code>{n.image_name}</code></> : null}
+                        {typeof n.thread_id === "number" ? <> — Hilo: <code>#{n.thread_id}</code></> : null}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}

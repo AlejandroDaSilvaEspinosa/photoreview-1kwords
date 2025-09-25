@@ -12,6 +12,7 @@ import { useHomeOverview } from "@/hooks/useHomeOverview";
 import FilterPills from "@/components/home/FilterPills";
 import StatusHeading from "@/components/home/StatusHeading";
 import SkuCard from "@/components/home/SkuCard";
+import { useImagesCatalogStore } from "@/stores/imagesCatalog";
 
 type Prefetched = { items: any[]; unseen: number } | null;
 
@@ -53,6 +54,9 @@ export default function Home({ username, skus, clientInfo }: Props) {
         : s;
     });
   }, [skus, liveBySku]);
+
+  const hydrateImages = useImagesCatalogStore(s => s.hydrateFromSkus);
+  useEffect(() => { hydrateImages(effectiveSkus); }, [effectiveSkus, hydrateImages]);
 
   // Resúmenes por imagen y “unread”
   const { stats, unread } = useHomeOverview(effectiveSkus);

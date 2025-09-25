@@ -304,3 +304,22 @@
 }
 
 /* resto de estilos (title/desc/action/close/progress/variants) como ya los tienes */
+
+/* layout con thumb a la izquierda */
+.toast {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    /* thumb + contenido */
+    grid-template-rows: auto;
+    column-gap: 10px;
+    align-items: start;
+}
+
+.thumb {
+    width: 56px;
+    height: 56px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--border, #2a2a2a);
+    background: #111;
+}

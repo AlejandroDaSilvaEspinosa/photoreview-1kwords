@@ -152,3 +152,25 @@
         transform: rotate(360deg);
     }
 }
+
+.item {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    column-gap: 10px;
+    align-items: start;
+    padding: 8px 10px;
+    cursor: pointer;
+}
+
+.thumb {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, .07);
+    background: #111;
+}
+
+.itemContent {
+    min-width: 0;
+}

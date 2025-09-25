@@ -115,6 +115,7 @@ export function useWireNotificationsRealtime(opts?: {
               description: pres.description,
               variant: pres.variant,
               actionLabel: pres.actionLabel,
+              thumbUrl: pres.thumbUrl,
               onAction: () => {
                 if (!pres.deeplink) return;
                 const url = new URL(window.location.href);

@@ -14,19 +14,20 @@ type NotificationType =
   | "image_status_changed"
   | "sku_status_changed";
 
-type NotificationRow = {
+export type NotificationRow = {
   id: number;
   user_id: string;
   author_id: string | null;
+  author_username?: string | null; 
   type: NotificationType;
   sku: string | null;
   image_name: string | null;
   thread_id: number | null;
   message: string;
+  excerpt?: string | null;      
   viewed: boolean;
   created_at: string;
 };
-
 interface HeaderProps {
   skus: SkuWithImagesAndStatus[];
   loading: boolean;

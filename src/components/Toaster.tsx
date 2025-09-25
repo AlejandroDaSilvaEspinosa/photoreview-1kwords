@@ -5,6 +5,8 @@ import React from "react";
 import { useToast } from "@/hooks/useToast";
 import s from "./Toaster.module.css";
 import ReactMarkdown from "react-markdown";
+import Image from "next/image";
+
 
 export default function Toaster() {
  const { toasts, dismiss, pausedAll, pauseAll, resumeAll } = useToast();
@@ -22,23 +24,23 @@ export default function Toaster() {
         const isNewest = idx === 0; // el de más abajo
         return (
           <div
-              key={t.id}
-              className={`${s.toast} ${s[t.variant]} ${isNewest ? s.isNew : ""}`}
-              style={{
-                // idx=0 es la MÁS NUEVA → delante
-                zIndex: 1000 + (L - idx),
-                '--i': idx, // si quieres efectos extra por capa
-              } as React.CSSProperties}
-            >
-              <div className={s.body}>
-                {t.title && (
-                  <div className={s.title}>{t.title}</div>
-                )}
-                {t.description && (
-                  <div className={s.desc}>
-                    <ReactMarkdown>{t.description}</ReactMarkdown>
-                  </div>
-                )}
+            key={t.id}
+            className={`${s.toast} ${s[t.variant]} ${isNewest ? s.isNew : ""}`}
+            style={{ zIndex: 1000 + (L - idx) } as React.CSSProperties}
+          >
+            {t.thumbUrl ? (
+              <Image width={56} height={56} className={s.thumb} src={t.thumbUrl} alt="" aria-hidden />
+            ) : null}
+
+            <div className={s.body}>
+              {t.title && (
+                <div className={s.title}>{t.title}</div>
+              )}
+              {t.description && (
+                <div className={s.desc}>
+                  <ReactMarkdown>{t.description}</ReactMarkdown>
+                </div>
+              )}
                 <div className={s.bottomRow}>
                   {t.actionLabel && (
                     <button
@@ -51,14 +53,10 @@ export default function Toaster() {
                     {t.timeAgo ? <div className={s.bottomRight}>{t.timeAgo}</div> : null}
                 </div>
               </div>
-              <button aria-label="Cerrar" className={s.close} onClick={() => dismiss(t.id)}>×</button>
-              <div
-                className={s.progress}
-                style={{
-                  animationDuration: `${t.durationMs}ms`,
-                  animationPlayState: pausedAll ? "paused" : "running",
-                }}
-              />
+            <button aria-label="Cerrar" className={s.close} onClick={() => dismiss(t.id)}>×</button>
+            <div className={s.progress}
+                style={{ animationDuration: `${t.durationMs}ms`, animationPlayState: pausedAll ? "paused" : "running" }}
+            />
           </div>
         )        
       })}

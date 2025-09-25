@@ -14,6 +14,7 @@ export type ToastInput = {
   variant?: ToastVariant;
   durationMs?: number;
   actionLabel?: string;
+  thumbUrl?: string;
   onAction?: () => void;
 };
 
@@ -81,6 +82,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       actionLabel: input.actionLabel ?? "",
       onAction: input.onAction ?? defaultNoop,
       createdAt: Date.now(),
+      thumbUrl: input.thumbUrl ?? "",
     };
     setToasts(prev => [toast, ...prev]);
 
