@@ -1,12 +1,15 @@
 "use client";
 
-import React, { useRef, useEffect, useState, useMemo } from "react";
+import React, {
+  useRef,
+  useEffect,
+  useState,
+  useMemo,
+  useLayoutEffect,
+} from "react";
 import styles from "./ThreadChat.module.css";
 import ReactMarkdown from "react-markdown";
 import { Thread, ThreadMessage, ThreadStatus } from "@/types/review";
-// ❌ Quitamos timeago
-// import { format } from "timeago.js";
-// import "@/lib/timeago";
 import AutoGrowTextarea from "../AutoGrowTextarea";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 
@@ -33,27 +36,8 @@ export default function ThreadChat({
   composeLocked = false,
   statusLocked = false,
 }: Props) {
-  // draft local por hilo
+  // ===== Draft local por hilo
   const [drafts, setDrafts] = useState<Record<number, string>>({});
-  const listRef = useRef<HTMLDivElement | null>(null);
-
-  // auth uid (auth.users.id)
-  const [selfAuthId, setSelfAuthId] = useState<string | null>(null);
-  useEffect(() => {
-    supabaseBrowser()
-      .auth.getUser()
-      .then(({ data }) => setSelfAuthId(data.user?.id ?? null))
-      .catch(() => setSelfAuthId(null));
-  }, []);
-
-  const nextStatus = (s: ThreadStatus): ThreadStatus =>
-    s === "corrected" ? "reopened" : "corrected";
-  const toggleLabel = (s: ThreadStatus) =>
-    s === "corrected" ? "Reabrir hilo" : "Validar correcciones";
-  const colorByNextStatus = (s: ThreadStatus) => (s === "corrected" ? "orange" : "green");
-  const colorByStatus = (s: ThreadStatus) =>
-    s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : s === "deleted" ? "#666" : "#FF0040";
-
   const setDraft = (threadId: number, value: string | ((prev: string) => string)) => {
     setDrafts((prev) => ({
       ...prev,
@@ -68,13 +52,28 @@ export default function ThreadChat({
     });
   };
 
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
-    });
-  }, [activeThread?.messages, activeThread?.id]);
+  // ===== Scroll container
+  const listRef = useRef<HTMLDivElement | null>(null);
 
-  // isMine: por meta.isMine OR sending OR createdByAuthId === selfAuthId
+  // ===== Auth uid (auth.users.id)
+  const [selfAuthId, setSelfAuthId] = useState<string | null>(null);
+  useEffect(() => {
+    supabaseBrowser()
+      .auth.getUser()
+      .then(({ data }) => setSelfAuthId(data.user?.id ?? null))
+      .catch(() => setSelfAuthId(null));
+  }, []);
+
+  // ===== Helpers status
+  const nextStatus = (s: ThreadStatus): ThreadStatus =>
+    s === "corrected" ? "reopened" : "corrected";
+  const toggleLabel = (s: ThreadStatus) =>
+    s === "corrected" ? "Reabrir hilo" : "Validar correcciones";
+  const colorByNextStatus = (s: ThreadStatus) => (s === "corrected" ? "orange" : "green");
+  const colorByStatus = (s: ThreadStatus) =>
+    s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : s === "deleted" ? "#666" : "#FF0040";
+
+  // ===== isMine: por meta.isMine OR sending OR createdByAuthId === selfAuthId
   const isMine = (m: ThreadMessage) => {
     const meta = (m.meta || {}) as any;
     if (meta.isMine === true) return true;
@@ -83,6 +82,7 @@ export default function ThreadChat({
     return !!selfAuthId && !!createdByAuthId && createdByAuthId === selfAuthId;
   };
 
+  // ===== Enviar
   const handleSend = async () => {
     if (composeLocked) return;
     const id = activeThread?.id;
@@ -93,9 +93,7 @@ export default function ThreadChat({
     await onAddThreadMessage(id, draft.trim());
   };
 
-  /* ========= NUEVO: helpers de fecha ========= */
-
-  // yyyy-mm-dd para agrupar
+  // ===== Fechas y etiquetas
   const dateKey = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -123,15 +121,48 @@ export default function ThreadChat({
   const timeHHmm = (d: Date) =>
     d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", hour12: false });
 
-  // Construimos una lista con separadores de día
+  // ===== MARCA DE CORTE “MENSAJES NO LEÍDOS (N)” — snapshot al abrir
+  const [unreadCutoffId, setUnreadCutoffId] = useState<number | null>(null);
+  const [unreadSnapshot, setUnreadSnapshot] = useState<number>(0);
+
+  useLayoutEffect(() => {
+    const list = activeThread?.messages ?? [];
+
+    // Cuenta no leídos (no míos, no sistema, delivery != read)
+    let count = 0;
+    for (const m of list) {
+      const sys = !!m.isSystem || (m.createdByName || "").toLowerCase() === "system";
+      if (sys) continue;
+      if (isMine(m)) continue;
+      const delivery = (m.meta?.localDelivery ?? "sent") as DeliveryState;
+      if (delivery !== "read") count++;
+    }
+
+    // Primer no leído
+    const idx = list.findIndex((m) => {
+      const sys = !!m.isSystem || (m.createdByName || "").toLowerCase() === "system";
+      if (sys) return false;
+      if (isMine(m)) return false;
+      const delivery = (m.meta?.localDelivery ?? "sent") as DeliveryState;
+      return delivery !== "read";
+    });
+
+    setUnreadSnapshot(count);
+    setUnreadCutoffId(idx >= 0 && typeof list[idx]?.id === "number" ? (list[idx].id as number) : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeThread?.id, selfAuthId]); // snapshot fijo al abrir hilo
+
+  // ===== Filas con separadores + “Mensajes no leídos (N)”
   type Row =
     | { kind: "divider"; key: string; label: string }
+    | { kind: "unread"; key: string; label: string }
     | { kind: "msg"; msg: ThreadMessage };
 
   const rows: Row[] = useMemo(() => {
     const out: Row[] = [];
     let lastKey: string | null = null;
     const list = activeThread?.messages ?? [];
+
     for (const m of list) {
       const dt = new Date(m.createdAt);
       const k = dateKey(dt);
@@ -139,12 +170,97 @@ export default function ThreadChat({
         out.push({ kind: "divider", key: k, label: labelFor(dt) });
         lastKey = k;
       }
+
+      if (unreadSnapshot > 0 && unreadCutoffId != null && m.id === unreadCutoffId) {
+        out.push({
+          kind: "unread",
+          key: `unread-${m.id}`,
+          label: `Mensajes no leídos (${unreadSnapshot})`,
+        });
+      }
+
       out.push({ kind: "msg", msg: m });
     }
     return out;
-  }, [activeThread?.messages]);
+  }, [activeThread?.messages, unreadCutoffId, unreadSnapshot]);
 
-  /* =========================================== */
+  // ===== Auto-scroll inicial — al separador alineado ARRIBA del contenedor
+  const didInitialScrollForThread = useRef<number | null>(null);
+  useEffect(() => {
+    const container = listRef.current;
+    if (!container) return;
+    if (didInitialScrollForThread.current === activeThread?.id) return;
+
+    const doAccurateScroll = () => {
+      const sep = container.querySelector<HTMLElement>('[data-unread-cutoff="true"]');
+      if (!sep) {
+        // Sin no leídos → baja del todo (comportamiento previo)
+        container.scrollTop = container.scrollHeight;
+        didInitialScrollForThread.current = activeThread?.id ?? null;
+        return;
+      }
+
+      // Reintenta por si el layout sigue cambiando (imágenes/markdown)
+      let tries = 0;
+      const MAX_TRIES = 8;
+
+      const tick = () => {
+        if (!listRef.current || !sep) return;
+        const cont = listRef.current;
+        const contRect = cont.getBoundingClientRect();
+        const sepRect  = sep.getBoundingClientRect();
+
+        // Delta para alinear la parte superior del separador con la parte superior del contenedor
+        const delta = sepRect.top - contRect.top;
+        cont.scrollTop += delta;
+
+        // Si ya está prácticamente alineado (< 1px) o agotamos intentos, terminamos
+        const newSepRect = sep.getBoundingClientRect();
+        const newDelta = newSepRect.top - cont.getBoundingClientRect().top;
+
+        if (Math.abs(newDelta) <= 1 || ++tries >= MAX_TRIES) {
+          didInitialScrollForThread.current = activeThread?.id ?? null;
+        } else {
+          requestAnimationFrame(tick);
+        }
+      };
+
+      requestAnimationFrame(tick);
+    };
+
+    requestAnimationFrame(doAccurateScroll);
+  }, [activeThread?.id, rows]); // rows garantiza que el separador ya existe en el DOM
+
+  // ===== Auto-scroll al FINAL cuando llega un MENSAJE NUEVO
+  const lastMsgKeyRef = useRef<string | null>(null);
+
+  // Reset del tracker al cambiar de hilo
+  useEffect(() => {
+    lastMsgKeyRef.current = null;
+  }, [activeThread?.id]);
+
+  useEffect(() => {
+    const container = listRef.current;
+    if (!container) return;
+
+    const list = activeThread?.messages ?? [];
+    const last = list[list.length - 1];
+    const currentKey = last ? `${last.id}|${last.createdAt}` : null;
+    const prevKey = lastMsgKeyRef.current;
+
+    // Actualiza el tracker para próximas comparaciones
+    lastMsgKeyRef.current = currentKey;
+
+    // Si no había anterior (primer render del hilo) → no forcemos scroll aquí
+    if (!prevKey || !currentKey) return;
+
+    // Si cambió el último mensaje → hay mensaje nuevo → baja al final
+    if (prevKey !== currentKey) {
+      requestAnimationFrame(() => {
+        if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
+      });
+    }
+  }, [activeThread?.messages]); // cualquier cambio en mensajes reevalúa
 
   return (
     <div
@@ -175,13 +291,36 @@ export default function ThreadChat({
         {rows.map((row, i) => {
           if (row.kind === "divider") {
             return (
-              <div key={`div-${row.key}-${i}`} className={styles.dayDivider} role="separator" aria-label={row.label}>
-                <span className={styles.dayDividerLine} />
+              <div
+                key={`div-${row.key}-${i}`}
+                className={styles.dayDivider}
+                role="separator"
+                aria-label={row.label}
+              >
                 <span className={styles.dayDividerLabel}>{row.label}</span>
-                <span className={styles.dayDividerLine} />
               </div>
             );
           }
+
+          if (row.kind === "unread") {
+            return (
+              <div
+                key={row.key}
+                className={styles.unreadDivider}
+                role="separator"
+                aria-label={row.label}
+                title={row.label}
+                data-unread-cutoff="true"
+              >
+                <span className={styles.unreadDividerLine} />
+                <span className={styles.unreadDividerLabel}>
+                  {row.label}
+                </span>
+                <span className={styles.unreadDividerLine} />
+              </div>
+            );
+          }
+
           const m = row.msg;
           const mine = isMine(m);
           const meta = (m.meta || {}) as any;
@@ -193,6 +332,7 @@ export default function ThreadChat({
             delivery === "read"      ? "✓✓" :
             delivery === "delivered" ? "✓✓"  :
                                        "✓"; // "sent" → ✓
+
           const dt = new Date(m.createdAt);
           const hhmm = timeHHmm(dt);
 

@@ -6,7 +6,7 @@
 */
 .panel {
     position: relative;
-    width: 360px;
+    width: 400px;
     background: rgba(18, 18, 18, 0.95);
     border-left: 1px solid #2a2a2a;
     box-shadow: -6px 0 18px rgba(0, 0, 0, .28);
@@ -70,6 +70,7 @@
     gap: 12px;
     padding: 12px;
     width: 100%;
+    overflow-x: hidden;
 }
 
 /* ===== Header como ThreadChat ===== */
@@ -143,11 +144,13 @@
 
 .fileName {
     color: #eaeaea;
-    font-weight: 700;
-    font-size: 14px;
-    overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 20px;
+    font-weight: 500;
+    max-width: calc(100% - 30px);
+    overflow: hidden;
+    margin-bottom: 8px;
 }
 
 .validatedBadge {
@@ -210,7 +213,7 @@
 .divider {
     position: relative;
     text-align: center;
-    margin: 10px 0 6px;
+    margin: 8px 0 10px;
 }
 
 .divider::before {

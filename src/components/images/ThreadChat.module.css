@@ -7,7 +7,6 @@
     overflow: hidden;
     display: grid;
     grid-template-rows: auto 1fr auto;
-    max-height: 25vh;
 }
 
 .chatHeader {
@@ -33,6 +32,7 @@
     padding: 10px;
     display: grid;
     gap: 8px;
+    max-height: 600px;
 }
 
 .bubble {
@@ -258,4 +258,34 @@
 .closeThreadChatBtn:hover {
     color: #FF0040;
     background-color: rgba(255, 0, 64, 0.1);
+}
+
+/* ===== Divisor genérico (día y demás) */
+.unreadDivider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    /* separación líneas ↔ texto */
+    margin: 10px 0;
+    /* altura similar a la captura */
+    opacity: 0.95;
+}
+
+.unreadDividerLine {
+    flex: 1;
+    height: 1px;
+    /* línea muy fina */
+    background: var(--border-1, #2a2a2a);
+    /* gris sutil en dark */
+}
+
+.unreadDividerLabel {
+    font-size: 16px;
+    /* texto pequeño */
+    font-weight: 500;
+    /* semibold */
+    letter-spacing: 0.15px;
+    /* ligero tracking */
+    color: var(--muted-1, #bdbdbd);
+    /* gris claro por defecto */
 }
