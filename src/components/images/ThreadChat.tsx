@@ -41,7 +41,8 @@ export default function ThreadChat({
   const setDraft = (threadId: number, value: string | ((prev: string) => string)) => {
     setDrafts((prev) => ({
       ...prev,
-      [threadId]: typeof value === "function" ? value(prev[threadId] ?? "") : value,
+      [threadId]:
+        typeof value === "function" ? (value as any)(prev[threadId] ?? "") : value,
     }));
   };
   const getDraft = (threadId: number) => drafts[threadId] ?? "";
@@ -73,7 +74,7 @@ export default function ThreadChat({
   const colorByStatus = (s: ThreadStatus) =>
     s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : s === "deleted" ? "#666" : "#FF0040";
 
-  // ===== isMine: por meta.isMine OR sending OR createdByAuthId === selfAuthId
+  // ===== isMine
   const isMine = (m: ThreadMessage) => {
     const meta = (m.meta || {}) as any;
     if (meta.isMine === true) return true;
@@ -100,33 +101,41 @@ export default function ThreadChat({
     const day = String(d.getDate()).padStart(2, "0");
     return `${y}-${m}-${day}`;
   };
-
   const labelFor = (d: Date) => {
     const now = new Date();
     const todayKey = dateKey(now);
     const yest = new Date(now);
     yest.setDate(now.getDate() - 1);
     const yestKey = dateKey(yest);
-
     const k = dateKey(d);
     if (k === todayKey) return "Hoy";
     if (k === yestKey) return "Ayer";
-    return d.toLocaleDateString("es-ES", {
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
-    });
+    return d.toLocaleDateString("es-ES", { day: "2-digit", month: "long", year: "numeric" });
   };
-
   const timeHHmm = (d: Date) =>
     d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", hour12: false });
 
-  // ===== MARCA DE CORTE “MENSAJES NO LEÍDOS (N)” — snapshot al abrir
+  // ===== MARCA DE CORTE “MENSAJES NO LEÍDOS (N)” — snapshot robusto
   const [unreadCutoffId, setUnreadCutoffId] = useState<number | null>(null);
   const [unreadSnapshot, setUnreadSnapshot] = useState<number>(0);
+  const didSnapshotForRef = useRef<number | null>(null);
+
+  // Reset al cambiar de hilo
+  useEffect(() => {
+    didSnapshotForRef.current = null;
+    setUnreadCutoffId(null);
+    setUnreadSnapshot(0);
+  }, [activeThread?.id]);
 
   useLayoutEffect(() => {
     const list = activeThread?.messages ?? [];
+    if (!activeThread?.id) return;
+
+    // ⛔️ Aún no hay mensajes → espera a la hidratación inicial
+    if (!list.length) return;
+
+    // ⛔️ Ya se hizo snapshot para este hilo → no recalcular
+    if (didSnapshotForRef.current === activeThread.id) return;
 
     // Cuenta no leídos (no míos, no sistema, delivery != read)
     let count = 0;
@@ -137,8 +146,6 @@ export default function ThreadChat({
       const delivery = (m.meta?.localDelivery ?? "sent") as DeliveryState;
       if (delivery !== "read") count++;
     }
-
-    // Primer no leído
     const idx = list.findIndex((m) => {
       const sys = !!m.isSystem || (m.createdByName || "").toLowerCase() === "system";
       if (sys) return false;
@@ -149,8 +156,8 @@ export default function ThreadChat({
 
     setUnreadSnapshot(count);
     setUnreadCutoffId(idx >= 0 && typeof list[idx]?.id === "number" ? (list[idx].id as number) : null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeThread?.id, selfAuthId]); // snapshot fijo al abrir hilo
+    didSnapshotForRef.current = activeThread.id;
+  }, [activeThread?.id, activeThread?.messages?.length, selfAuthId]); // 👈 dependemos de length para esperar a que haya mensajes
 
   // ===== Filas con separadores + “Mensajes no leídos (N)”
   type Row =
@@ -162,7 +169,6 @@ export default function ThreadChat({
     const out: Row[] = [];
     let lastKey: string | null = null;
     const list = activeThread?.messages ?? [];
-
     for (const m of list) {
       const dt = new Date(m.createdAt);
       const k = dateKey(dt);
@@ -170,7 +176,6 @@ export default function ThreadChat({
         out.push({ kind: "divider", key: k, label: labelFor(dt) });
         lastKey = k;
       }
-
       if (unreadSnapshot > 0 && unreadCutoffId != null && m.id === unreadCutoffId) {
         out.push({
           kind: "unread",
@@ -178,13 +183,12 @@ export default function ThreadChat({
           label: `Mensajes no leídos (${unreadSnapshot})`,
         });
       }
-
       out.push({ kind: "msg", msg: m });
     }
     return out;
   }, [activeThread?.messages, unreadCutoffId, unreadSnapshot]);
 
-  // ===== Auto-scroll inicial — al separador alineado ARRIBA del contenedor
+  // ===== Auto-scroll inicial al separador
   const didInitialScrollForThread = useRef<number | null>(null);
   useEffect(() => {
     const container = listRef.current;
@@ -194,47 +198,34 @@ export default function ThreadChat({
     const doAccurateScroll = () => {
       const sep = container.querySelector<HTMLElement>('[data-unread-cutoff="true"]');
       if (!sep) {
-        // Sin no leídos → baja del todo (comportamiento previo)
         container.scrollTop = container.scrollHeight;
         didInitialScrollForThread.current = activeThread?.id ?? null;
         return;
       }
-
-      // Reintenta por si el layout sigue cambiando (imágenes/markdown)
       let tries = 0;
       const MAX_TRIES = 8;
-
       const tick = () => {
         if (!listRef.current || !sep) return;
         const cont = listRef.current;
         const contRect = cont.getBoundingClientRect();
-        const sepRect  = sep.getBoundingClientRect();
-
-        // Delta para alinear la parte superior del separador con la parte superior del contenedor
+        const sepRect = sep.getBoundingClientRect();
         const delta = sepRect.top - contRect.top;
         cont.scrollTop += delta;
-
-        // Si ya está prácticamente alineado (< 1px) o agotamos intentos, terminamos
         const newSepRect = sep.getBoundingClientRect();
         const newDelta = newSepRect.top - cont.getBoundingClientRect().top;
-
         if (Math.abs(newDelta) <= 1 || ++tries >= MAX_TRIES) {
           didInitialScrollForThread.current = activeThread?.id ?? null;
         } else {
           requestAnimationFrame(tick);
         }
       };
-
       requestAnimationFrame(tick);
     };
-
     requestAnimationFrame(doAccurateScroll);
-  }, [activeThread?.id, rows]); // rows garantiza que el separador ya existe en el DOM
+  }, [activeThread?.id, rows]);
 
   // ===== Auto-scroll al FINAL cuando llega un MENSAJE NUEVO
   const lastMsgKeyRef = useRef<string | null>(null);
-
-  // Reset del tracker al cambiar de hilo
   useEffect(() => {
     lastMsgKeyRef.current = null;
   }, [activeThread?.id]);
@@ -242,25 +233,22 @@ export default function ThreadChat({
   useEffect(() => {
     const container = listRef.current;
     if (!container) return;
-
     const list = activeThread?.messages ?? [];
     const last = list[list.length - 1];
     const currentKey = last ? `${last.id}|${last.createdAt}` : null;
     const prevKey = lastMsgKeyRef.current;
-
-    // Actualiza el tracker para próximas comparaciones
     lastMsgKeyRef.current = currentKey;
-
-    // Si no había anterior (primer render del hilo) → no forcemos scroll aquí
     if (!prevKey || !currentKey) return;
-
-    // Si cambió el último mensaje → hay mensaje nuevo → baja al final
     if (prevKey !== currentKey) {
       requestAnimationFrame(() => {
         if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
       });
     }
-  }, [activeThread?.messages]); // cualquier cambio en mensajes reevalúa
+  }, [activeThread?.messages]);
+
+  // (… resto de render idéntico a tu versión, solo usamos rows y delivery)
+
+  const prevDeliveryRef = useRef<Map<number, DeliveryState>>(new Map());
 
   return (
     <div
@@ -273,7 +261,10 @@ export default function ThreadChat({
     >
       <div className={styles.chatHeader}>
         <span>
-          <span className={styles.dotMini} style={{ background: colorByStatus(activeThread.status) }} />
+          <span
+            className={styles.dotMini}
+            style={{ background: colorByStatus(activeThread.status) }}
+          />
           Hilo #{threads.findIndex((x) => x.id === activeThread.id) + 1}
         </span>
         <button
@@ -313,9 +304,7 @@ export default function ThreadChat({
                 data-unread-cutoff="true"
               >
                 <span className={styles.unreadDividerLine} />
-                <span className={styles.unreadDividerLabel}>
-                  {row.label}
-                </span>
+                <span className={styles.unreadDividerLabel}>{row.label}</span>
                 <span className={styles.unreadDividerLine} />
               </div>
             );
@@ -324,14 +313,18 @@ export default function ThreadChat({
           const m = row.msg;
           const mine = isMine(m);
           const meta = (m.meta || {}) as any;
-          const delivery = meta.localDelivery as DeliveryState | undefined;
-          const sys = !!m.isSystem || (m.createdByName || "").toLowerCase() === "system";
+          const delivery = (meta.localDelivery as DeliveryState | undefined) ?? "sent";
+          const sys =
+            !!m.isSystem || (m.createdByName || "").toLowerCase() === "system";
 
           const ticks =
-            delivery === "sending"   ? "⏳" :
-            delivery === "read"      ? "✓✓" :
-            delivery === "delivered" ? "✓✓"  :
-                                       "✓"; // "sent" → ✓
+            delivery === "sending" ? "⏳" : delivery === "read" ? "✓✓" : delivery === "delivered" ? "✓✓" : "✓";
+
+          const prev = prevDeliveryRef.current.get(m.id as number);
+          const justDelivered =
+            prev === "sent" && (delivery === "delivered" || delivery === "read");
+          const justRead = prev !== "read" && delivery === "read";
+          prevDeliveryRef.current.set(m.id as number, delivery);
 
           const dt = new Date(m.createdAt);
           const hhmm = timeHHmm(dt);
@@ -340,8 +333,9 @@ export default function ThreadChat({
             <div
               key={m.id}
               className={
-                sys ? `${styles.bubble} ${styles.system}`
-                    : `${styles.bubble} ${mine ? styles.mine : styles.theirs}`
+                sys
+                  ? `${styles.bubble} ${styles.system}`
+                  : `${styles.bubble} ${mine ? styles.mine : styles.theirs}`
               }
             >
               <div lang="es" className={styles.bubbleText}>
@@ -354,7 +348,23 @@ export default function ThreadChat({
                 <span className={styles.messageMeta}>
                   <span className={styles.time}>{hhmm}</span>
                   {!sys && mine && (
-                    <span className={`${styles.ticks} ${delivery === "read" && styles.read}`}>{ticks}</span>
+                    <span
+                      className={`${styles.ticks} ${delivery === "read" ? styles.read : ""} ${
+                        justDelivered ? styles.justDelivered : ""
+                      } ${justRead ? styles.justRead : ""}`}
+                      aria-live="polite"
+                      aria-label={
+                        delivery === "read"
+                          ? "Leído"
+                          : delivery === "delivered"
+                          ? "Entregado"
+                          : delivery === "sent"
+                          ? "Enviado"
+                          : "Enviando"
+                      }
+                    >
+                      {ticks}
+                    </span>
                   )}
                 </span>
               </div>
@@ -386,13 +396,21 @@ export default function ThreadChat({
 
       <div className={styles.changeStatusBtnWrapper}>
         <button
-          className={`${styles.changeStatusBtn} ${styles[`${colorByNextStatus(activeThread.status)}`]} ${statusLocked ? styles.buttonLoading : ""}`}
+          className={`${styles.changeStatusBtn} ${styles[`${colorByNextStatus(activeThread.status)}`]} ${
+            statusLocked ? styles.buttonLoading : ""
+          }`}
           onClick={() => onToggleThreadStatus(activeThread.id, nextStatus(activeThread.status))}
           title={toggleLabel(activeThread.status)}
           disabled={statusLocked}
           aria-busy={statusLocked}
         >
-          {statusLocked ? (<><span className={styles.spinner} aria-hidden /> Actualizando…</>) : (toggleLabel(activeThread.status))}
+          {statusLocked ? (
+            <>
+              <span className={styles.spinner} aria-hidden /> Actualizando…
+            </>
+          ) : (
+            toggleLabel(activeThread.status)
+          )}
         </button>
 
         <button

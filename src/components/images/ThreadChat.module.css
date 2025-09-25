@@ -289,3 +289,36 @@
     color: var(--muted-1, #bdbdbd);
     /* gris claro por defecto */
 }
+
+/* en ThreadChat.module.css */
+.ticks.justDelivered {
+    animation: pulseDelivered 450ms ease-out;
+}
+
+.ticks.justRead {
+    animation: pulseRead 450ms ease-out;
+}
+
+@keyframes pulseDelivered {
+    0% {
+        transform: scale(0.9);
+        opacity: 0.6;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes pulseRead {
+    0% {
+        transform: scale(0.9);
+        opacity: 0.6;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
