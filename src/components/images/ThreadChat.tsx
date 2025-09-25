@@ -12,6 +12,7 @@ import ReactMarkdown from "react-markdown";
 import { Thread, ThreadMessage, ThreadStatus } from "@/types/review";
 import AutoGrowTextarea from "../AutoGrowTextarea";
 import { supabaseBrowser } from "@/lib/supabase/browser";
+import { useMessagesStore } from "@/stores/messages";
 
 type Props = {
   activeThread: Thread;
@@ -36,7 +37,7 @@ export default function ThreadChat({
   composeLocked = false,
   statusLocked = false,
 }: Props) {
-  // ===== Draft local por hilo
+  // ===== borrador por hilo
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const setDraft = (threadId: number, value: string | ((prev: string) => string)) => {
     setDrafts((prev) => ({
@@ -53,10 +54,10 @@ export default function ThreadChat({
     });
   };
 
-  // ===== Scroll container
+  // ===== contenedor scroll
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // ===== Auth uid (auth.users.id)
+  // ===== auth id
   const [selfAuthId, setSelfAuthId] = useState<string | null>(null);
   useEffect(() => {
     supabaseBrowser()
@@ -65,7 +66,7 @@ export default function ThreadChat({
       .catch(() => setSelfAuthId(null));
   }, []);
 
-  // ===== Helpers status
+  // ===== helpers estado hilo
   const nextStatus = (s: ThreadStatus): ThreadStatus =>
     s === "corrected" ? "reopened" : "corrected";
   const toggleLabel = (s: ThreadStatus) =>
@@ -74,7 +75,7 @@ export default function ThreadChat({
   const colorByStatus = (s: ThreadStatus) =>
     s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : s === "deleted" ? "#666" : "#FF0040";
 
-  // ===== isMine
+  // ===== es mío
   const isMine = (m: ThreadMessage) => {
     const meta = (m.meta || {}) as any;
     if (meta.isMine === true) return true;
@@ -83,7 +84,7 @@ export default function ThreadChat({
     return !!selfAuthId && !!createdByAuthId && createdByAuthId === selfAuthId;
   };
 
-  // ===== Enviar
+  // ===== enviar
   const handleSend = async () => {
     if (composeLocked) return;
     const id = activeThread?.id;
@@ -94,7 +95,7 @@ export default function ThreadChat({
     await onAddThreadMessage(id, draft.trim());
   };
 
-  // ===== Fechas y etiquetas
+  // ===== fechas
   const dateKey = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -115,51 +116,63 @@ export default function ThreadChat({
   const timeHHmm = (d: Date) =>
     d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", hour12: false });
 
-  // ===== MARCA DE CORTE “MENSAJES NO LEÍDOS (N)” — snapshot robusto
+  // ===== snapshot de no-leídos
   const [unreadCutoffId, setUnreadCutoffId] = useState<number | null>(null);
   const [unreadSnapshot, setUnreadSnapshot] = useState<number>(0);
   const didSnapshotForRef = useRef<number | null>(null);
 
-  // Reset al cambiar de hilo
+  // marcardo leído tras scroll
+  const markThreadRead = useMessagesStore((s) => s.markThreadRead);
+  const didMarkAfterScrollRef = useRef<number | null>(null);
+
+  // reset al cambiar de hilo
   useEffect(() => {
     didSnapshotForRef.current = null;
     setUnreadCutoffId(null);
     setUnreadSnapshot(0);
+    didMarkAfterScrollRef.current = null;
   }, [activeThread?.id]);
 
+  // 👉 recalcular snapshot cuando cambie la REFERENCIA de mensajes (no solo length)
   useLayoutEffect(() => {
     const list = activeThread?.messages ?? [];
     if (!activeThread?.id) return;
-
-    // ⛔️ Aún no hay mensajes → espera a la hidratación inicial
     if (!list.length) return;
 
-    // ⛔️ Ya se hizo snapshot para este hilo → no recalcular
+    // si ya hicimos snapshot para este hilo y la referencia de array no cambia, no repitas
+    // (pero como dependemos de la referencia, se volverá a ejecutar cuando llegue una nueva lista)
     if (didSnapshotForRef.current === activeThread.id) return;
 
-    // Cuenta no leídos (no míos, no sistema, delivery != read)
     let count = 0;
     for (const m of list) {
-      const sys = !!m.isSystem || (m.createdByName || "").toLowerCase() === "system";
+      const sys = !!m.isSystem || (m.createdByName || "").toLowerCase() === "system" || (m.createdByName || "").toLowerCase() === "sistema";
       if (sys) continue;
       if (isMine(m)) continue;
       const delivery = (m.meta?.localDelivery ?? "sent") as DeliveryState;
       if (delivery !== "read") count++;
     }
-    const idx = list.findIndex((m) => {
-      const sys = !!m.isSystem || (m.createdByName || "").toLowerCase() === "system";
-      if (sys) return false;
-      if (isMine(m)) return false;
+
+    let firstUnreadId: number | null = null;
+    for (const m of list) {
+      const sys = !!m.isSystem || (m.createdByName || "").toLowerCase() === "system" || (m.createdByName || "").toLowerCase() === "sistema";
+      if (sys) continue;
+      if (isMine(m)) continue;
       const delivery = (m.meta?.localDelivery ?? "sent") as DeliveryState;
-      return delivery !== "read";
-    });
+      if (delivery !== "read") {
+        const mid = (m.id as number) ?? null;
+        if (typeof mid === "number") {
+          firstUnreadId = mid;
+          break;
+        }
+      }
+    }
 
     setUnreadSnapshot(count);
-    setUnreadCutoffId(idx >= 0 && typeof list[idx]?.id === "number" ? (list[idx].id as number) : null);
+    setUnreadCutoffId(firstUnreadId);
     didSnapshotForRef.current = activeThread.id;
-  }, [activeThread?.id, activeThread?.messages?.length, selfAuthId]); // 👈 dependemos de length para esperar a que haya mensajes
+  }, [activeThread?.id, activeThread?.messages]); // 👈 referencia del array
 
-  // ===== Filas con separadores + “Mensajes no leídos (N)”
+  // ===== filas render (con separador)
   type Row =
     | { kind: "divider"; key: string; label: string }
     | { kind: "unread"; key: string; label: string }
@@ -188,43 +201,86 @@ export default function ThreadChat({
     return out;
   }, [activeThread?.messages, unreadCutoffId, unreadSnapshot]);
 
-  // ===== Auto-scroll inicial al separador
+  // ===== auto-scroll inicial: espera al snapshot y al separador real
   const didInitialScrollForThread = useRef<number | null>(null);
+
   useEffect(() => {
     const container = listRef.current;
-    if (!container) return;
-    if (didInitialScrollForThread.current === activeThread?.id) return;
+    const threadId = activeThread?.id;
+    if (!container || !threadId) return;
+
+    // si aún no hay snapshot para este hilo, espera
+    if (didSnapshotForRef.current !== threadId) return;
+
+    // si ya hicimos scroll inicial, no repetir
+    if (didInitialScrollForThread.current === threadId) return;
+
+    let cancelled = false;
+
+    const finish = () => {
+      if (cancelled) return;
+      didInitialScrollForThread.current = threadId;
+
+      // marca leído solo después de ubicar el scroll
+      if (didMarkAfterScrollRef.current !== threadId) {
+        didMarkAfterScrollRef.current = threadId;
+        requestAnimationFrame(() => {
+          markThreadRead(threadId).catch(() => {});
+        });
+      }
+    };
+
+    const scrollToSeparator = () => {
+      const sep = container.querySelector<HTMLElement>('[data-unread-cutoff="true"]');
+      if (!sep) return false;
+      const contRect = container.getBoundingClientRect();
+      const sepRect = sep.getBoundingClientRect();
+      const delta = sepRect.top - contRect.top;
+      container.scrollTop += delta;
+      return true;
+    };
 
     const doAccurateScroll = () => {
-      const sep = container.querySelector<HTMLElement>('[data-unread-cutoff="true"]');
-      if (!sep) {
-        container.scrollTop = container.scrollHeight;
-        didInitialScrollForThread.current = activeThread?.id ?? null;
-        return;
-      }
-      let tries = 0;
-      const MAX_TRIES = 8;
-      const tick = () => {
-        if (!listRef.current || !sep) return;
-        const cont = listRef.current;
-        const contRect = cont.getBoundingClientRect();
-        const sepRect = sep.getBoundingClientRect();
-        const delta = sepRect.top - contRect.top;
-        cont.scrollTop += delta;
-        const newSepRect = sep.getBoundingClientRect();
-        const newDelta = newSepRect.top - cont.getBoundingClientRect().top;
-        if (Math.abs(newDelta) <= 1 || ++tries >= MAX_TRIES) {
-          didInitialScrollForThread.current = activeThread?.id ?? null;
-        } else {
-          requestAnimationFrame(tick);
-        }
-      };
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(doAccurateScroll);
-  }, [activeThread?.id, rows]);
+      // Si hay no-leídos, esperamos al separador; si no, al fondo
+      if (unreadSnapshot > 0 && unreadCutoffId != null) {
+        // intenta encontrar y alinear el separador con reintentos
+        let tries = 0;
+        const MAX_TRIES = 16;
 
-  // ===== Auto-scroll al FINAL cuando llega un MENSAJE NUEVO
+        const tryAlign = () => {
+          if (cancelled) return;
+          const ok = scrollToSeparator();
+          if (ok) {
+            // Ajuste fino en 1–2 frames por layout tardío
+            requestAnimationFrame(() => {
+              scrollToSeparator();
+              finish();
+            });
+          } else if (++tries < MAX_TRIES) {
+            requestAnimationFrame(tryAlign);
+          } else {
+            // fallback: si no lo encontramos tras varios frames, baja al final
+            container.scrollTop = container.scrollHeight;
+            finish();
+          }
+        };
+
+        requestAnimationFrame(tryAlign);
+      } else {
+        // no hay no-leídos → al final
+        container.scrollTop = container.scrollHeight;
+        finish();
+      }
+    };
+
+    requestAnimationFrame(doAccurateScroll);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeThread?.id, rows, unreadSnapshot, unreadCutoffId, markThreadRead]);
+
+  // ===== auto-scroll al FINAL cuando llega un mensaje nuevo
   const lastMsgKeyRef = useRef<string | null>(null);
   useEffect(() => {
     lastMsgKeyRef.current = null;
@@ -246,8 +302,7 @@ export default function ThreadChat({
     }
   }, [activeThread?.messages]);
 
-  // (… resto de render idéntico a tu versión, solo usamos rows y delivery)
-
+  // ===== render
   const prevDeliveryRef = useRef<Map<number, DeliveryState>>(new Map());
 
   return (
@@ -315,7 +370,9 @@ export default function ThreadChat({
           const meta = (m.meta || {}) as any;
           const delivery = (meta.localDelivery as DeliveryState | undefined) ?? "sent";
           const sys =
-            !!m.isSystem || (m.createdByName || "").toLowerCase() === "system";
+            !!m.isSystem ||
+            (m.createdByName || "").toLowerCase() === "system" ||
+            (m.createdByName || "").toLowerCase() === "sistema";
 
           const ticks =
             delivery === "sending" ? "⏳" : delivery === "read" ? "✓✓" : delivery === "delivered" ? "✓✓" : "✓";

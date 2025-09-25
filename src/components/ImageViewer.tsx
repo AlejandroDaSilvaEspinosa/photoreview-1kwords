@@ -127,15 +127,8 @@ export default function ImageViewer({
   const addOptimisticMsg = useMessagesStore((s) => s.addOptimistic);
   const confirmMessage = useMessagesStore((s) => s.confirmMessage);
   const moveThreadMessages = useMessagesStore((s) => s.moveThreadMessages);
-  const markThreadRead = useMessagesStore((s) => s.markThreadRead);
   const setSelfAuthId = useMessagesStore((s) => s.setSelfAuthId);
   const msgsByThread = useMessagesStore((s) => s.byThread);
-  const selfAuthId = useMessagesStore((s) => s.selfAuthId); // 🆕
-
-  // ====== selector para saber cuándo hay mensajes en el hilo activo
-  const activeMsgsLen = useMessagesStore(
-    useShallow((s) => (activeThreadId ? (s.byThread[activeThreadId] || []).length : 0))
-  );
 
   // Threads store helpers
   const hydrateForImage = useThreadsStore((s) => s.hydrateForImage);
@@ -236,16 +229,14 @@ export default function ImageViewer({
           (msgs || []).forEach((m: any) => {
             const mine = !!myId && m.created_by === myId;
 
-            // ⚠️ SOLO miramos mis recibos si el mensaje es AJENO; de otros usuarios si el mensaje es MÍO
+            // ⚠️ SOLO mis recibos si ajeno; recibos de otros si mío
             const receipts = (m.meta || []) as Array<{ user_id: string; read_at: string | null; delivered_at: string | null }>;
             let deliveryStatus: DeliveryState = "sent";
             if (mine) {
-              // Para mis mensajes -> ticks: mirar recibos de otros
               const others = receipts.filter((r) => r.user_id !== myId);
               if (others.some((r) => r.read_at)) deliveryStatus = "read";
               else if (others.some((r) => r.delivered_at)) deliveryStatus = "delivered";
             } else {
-              // Para mensajes ajenos -> mi estado local de lectura/entrega
               const mineRec = receipts.find((r) => r.user_id === myId);
               if (mineRec?.read_at) deliveryStatus = "read";
               else if (mineRec?.delivered_at) deliveryStatus = "delivered";
@@ -320,28 +311,6 @@ export default function ImageViewer({
     threadsRaw,
   ]);
 
-  // ========================== Reintentos de marcado como leído
-  // 1) al cambiar el hilo activo
-  useEffect(() => {
-    if (activeThreadId) {
-      markThreadRead(activeThreadId).catch(() => {});
-    }
-  }, [activeThreadId, markThreadRead]);
-
-  // 2) cuando ya tenemos selfAuthId
-  useEffect(() => {
-    if (selfAuthId && activeThreadId) {
-      markThreadRead(activeThreadId).catch(() => {});
-    }
-  }, [selfAuthId, activeThreadId, markThreadRead]);
-
-  // 3) 🆕 cuando llegan los mensajes del hilo activo (al entrar por URL directa)
-  useEffect(() => {
-    if (selfAuthId && activeThreadId && activeMsgsLen > 0) {
-      markThreadRead(activeThreadId).catch(() => {});
-    }
-  }, [selfAuthId, activeThreadId, activeMsgsLen, markThreadRead]);
-
   // ========================== Atajos de teclado
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -407,50 +376,6 @@ export default function ImageViewer({
     }
     return null;
   }, [threadsRaw, selectedImage, activeThreadId, activeKey]);
-  
-  // ==========================
-  //  Selección forzada por URL ?thread=ID (con “suppress once” + dedupe)
-  // ==========================
-  useEffect(() => {
-    if (suppressFollowThreadOnceRef.current) {
-      suppressFollowThreadOnceRef.current = false;
-      return;
-    }
-    if (selectedThreadId == null) {
-      lastAppliedThreadRef.current = null;
-      return;
-    }
-
-    // Dedupe: si ya aplicamos este thread, salimos
-    if (lastAppliedThreadRef.current === selectedThreadId) return;
-
-    const imgName = threadToImage.get(selectedThreadId) || null;
-    if (!imgName) return; // aún no mapeado/hidratado
-
-    // Navegar a la imagen si no coincide
-    if (currentImageName !== imgName) {
-      pendingUrlImageRef.current = imgName;
-      setCurrentImageName(imgName);
-      onSelectImage?.(imgName);
-    }
-
-    // Seleccionar el hilo activo y fijar key
-    setActiveThreadId(selectedThreadId);
-    lastAppliedThreadRef.current = selectedThreadId;
-
-    if (imgName === selectedImage?.name) {
-      const t = threadsRaw.find((x) => x.id === selectedThreadId);
-      if (t) setActiveKey(fp(imgName, t.x, t.y));
-    }
-  }, [
-    selectedThreadId,
-    threadToImage,
-    currentImageName,
-    onSelectImage,
-    setActiveThreadId,
-    selectedImage?.name,
-    threadsRaw,
-  ]);
 
   // ==========================
   //  Acciones
@@ -512,7 +437,6 @@ export default function ImageViewer({
       confirmCreate(tempId, realRow);
       moveThreadMessages(tempId, realId);
 
-      // Si el activo era el temp, cámbialo al real
       {
         const current = useThreadsStore.getState().activeThreadId;
         const nextId = current === tempId ? realId : current;
@@ -520,12 +444,10 @@ export default function ImageViewer({
       }
       setCreatingThreadId(null);
 
-      // ✅ Sincroniza URL en transición (no bloquea UI) y solo si cambia
       startTransition(() => {
         if (selectedThreadId !== realId) onSelectThread?.(realId);
       });
 
-      // Mensaje de sistema persistido
       const sysCreated = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -663,12 +585,6 @@ export default function ImageViewer({
     [setThreadStatus, resolvedActiveThreadId, onSelectThread]
   );
 
-  useEffect(() => {
-    if (resolvedActiveThreadId) {
-      markThreadRead(resolvedActiveThreadId).catch(() => {});
-    }
-  }, [resolvedActiveThreadId, markThreadRead]);
-
   // ===== Helpers UI =====
   const openZoomAtEvent = (e: React.MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect?.() ||
@@ -734,7 +650,7 @@ export default function ImageViewer({
           <button className={styles.toolBtn} onClick={() => selectSku(null)} title="Volver">
             🏠
           </button>
-          <h1 className={styles.title}>
+        <h1 className={styles.title}>
             Revisión de SKU: <span className={styles.titleSku}>{sku.sku}</span>
           </h1>
           <div className={styles.imageCounter}>
@@ -879,7 +795,7 @@ export default function ImageViewer({
         onFocusThread={(id: number | null) => {
           setActiveThreadId(id);
           startTransition(() => onSelectThread?.(id ?? null));
-          if (id) markThreadRead(id).catch(() => {});
+          // ⛔️ NO marcamos leído aquí: lo hará ThreadChat tras el scroll inicial
           if (selectedImage?.name && id) {
             const t = (threadsRaw || []).find((x) => x.id === id);
             if (t) setActiveKey(fp(selectedImage.name, t.x, t.y));
@@ -913,7 +829,7 @@ export default function ImageViewer({
           onFocusThread={(id: number | null) => {
             setActiveThreadId(id);
             startTransition(() => onSelectThread?.(id ?? null));
-            if (id) markThreadRead(id).catch(() => {});
+            // ⛔️ Tampoco aquí: marcamos en ThreadChat
           }}
           onAddThreadMessage={(threadId: number, text: string) => {
             if (creatingThreadId != null && threadId === creatingThreadId) return;
