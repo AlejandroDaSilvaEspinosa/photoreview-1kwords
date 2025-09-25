@@ -13,7 +13,6 @@ import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import ThumbnailGrid from "./images/ThumbnailGrid";
 import SidePanel from "./images/SidePanel";
 import ZoomOverlay from "@/components/images/ZoomOverlay";
-
 import type {
   ThreadStatus,
   SkuWithImagesAndStatus,
@@ -22,14 +21,11 @@ import type {
   ThreadRow,
   DeliveryState,
 } from "@/types/review";
-
 import { usePresence } from "@/lib/usePresence";
 import { useImageGeometry } from "@/lib/useImageGeometry";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-
 import { useThreadsStore, threadsCache } from "@/stores/threads";
 import { useMessagesStore, Msg, messagesCache } from "@/stores/messages";
-
 import { useWireSkuRealtime } from "@/lib/realtime/useWireSkuRealtime";
 import { useShallow } from "zustand/react/shallow";
 
@@ -37,6 +33,7 @@ const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const fp = (image: string, x: number, y: number) => `${image}|${round3(x)}|${round3(y)}`;
 const colorByStatus = (s: ThreadStatus) =>
   s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : "#FF0040";
+
 const STATUS_LABEL: Record<ThreadStatus, string> = {
   pending: "Pendiente",
   corrected: "Corregido",
@@ -51,10 +48,10 @@ interface ImageViewerProps {
   sku: SkuWithImagesAndStatus;
   username: string;
   selectSku: (sku: SkuWithImagesAndStatus | null) => void;
-  selectedImageName?: string | null; // ← nombre desde URL
-  onSelectImage?: (name: string | null) => void; // ← escribe a URL
-  selectedThreadId?: number | null; // ← id de thread desde URL
-  onSelectThread?: (id: number | null) => void; // ← escribe el thread en la URL
+  selectedImageName?: string | null;
+  onSelectImage?: (name: string | null) => void;
+  selectedThreadId?: number | null;
+  onSelectThread?: (id: number | null) => void;
 }
 
 export default function ImageViewer({
@@ -67,28 +64,22 @@ export default function ImageViewer({
   onSelectThread,
 }: ImageViewerProps) {
   const { images } = sku;
-
-  // Realtime por SKU
   useWireSkuRealtime(sku.sku);
 
-  // ===== Navegación sin rebotes: UI manda por nombre y la URL sigue =====
+  // ===== Navegación sin rebotes
   const [currentImageName, setCurrentImageName] = useState<string | null>(
     selectedImageName ?? images[0]?.name ?? null
   );
   const pendingUrlImageRef = useRef<string | null>(null);
-
-  // 👇 Flags de control contra rebotes por URL
   const suppressFollowThreadOnceRef = useRef<boolean>(false);
   const lastAppliedThreadRef = useRef<number | null>(null);
 
-  // Si cambia el SKU, resetea la imagen actual
   useEffect(() => {
     pendingUrlImageRef.current = selectedImageName ?? images[0]?.name ?? null;
     setCurrentImageName(pendingUrlImageRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sku.sku]);
 
-  // Sincroniza con la URL, ignorando props “viejas” mientras hay navegación pendiente
   useEffect(() => {
     if (!selectedImageName) return;
     if (pendingUrlImageRef.current && selectedImageName !== pendingUrlImageRef.current) return;
@@ -97,42 +88,31 @@ export default function ImageViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedImageName]);
 
-  // Índice e imagen derivados SIEMPRE del nombre
   const selectedImageIndex = useMemo(() => {
     if (!currentImageName) return 0;
     const idx = images.findIndex((i) => i.name === currentImageName);
     return idx >= 0 ? idx : 0;
   }, [currentImageName, images]);
-
   const selectedImage = images[selectedImageIndex] ?? null;
 
-  // ===== UI state =====
+  // ===== UI state
   const activeThreadId = useThreadsStore((s) => s.activeThreadId);
   const setActiveThreadId = useThreadsStore((s) => s.setActiveThreadId);
-
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [creatingThreadId, setCreatingThreadId] = useState<number | null>(null);
-
-  // Loader solo si realmente falta hidratar
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-
   const [tool, setTool] = useState<"zoom" | "pin">("zoom");
   const [showThreads, setShowThreads] = useState(true);
   const { wrapperRef, imgRef, box: imgBox, update } = useImageGeometry();
   const onlineUsers = usePresence(sku.sku, username);
+  const [zoomOverlay, setZoomOverlay] = useState<null | { x: number; y:  number; ax: number; ay: number }>(null);
 
-  const [zoomOverlay, setZoomOverlay] =
-    useState<null | { x: number; y: number; ax: number; ay: number }>(null);
-
-  // ==========================
-  //  STORES (selecciones finas)
-  // ==========================
+  // ========================== STORES (selecciones finas)
   const selectedImageKey = selectedImage?.name ?? "";
   const threadsRaw = useThreadsStore(
     useShallow((s) => (selectedImageKey ? s.byImage[selectedImageKey] ?? EMPTY_ARR : EMPTY_ARR))
   );
-
   const threadsByNeededImages = useThreadsStore(
     useShallow((s) => {
       const out: Record<string, { id: number; x: number; y: number; status: ThreadStatus }[]> = {};
@@ -140,8 +120,6 @@ export default function ImageViewer({
       return out;
     })
   );
-
-  // Mapa thread -> image (para navegar si el thread pertenece a otra imagen)
   const threadToImage = useThreadsStore((s) => s.threadToImage);
 
   // Mensajes
@@ -152,6 +130,12 @@ export default function ImageViewer({
   const markThreadRead = useMessagesStore((s) => s.markThreadRead);
   const setSelfAuthId = useMessagesStore((s) => s.setSelfAuthId);
   const msgsByThread = useMessagesStore((s) => s.byThread);
+  const selfAuthId = useMessagesStore((s) => s.selfAuthId); // 🆕
+
+  // ====== selector para saber cuándo hay mensajes en el hilo activo
+  const activeMsgsLen = useMessagesStore(
+    useShallow((s) => (activeThreadId ? (s.byThread[activeThreadId] || []).length : 0))
+  );
 
   // Threads store helpers
   const hydrateForImage = useThreadsStore((s) => s.hydrateForImage);
@@ -162,14 +146,11 @@ export default function ImageViewer({
   const rollbackCreate = useThreadsStore((s) => s.rollbackCreate);
   const pendingStatusMap = useThreadsStore((s) => s.pendingStatus);
 
-  // ==========================
-  //  HIDRATACIÓN (SWR: hilos + mensajes)
-  // ==========================
+  // ========================== HIDRATACIÓN (SWR: hilos + mensajes)
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
-      // 2) Sirve copia rancia de HILOS desde localStorage (por imagen)
+      // cache hilos
       let servedFromCache = false;
       const cachedThreadIds: number[] = [];
       for (const img of images) {
@@ -181,14 +162,16 @@ export default function ImageViewer({
           servedFromCache = true;
         }
       }
-
-      // 2bis) Sirve copia rancia de MENSAJES por thread_id (si tenemos ids cacheados)
+      // cache mensajes
       if (cachedThreadIds.length) {
         for (const tid of cachedThreadIds) {
           const cachedMsgs = messagesCache.load(tid);
           if (cachedMsgs && cachedMsgs.length) {
             setMsgsForThread(tid, cachedMsgs);
-            setThreadMsgIds(tid, cachedMsgs.map((m) => m.id as number).filter(Boolean));
+            setThreadMsgIds(
+              tid,
+              cachedMsgs.map((m) => m.id as number).filter(Boolean)
+            );
           }
         }
       }
@@ -206,7 +189,7 @@ export default function ImageViewer({
         if (!res.ok) throw new Error("No se pudieron cargar las anotaciones");
         const payload: ReviewsPayload = await res.json();
 
-        // Hidrata imágenes con datos frescos
+        // hilos frescos
         const allThreadIds: number[] = [];
         for (const img of images) {
           const name = img.name!;
@@ -217,46 +200,57 @@ export default function ImageViewer({
             y: round3(+t.y),
             status: t.status as ThreadStatus,
           }));
-
           hydrateForImage(name, rows);
           raw.forEach((r) => allThreadIds.push(r.id));
         }
 
-        // 3bis) Mensajes cacheados
+        // mensajes cacheados
         if (allThreadIds.length) {
           for (const tid of allThreadIds) {
             const cachedMsgs = messagesCache.load(tid);
             if (cachedMsgs && cachedMsgs.length) {
               setMsgsForThread(tid, cachedMsgs);
-              setThreadMsgIds(tid, cachedMsgs.map((m) => m.id as number).filter(Boolean));
+              setThreadMsgIds(
+                tid,
+                cachedMsgs.map((m) => m.id as number).filter(Boolean)
+              );
             }
           }
         }
 
-        // 4) Mensajes frescos desde Supabase
+        // mensajes frescos (💡 delivery por-usuario)
         if (allThreadIds.length) {
           const { data: msgs, error } = await sb
             .from("review_messages")
             .select(
-              `id,thread_id,text,created_at,updated_at,created_by,created_by_username,created_by_display_name,is_system,
-                meta:review_message_receipts!review_message_receipts_message_fkey(
-                  user_id, read_at, delivered_at
-                )`
+              `
+              id,thread_id,text,created_at,updated_at,created_by,created_by_username,created_by_display_name,is_system,
+              meta:review_message_receipts!review_message_receipts_message_fkey ( user_id, read_at, delivered_at )
+            `
             )
             .in("thread_id", allThreadIds)
             .order("created_at", { ascending: true });
-
           if (error) throw error;
 
           const grouped: Record<number, Msg[]> = {};
           (msgs || []).forEach((m: any) => {
-            const deliveryStatus: DeliveryState =
-              (m.meta || []).some((mm: any) => mm.read_at)
-                ? "read"
-                : (m.meta || []).some((mm: any) => mm.delivered_at)
-                ? "delivered"
-                : "sent";
             const mine = !!myId && m.created_by === myId;
+
+            // ⚠️ SOLO miramos mis recibos si el mensaje es AJENO; de otros usuarios si el mensaje es MÍO
+            const receipts = (m.meta || []) as Array<{ user_id: string; read_at: string | null; delivered_at: string | null }>;
+            let deliveryStatus: DeliveryState = "sent";
+            if (mine) {
+              // Para mis mensajes -> ticks: mirar recibos de otros
+              const others = receipts.filter((r) => r.user_id !== myId);
+              if (others.some((r) => r.read_at)) deliveryStatus = "read";
+              else if (others.some((r) => r.delivered_at)) deliveryStatus = "delivered";
+            } else {
+              // Para mensajes ajenos -> mi estado local de lectura/entrega
+              const mineRec = receipts.find((r) => r.user_id === myId);
+              if (mineRec?.read_at) deliveryStatus = "read";
+              else if (mineRec?.delivered_at) deliveryStatus = "delivered";
+            }
+
             const mm: Msg = {
               ...m,
               updated_at: m.updated_at ?? m.created_at,
@@ -285,23 +279,77 @@ export default function ImageViewer({
         }
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sku.sku]);
 
-  // ==========================
-  //  Atajos de teclado
-  // ==========================
+  // ========================== Selección forzada por URL ?thread=ID
+  useEffect(() => {
+    if (suppressFollowThreadOnceRef.current) {
+      suppressFollowThreadOnceRef.current = false;
+      return;
+    }
+    if (selectedThreadId == null) {
+      lastAppliedThreadRef.current = null;
+      return;
+    }
+    if (lastAppliedThreadRef.current === selectedThreadId) return;
+
+    const imgName = threadToImage.get(selectedThreadId) || null;
+    if (!imgName) return;
+
+    if (currentImageName !== imgName) {
+      pendingUrlImageRef.current = imgName;
+      setCurrentImageName(imgName);
+      onSelectImage?.(imgName);
+    }
+    setActiveThreadId(selectedThreadId);
+    lastAppliedThreadRef.current = selectedThreadId;
+
+    if (imgName === selectedImage?.name) {
+      const t = threadsRaw.find((x) => x.id === selectedThreadId);
+      if (t) setActiveKey(fp(imgName, t.x, t.y));
+    }
+  }, [
+    selectedThreadId,
+    threadToImage,
+    currentImageName,
+    onSelectImage,
+    setActiveThreadId,
+    selectedImage?.name,
+    threadsRaw,
+  ]);
+
+  // ========================== Reintentos de marcado como leído
+  // 1) al cambiar el hilo activo
+  useEffect(() => {
+    if (activeThreadId) {
+      markThreadRead(activeThreadId).catch(() => {});
+    }
+  }, [activeThreadId, markThreadRead]);
+
+  // 2) cuando ya tenemos selfAuthId
+  useEffect(() => {
+    if (selfAuthId && activeThreadId) {
+      markThreadRead(activeThreadId).catch(() => {});
+    }
+  }, [selfAuthId, activeThreadId, markThreadRead]);
+
+  // 3) 🆕 cuando llegan los mensajes del hilo activo (al entrar por URL directa)
+  useEffect(() => {
+    if (selfAuthId && activeThreadId && activeMsgsLen > 0) {
+      markThreadRead(activeThreadId).catch(() => {});
+    }
+  }, [selfAuthId, activeThreadId, activeMsgsLen, markThreadRead]);
+
+  // ========================== Atajos de teclado
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       const tag = el?.tagName?.toLowerCase();
-      const typing = el?.isContentEditable || tag === "input" || tag === "textarea" || tag === "select";
+      const typing =
+        el?.isContentEditable || tag === "input" || tag === "textarea" || tag === "select";
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
-
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         if (selectedImageIndex > 0) selectImage(selectedImageIndex - 1);
@@ -324,9 +372,7 @@ export default function ImageViewer({
     return () => window.removeEventListener("keydown", onKey);
   }, [images.length, selectedImageIndex, zoomOverlay]);
 
-  // ==========================
-  //  Derivados solo de la imagen visible
-  // ==========================
+  // ========================== Derivados solo de la imagen visible
   const threadsInImage: Thread[] = useMemo(() => {
     if (!selectedImage?.name) return [];
     return threadsRaw
@@ -336,10 +382,14 @@ export default function ImageViewer({
           id: m.id,
           text: m.text,
           createdAt: m.created_at,
-          createdByName: m.created_by_display_name || m.created_by_username || "Desconocido",
+          createdByName:
+            m.created_by_display_name || m.created_by_username || "Desconocido",
           createdByAuthId: m.created_by ?? null,
           isSystem: !!m.is_system,
-          meta: { localDelivery: m.meta?.localDelivery ?? "sent", isMine: m.meta?.isMine ?? false } as MessageMeta,
+          meta: {
+            localDelivery: m.meta?.localDelivery ?? "sent",
+            isMine: m.meta?.isMine ?? false,
+          } as MessageMeta,
         }));
         return { id: t.id, x: t.x, y: t.y, status: t.status, messages: list };
       });
@@ -350,12 +400,14 @@ export default function ImageViewer({
     if (!selectedImage?.name) return null;
     if (threadsRaw.some((t) => t.id === activeThreadId)) return activeThreadId;
     if (activeKey) {
-      const th = threadsRaw.find((t) => fp(selectedImage.name!, Number(t.x), Number(t.y)) === activeKey);
+      const th = threadsRaw.find(
+        (t) => fp(selectedImage.name!, Number(t.x), Number(t.y)) === activeKey
+      );
       if (th) return th.id;
     }
     return null;
   }, [threadsRaw, selectedImage, activeThreadId, activeKey]);
-
+  
   // ==========================
   //  Selección forzada por URL ?thread=ID (con “suppress once” + dedupe)
   // ==========================
@@ -619,8 +671,7 @@ export default function ImageViewer({
 
   // ===== Helpers UI =====
   const openZoomAtEvent = (e: React.MouseEvent) => {
-    const r =
-      (e.currentTarget as HTMLElement).getBoundingClientRect?.() ||
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect?.() ||
       imgRef.current?.getBoundingClientRect();
     if (!r) return;
     const xPct = ((e.clientX - r.left) / r.width) * 100;
@@ -630,17 +681,12 @@ export default function ImageViewer({
     setZoomOverlay({ x: xPct, y: yPct, ax, ay });
   };
 
-  // Navegación: UI optimista por nombre + URL; sin tocar índice directamente
   const selectImage = (index: number) => {
     const name = images[index]?.name ?? null;
-
     setActiveThreadId(null);
     setActiveKey(null);
-
-    // 👇 evita rebote del efecto de ?thread= en esta navegación
     suppressFollowThreadOnceRef.current = true;
-    startTransition(() => onSelectThread?.(null)); // limpia ?thread=
-
+    startTransition(() => onSelectThread?.(null));
     if (name) {
       pendingUrlImageRef.current = name;
       setCurrentImageName(name);
@@ -660,7 +706,6 @@ export default function ImageViewer({
     if (!rect) return;
     const xPct = ((e.clientX - rect.left) / rect.width) * 100;
     const yPct = ((e.clientY - rect.top) / rect.height) * 100;
-
     if (tool === "zoom") {
       openZoomAtEvent(e);
       return;
@@ -689,7 +734,7 @@ export default function ImageViewer({
           <button className={styles.toolBtn} onClick={() => selectSku(null)} title="Volver">
             🏠
           </button>
-        <h1 className={styles.title}>
+          <h1 className={styles.title}>
             Revisión de SKU: <span className={styles.titleSku}>{sku.sku}</span>
           </h1>
           <div className={styles.imageCounter}>
@@ -764,7 +809,7 @@ export default function ImageViewer({
                 const topPx = imgBox.offsetTop + (th.y / 100) * imgBox.height;
                 const leftPx = imgBox.offsetLeft + (th.x / 100) * imgBox.width;
                 const bg = colorByStatus(th.status);
-                const isActive = resolvedActiveThreadId === th.id;
+                const isActive = activeThreadId === th.id;
                 return (
                   <div
                     key={th.id}
@@ -773,16 +818,22 @@ export default function ImageViewer({
                       top: `${topPx}px`,
                       left: `${leftPx}px`,
                       background: bg,
-                      boxShadow: isActive ? `0 0 0 3px rgba(255,255,255,.35), 0 0 10px ${bg}` : "none",
+                      boxShadow: isActive
+                        ? `0 0 0 3px rgba(255,255,255,.35), 0 0 10px ${bg}`
+                        : "none",
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setActiveThreadId(th.id); // UI primero
-                      startTransition(() => onSelectThread?.(th.id)); // URL después
+                      setActiveThreadId(th.id);
+                      startTransition(() => onSelectThread?.(th.id));
                       if (selectedImage?.name) setActiveKey(fp(selectedImage.name, th.x, th.y));
                     }}
                     title={
-                      th.status === "corrected" ? "Corregido" : th.status === "reopened" ? "Reabierto" : "Pendiente"
+                      th.status === "corrected"
+                        ? "Corregido"
+                        : th.status === "reopened"
+                        ? "Reabierto"
+                        : "Pendiente"
                     }
                   >
                     {index + 1}
@@ -818,7 +869,7 @@ export default function ImageViewer({
         name={selectedImage?.name || ""}
         isValidated={false}
         threads={threadsInImage}
-        activeThreadId={resolvedActiveThreadId}
+        activeThreadId={activeThreadId}
         onValidateSku={() => {}}
         onUnvalidateSku={() => {}}
         onAddThreadMessage={(threadId: number, text: string) => {
@@ -826,8 +877,8 @@ export default function ImageViewer({
         }}
         onDeleteThread={(id: number) => removeThread(id)}
         onFocusThread={(id: number | null) => {
-          setActiveThreadId(id); // UI primero
-          startTransition(() => onSelectThread?.(id ?? null)); // URL en transición
+          setActiveThreadId(id);
+          startTransition(() => onSelectThread?.(id ?? null));
           if (id) markThreadRead(id).catch(() => {});
           if (selectedImage?.name && id) {
             const t = (threadsRaw || []).find((x) => x.id === id);
@@ -844,16 +895,18 @@ export default function ImageViewer({
         }}
         loading={loading}
         composeLocked={
-          creatingThreadId != null && resolvedActiveThreadId != null && creatingThreadId === resolvedActiveThreadId
+          creatingThreadId != null &&
+          activeThreadId != null &&
+          creatingThreadId === activeThreadId
         }
-        statusLocked={resolvedActiveThreadId != null && pendingStatusMap.has(resolvedActiveThreadId)}
+        statusLocked={activeThreadId != null && pendingStatusMap.has(activeThreadId)}
       />
 
       {zoomOverlay && selectedImage?.url && (
         <ZoomOverlay
           src={selectedImage.bigImgUrl || selectedImage.url}
           threads={threadsInImage}
-          activeThreadId={resolvedActiveThreadId}
+          activeThreadId={activeThreadId}
           currentUsername={username}
           hideThreads={!showThreads}
           setHideThreads={setShowThreads}
