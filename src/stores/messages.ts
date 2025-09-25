@@ -4,6 +4,10 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import type { MessageRow } from "@/types/review";
 
+/* =========================
+   Tipos y utilidades base
+   ========================= */
+
 type LocalDelivery = "sending" | "sent" | "delivered" | "read";
 
 export type Msg = MessageRow & {
@@ -13,13 +17,6 @@ export type Msg = MessageRow & {
   };
 };
 
-/* 🗄️ LocalStorage – SWR helpers (mensajes por thread) */
-const MSGS_CACHE_VER = 2; // ⬆️ invalida cache vieja con estados erróneos
-const msgsCacheKey = (threadId: number) => `rev_msgs:v${MSGS_CACHE_VER}:${threadId}`;
-
-type MessagesCachePayload = { v: number; at: number; rows: Msg[] };
-
-// prioridad de estados (solo subir)
 const DELIVERY_RANK: Record<LocalDelivery, number> = {
   sending: 0,
   sent: 1,
@@ -33,6 +30,17 @@ const preferHigher = (a?: LocalDelivery, b?: LocalDelivery): LocalDelivery => {
   return DELIVERY_RANK[aa] >= DELIVERY_RANK[bb] ? aa : bb;
 };
 
+const sortByCreatedAt = (a: Msg, b: Msg) =>
+  (a.created_at || "").localeCompare(b.created_at || "");
+
+/* =========================
+   Cache SWR (localStorage)
+   ========================= */
+
+const MSGS_CACHE_VER = 2;
+const msgsCacheKey = (threadId: number) => `rev_msgs:v${MSGS_CACHE_VER}:${threadId}`;
+type MessagesCachePayload = { v: number; at: number; rows: Msg[] };
+
 const safeParse = <T,>(raw: string | null): T | null => {
   if (!raw) return null;
   try { return JSON.parse(raw) as T; } catch { return null; }
@@ -44,7 +52,6 @@ const loadMessagesCache = (threadId: number): Msg[] | null => {
   return payload?.rows ?? null;
 };
 
-// No persistimos mensajes con id negativo (optimistas) para no “fijarlos”
 const saveMessagesCache = (threadId: number, rows: Msg[]) => {
   if (typeof window === "undefined") return;
   try {
@@ -59,23 +66,18 @@ const clearMessagesCache = (threadId: number) => {
   try { localStorage.removeItem(msgsCacheKey(threadId)); } catch {}
 };
 
-export const messagesCache = {
-  load: loadMessagesCache,
-  save: saveMessagesCache,
-  clear: clearMessagesCache,
-};
-/* 🗄️ fin helpers caché */
+export const messagesCache = { load: loadMessagesCache, save: saveMessagesCache, clear: clearMessagesCache };
 
-/** Recibo pendiente: status y si proviene del propio usuario (fromSelf) */
+/* =========================
+   Estado + acciones
+   ========================= */
+
 type PendingReceipt = { status: Exclude<LocalDelivery, "sending" | "sent">; fromSelf: boolean };
 
-type State = {
+export type MessagesStoreState = {
   byThread: Record<number, Msg[]>;
   messageToThread: Map<number, number>;
-  /** 🔸 auth user id actual */
   selfAuthId: string | null;
-
-  /** 🆕 recibos que llegaron antes de tener el mensaje real */
   pendingReceipts: Map<number, PendingReceipt>;
 };
 
@@ -93,12 +95,15 @@ type Actions = {
   removeFromRealtime: (row: MessageRow) => void;
   upsertReceipt: (messageId: number, userId: string, readAt?: string | null) => void;
   moveThreadMessages: (fromThreadId: number, toThreadId: number) => void;
+
+  /** Marca localmente delivered si están en 'sent' y son ajenos/no-sistema */
+  markDeliveredLocalIfSent: (messageIds: number[]) => void;
+
+  /** 🔧 Compatibilidad con bundle: devuelve estado rápido de un mensaje */
+  quickStateByMessageId: (id: number) => QuickState;
 };
 
-const sortByCreatedAt = (a: Msg, b: Msg) =>
-  (a.created_at || "").localeCompare(b.created_at || "");
-
-export const useMessagesStore = create<State & Actions>()(
+export const useMessagesStore = create<MessagesStoreState & Actions>()(
   subscribeWithSelector((set, get) => ({
     byThread: {},
     messageToThread: new Map(),
@@ -127,7 +132,7 @@ export const useMessagesStore = create<State & Actions>()(
               const pr = pend.get(m.id);
               if (pr && selfId) {
                 const isMine = m.created_by === selfId;
-                const applicable = isMine ? !pr.fromSelf : pr.fromSelf; // míos ← recibos de otros; ajenos ← mis recibos
+                const applicable = isMine ? !pr.fromSelf : pr.fromSelf;
                 if (applicable) {
                   base.meta!.localDelivery = preferHigher(
                     base.meta!.localDelivery as LocalDelivery,
@@ -144,8 +149,8 @@ export const useMessagesStore = create<State & Actions>()(
         const next = { ...s.byThread, [threadId]: list };
         const map = new Map(s.messageToThread);
         for (const m of list) if (m.id != null) map.set(m.id, threadId);
-        saveMessagesCache(threadId, list);
 
+        saveMessagesCache(threadId, list);
         return { byThread: next, messageToThread: map, pendingReceipts: pend };
       }),
 
@@ -277,11 +282,9 @@ export const useMessagesStore = create<State & Actions>()(
         return { byThread: { ...s.byThread, [threadId]: copy }, messageToThread: map, pendingReceipts: pend };
       }),
 
-    // sólo mensajes NO míos + no 'sending' + no 'read'
+    // sólo ajenos + no 'sending' + no 'read'
     markThreadRead: async (threadId) => {
       const { byThread, selfAuthId } = get();
-
-      // ⛔️ si aún no sabemos quién soy, no marcamos nada
       if (!selfAuthId) return;
 
       const list = byThread[threadId] || [];
@@ -353,7 +356,6 @@ export const useMessagesStore = create<State & Actions>()(
             },
           };
 
-          // aplica recibo pendiente si existe y corresponde
           const pr = pend.get(row.id!);
           if (pr && selfId) {
             const isMine = row.created_by === selfId;
@@ -372,7 +374,6 @@ export const useMessagesStore = create<State & Actions>()(
           return { byThread: { ...s.byThread, [threadId]: copy }, messageToThread: map, pendingReceipts: pend };
         }
 
-        // Nuevo mensaje en la lista
         const baseLD: LocalDelivery = "sent";
         const nextLD: LocalDelivery = preservedMeta?.localDelivery
           ? preferHigher(preservedMeta.localDelivery as LocalDelivery, baseLD)
@@ -429,7 +430,6 @@ export const useMessagesStore = create<State & Actions>()(
         const want: Exclude<LocalDelivery, "sending" | "sent"> = readAt ? "read" : "delivered";
         const fromSelf = !!selfId && userId === selfId;
 
-        // ¿Conocemos threadId y mensaje?
         let threadId = s.messageToThread.get(messageId);
         if (!threadId) {
           for (const [tidStr, list] of Object.entries(s.byThread)) {
@@ -442,12 +442,9 @@ export const useMessagesStore = create<State & Actions>()(
         }
 
         if (!threadId) {
-          // Guarda pendiente con origen (self/otros)
           const pend = new Map(s.pendingReceipts);
           const prev = pend.get(messageId);
-          const nextStatus = !prev
-            ? want
-            : (DELIVERY_RANK[prev.status] >= DELIVERY_RANK[want] ? prev.status : want);
+          const nextStatus = !prev ? want : (DELIVERY_RANK[prev.status] >= DELIVERY_RANK[want] ? prev.status : want);
           pend.set(messageId, { status: nextStatus, fromSelf });
           return { pendingReceipts: pend };
         }
@@ -457,9 +454,7 @@ export const useMessagesStore = create<State & Actions>()(
         if (idx < 0) {
           const pend = new Map(s.pendingReceipts);
           const prev = pend.get(messageId);
-          const nextStatus = !prev
-            ? want
-            : (DELIVERY_RANK[prev.status] >= DELIVERY_RANK[want] ? prev.status : want);
+          const nextStatus = !prev ? want : (DELIVERY_RANK[prev.status] >= DELIVERY_RANK[want] ? prev.status : want);
           pend.set(messageId, { status: nextStatus, fromSelf });
           return { pendingReceipts: pend };
         }
@@ -468,12 +463,7 @@ export const useMessagesStore = create<State & Actions>()(
         const msg = copy[idx];
         const isMine = !!selfId && msg.created_by === selfId;
 
-        // Reglas:
-        // - Mensaje MÍO: aplicar solo recibos de OTROS (fromSelf === false)
-        // - Mensaje AJENO: aplicar solo mis recibos (fromSelf === true)
-        if ((isMine && fromSelf) || (!isMine && !fromSelf)) {
-          return {}; // no aplica
-        }
+        if ((isMine && fromSelf) || (!isMine && !fromSelf)) return {};
 
         const prevLD = (msg.meta?.localDelivery ?? "sent") as LocalDelivery;
         const nextLD = preferHigher(prevLD, want);
@@ -514,5 +504,160 @@ export const useMessagesStore = create<State & Actions>()(
         saveMessagesCache(toThreadId, merged);
         return { byThread, messageToThread };
       }),
+
+    markDeliveredLocalIfSent: (messageIds: number[]) =>
+      set((s) => {
+        if (!messageIds?.length) return {};
+        const { selfAuthId } = s;
+        if (!selfAuthId) return {};
+
+        const changedThreads = new Set<number>();
+        for (const mid of messageIds) {
+          const tid = s.messageToThread.get(mid);
+          if (!tid) continue;
+          const list = s.byThread[tid] || [];
+          const idx = list.findIndex((m) => m.id === mid);
+          if (idx < 0) continue;
+
+          const msg = list[idx];
+          const isSystem = (msg as any).is_system;
+          const isMine = msg.created_by === selfAuthId;
+          const curr = (msg.meta?.localDelivery ?? "sent") as LocalDelivery;
+
+          if (!isSystem && !isMine && curr === "sent") {
+            const next = list.slice();
+            next[idx] = { ...msg, meta: { ...(msg.meta || {}), localDelivery: "delivered" } };
+            s.byThread[tid] = next;
+            changedThreads.add(tid);
+          }
+        }
+
+        if (!changedThreads.size) return {};
+        for (const tid of changedThreads) saveMessagesCache(tid, s.byThread[tid]);
+        return { byThread: { ...s.byThread } };
+      }),
+
+    // ✅ compat con bundle viejo
+    quickStateByMessageId: (id: number) => internalQuickState(get(), id),
   }))
 );
+
+/* ===================================================
+   ACK delivered — batch + dedupe + sessionStorage
+   =================================================== */
+
+export type QuickState = "unknown" | "system" | "mine" | "read" | "delivered" | "sent";
+
+function internalQuickState(s: MessagesStoreState, id: number): QuickState {
+  const tid = s.messageToThread.get(id);
+  if (!tid) return "unknown";
+  const list = s.byThread[tid] || [];
+  const msg = list.find((m) => m.id === id);
+  if (!msg) return "unknown";
+  if ((msg as any).is_system) return "system";
+  if (s.selfAuthId && msg.created_by === s.selfAuthId) return "mine";
+  const ld = (msg.meta?.localDelivery ?? "sent") as LocalDelivery;
+  if (ld === "read") return "read";
+  if (ld === "delivered") return "delivered";
+  return "sent";
+}
+
+const SS_KEY = (id: number) => `ack:delivered:v1:${id}`;
+const inSession = (id: number) => {
+  if (typeof sessionStorage === "undefined") return false;
+  try { return sessionStorage.getItem(SS_KEY(id)) != null; } catch { return false; }
+};
+const markSession = (id: number) => {
+  if (typeof sessionStorage === "undefined") return;
+  try { sessionStorage.setItem(SS_KEY(id), String(Date.now())); } catch {}
+};
+
+const runtimeDedup = new Set<number>();
+const pend = new Set<number>();
+let timer: number | null = null;
+let retryMs = 800;
+const RETRY_MAX = 15000;
+
+function schedule() {
+  if (timer != null) return;
+  timer = window.setTimeout(flushNow, 450) as unknown as number;
+}
+
+async function flushNow() {
+  const ids = Array.from(pend);
+  if (timer) { clearTimeout(timer); timer = null; }
+  pend.clear();
+  if (!ids.length) return;
+
+  // Solo 'sent' y no repetidos de sesión
+  const s = useMessagesStore.getState();
+  const eligible = ids.filter((id) => !inSession(id) && internalQuickState(s, id) === "sent");
+  if (!eligible.length) { runtimeDedup.clear(); return; }
+
+  // Optimista local
+  useMessagesStore.getState().markDeliveredLocalIfSent(eligible);
+
+  try {
+    const res = await fetch("/api/messages/receipts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messageIds: eligible, mark: "delivered" }),
+    });
+    if (!res.ok) throw new Error("failed");
+
+    for (const id of eligible) markSession(id);
+    runtimeDedup.clear();
+    retryMs = 800;
+  } catch {
+    // Reintenta sólo los que sigan en 'sent'
+    const s2 = useMessagesStore.getState();
+    for (const id of eligible) {
+      if (internalQuickState(s2, id) === "sent") pend.add(id);
+    }
+    runtimeDedup.clear();
+    timer = window.setTimeout(flushNow, retryMs) as unknown as number;
+    retryMs = Math.min(RETRY_MAX, Math.round(retryMs * 1.8));
+  }
+}
+
+function enqueue(ids: number | number[] | null | undefined) {
+  if (ids == null) return;
+  const arr = Array.isArray(ids) ? ids : [ids];
+  if (!arr.length) return;
+
+  const s = useMessagesStore.getState();
+  if (!s.selfAuthId) return; // aún no autenticado → no acks
+
+  for (const id of arr) {
+    if (typeof id !== "number" || id < 0) continue; // ignora optimistas/invalid
+    if (runtimeDedup.has(id)) continue;
+    runtimeDedup.add(id);
+    pend.add(id);
+  }
+  schedule();
+}
+
+function enqueueFromNotifications(rows: Array<{ type: string; message_id?: number | null }>) {
+  const ids = rows
+    .filter((n) => n?.type === "new_message" && typeof n.message_id === "number")
+    .map((n) => n.message_id!) as number[];
+  enqueue(ids);
+}
+
+// compat: singular
+function enqueueFromNotification(row: { type: string; message_id?: number | null } | null | undefined) {
+  if (!row || row.type !== "new_message" || typeof row.message_id !== "number") return;
+  enqueue(row.message_id);
+}
+
+function quickState(id: number): QuickState {
+  return internalQuickState(useMessagesStore.getState(), id);
+}
+
+export const deliveryAck = {
+  enqueue,
+  enqueueFromNotifications,   // array
+  enqueueFromNotification,    // singular (compat)
+  flushNow,
+  quickState,
+};

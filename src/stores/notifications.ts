@@ -15,12 +15,13 @@ export type NotificationRow = {
   user_id: string;
   author_id: string | null;
   author_username?: string | null;
-  type: NotificationType;
+  type: "new_message" | "new_thread" | "thread_status_changed" | "image_status_changed" | "sku_status_changed";
   sku: string | null;
   image_name: string | null;
   thread_id: number | null;
+  message_id?: number | null;
   message: string;
-  excerpt?: string | null; 
+  excerpt?: string | null;
   viewed: boolean;
   created_at: string;
 };
@@ -34,20 +35,10 @@ type State = {
 
 type Actions = {
   setSelfAuthId: (uid: string | null) => void;
-
-  /** Hidrata primera página. No pisa si no hay cambios materiales. */
   hydrate: (items: NotificationRow[], unseen?: number) => void;
-
-  /** Inserta/actualiza (realtime o SSR) */
   upsert: (row: NotificationRow) => void;
-
-  /** Añade páginas antiguas (scroll). */
   appendOlder: (rows: NotificationRow[]) => void;
-
-  /** Marca como vistas (optimista) */
   markViewedLocal: (ids: number[]) => void;
-
-  /** Reset total */
   reset: () => void;
 };
 
@@ -60,13 +51,13 @@ const sameNotif = (a: NotificationRow, b: NotificationRow) =>
   a.viewed === b.viewed &&
   a.message === b.message &&
   a.excerpt === b.excerpt &&
-  a.author_username === b.author_username && 
+  a.author_username === b.author_username &&
   a.type === b.type &&
   a.sku === b.sku &&
   a.image_name === b.image_name &&
   a.thread_id === b.thread_id &&
+  a.message_id === b.message_id && // ⬅️ compara también el message_id
   a.created_at === b.created_at;
-
 
 const defer = (fn: () => void) => {
   const ric = (globalThis as any)?.requestIdleCallback as undefined | ((cb: () => void) => any);
@@ -75,7 +66,7 @@ const defer = (fn: () => void) => {
 };
 
 /* ---------- Cache SWR (localStorage) ---------- */
-const NOTIFS_CACHE_VER = 2;
+const NOTIFS_CACHE_VER = 3; // ⬆️ bump por nuevo campo message_id
 const NOTIFS_CACHE_KEY = `rev_notifs:v${NOTIFS_CACHE_VER}`;
 
 type NotifsCachePayload = { v: number; at: number; rows: NotificationRow[]; unseen: number };
@@ -97,11 +88,11 @@ const saveCache = (rows: NotificationRow[], unseen: number) => {
   try {
     const payload: NotifsCachePayload = { v: NOTIFS_CACHE_VER, at: Date.now(), rows, unseen };
     localStorage.setItem(NOTIFS_CACHE_KEY, JSON.stringify(payload));
-  } catch {console.log("error")}
+  } catch {}
 };
 
 /* ---------- Store ---------- */
-const MAX_ITEMS = 1000; // límite razonable en cliente
+const MAX_ITEMS = 1000;
 
 export const useNotificationsStore = create<State & Actions>()(
   subscribeWithSelector((set, get) => ({
@@ -112,10 +103,8 @@ export const useNotificationsStore = create<State & Actions>()(
     setSelfAuthId: (uid) => set({ selfAuthId: uid }),
 
     hydrate: (rows, unseenArg) => {
-      // Reconciliación no destructiva (evita renders si nada cambió)
       const sNow = get();
       const prev = sNow.items;
-      // Dedup + orden
       const map = new Map<number, NotificationRow>();
       for (const r of rows) map.set(r.id, r);
       const next = Array.from(map.values()).sort(sortDesc);
@@ -127,7 +116,6 @@ export const useNotificationsStore = create<State & Actions>()(
         }
       }
       if (!changed) {
-        // refresca caché igualmente
         saveCache(prev, typeof unseenArg === "number" ? unseenArg : sNow.unseen);
         return;
       }
@@ -151,7 +139,6 @@ export const useNotificationsStore = create<State & Actions>()(
         for (const it of s.items) map.set(it.id, it);
         const prev = map.get(row.id);
         const merged = { ...(prev || {}), ...row };
-        // Si no cambia nada real, evita tocar estado
         if (prev && sameNotif(prev, merged)) return {};
         map.set(row.id, merged);
         const items = Array.from(map.values()).sort(sortDesc).slice(0, MAX_ITEMS);
@@ -171,7 +158,6 @@ export const useNotificationsStore = create<State & Actions>()(
         for (const it of s.items) map.set(it.id, it);
         for (const r of rows) {
           const prev = map.get(r.id);
-          // Solo añade si no existe o cambió algo
           if (!prev || !sameNotif(prev, r)) map.set(r.id, r);
         }
         const items = Array.from(map.values()).sort(sortDesc).slice(0, MAX_ITEMS);
@@ -201,5 +187,4 @@ export const useNotificationsStore = create<State & Actions>()(
   }))
 );
 
-/* Exponer helpers de caché por si quieres usarlos fuera */
 export const notificationsCache = { load: loadCache, save: saveCache };

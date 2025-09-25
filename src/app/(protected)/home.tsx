@@ -33,11 +33,12 @@ export default function Home({ username, skus, clientInfo }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+
   // Realtime (status SKUs/Imágenes)
   useWireAllStatusesRealtime();
   const liveBySku = useStatusesStore((s) => s.bySku);
 
-  // Mezcla props con estado live
+  // Props + estado live
   const effectiveSkus = useMemo(() => {
     return skus.map((s) => {
       const live = liveBySku[s.sku];
@@ -55,10 +56,13 @@ export default function Home({ username, skus, clientInfo }: Props) {
     });
   }, [skus, liveBySku]);
 
-  const hydrateImages = useImagesCatalogStore(s => s.hydrateFromSkus);
-  useEffect(() => { hydrateImages(effectiveSkus); }, [effectiveSkus, hydrateImages]);
+  // Hidrata catálogo de imágenes (para componentes hijos)
+  const hydrateImages = useImagesCatalogStore((s) => s.hydrateFromSkus);
+  useEffect(() => {
+    hydrateImages(effectiveSkus);
+  }, [effectiveSkus, hydrateImages]);
 
-  // Resúmenes por imagen y “unread”
+  // Resúmenes y "unread"
   const { stats, unread } = useHomeOverview(effectiveSkus);
 
   // Prefetch notifs
@@ -84,6 +88,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
   const skuParam = searchParams.get("sku");
   const imageParam = searchParams.get("image");
   const threadParam = searchParams.get("thread");
+
   const selectedThreadId: number | null = useMemo(
     () => (threadParam && /^-?\d+$/.test(threadParam) ? Number(threadParam) : null),
     [threadParam]
@@ -91,6 +96,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
 
   const bySku = useMemo(() => new Map(effectiveSkus.map((s) => [s.sku, s])), [effectiveSkus]);
   const selectedSku: SkuWithImagesAndStatus | null = skuParam ? bySku.get(skuParam) ?? null : null;
+
   const selectedImageName: string | null = useMemo(() => {
     if (!selectedSku || !imageParam) return null;
     return selectedSku.images.some((i) => i.name === imageParam) ? imageParam : null;
@@ -105,7 +111,8 @@ export default function Home({ username, skus, clientInfo }: Props) {
       next.delete("image");
       next.delete("thread");
       const nextUrl = `${pathname}${next.toString() ? `?${next.toString()}` : ""}`;
-      if (nextUrl !== `${pathname}${searchParams.size ? `?${searchParams}` : ""}`) {
+      const curUrl = `${pathname}${searchParams.size ? `?${searchParams}` : ""}`;
+      if (nextUrl !== curUrl) {
         startTransition(() => router.replace(nextUrl, { scroll: false }));
       }
     }
@@ -163,7 +170,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
 
   const onOpenSku = useCallback((sku: string) => selectSku(bySku.get(sku) ?? null), [selectSku, bySku]);
 
-  const onOpenImage = useCallback(
+    const onOpenImage = useCallback(
     (sku: string, img: string) => {
       const s = bySku.get(sku);
       if (!s) return;
@@ -176,30 +183,23 @@ export default function Home({ username, skus, clientInfo }: Props) {
     },
     [bySku, replaceParams, searchParams]
   );
-
-  /* ===== Filtros (píldoras) ===== */
   const ALL: SkuStatus[] = ["pending_validation", "needs_correction", "validated", "reopened"];
   const LS_KEY = "home.filters.statuses.v1";
   const [active, setActive] = useState<Set<SkuStatus>>(() => new Set(ALL));
+
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(LS_KEY);
       if (!raw) return;
       const arr = JSON.parse(raw) as SkuStatus[];
-      if (Array.isArray(arr) && arr.length) {
-        setActive(new Set(arr));
-      }
-    } catch {
-      /* noop */
-    }
+      if (Array.isArray(arr) && arr.length) setActive(new Set(arr));
+    } catch {}
   }, []);
 
   useEffect(() => {
     try {
       window.localStorage.setItem(LS_KEY, JSON.stringify(Array.from(active)));
-    } catch {
-      /* noop */
-    }
+    } catch {}
   }, [active]);
 
   const toggle = (s: SkuStatus) =>
@@ -212,7 +212,6 @@ export default function Home({ username, skus, clientInfo }: Props) {
 
   const filtered = useMemo(() => effectiveSkus.filter((s) => active.has(s.status)), [effectiveSkus, active]);
 
-  // agrupado por estado
   const grouped = useMemo(() => {
     const m = new Map<SkuStatus, SkuWithImagesAndStatus[]>();
     for (const s of filtered) (m.get(s.status) || (m.set(s.status, []), m.get(s.status)!)).push(s);

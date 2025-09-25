@@ -66,7 +66,7 @@ export default function ImageViewer({
   const { images } = sku;
   useWireSkuRealtime(sku.sku);
 
-  // ===== Navegación sin rebotes
+  // ===== Navegación / estado local de imagen seleccionada
   const [currentImageName, setCurrentImageName] = useState<string | null>(
     selectedImageName ?? images[0]?.name ?? null
   );
@@ -95,7 +95,7 @@ export default function ImageViewer({
   }, [currentImageName, images]);
   const selectedImage = images[selectedImageIndex] ?? null;
 
-  // ===== UI state
+  // ===== STORES
   const activeThreadId = useThreadsStore((s) => s.activeThreadId);
   const setActiveThreadId = useThreadsStore((s) => s.setActiveThreadId);
   const [activeKey, setActiveKey] = useState<string | null>(null);
@@ -106,9 +106,9 @@ export default function ImageViewer({
   const [showThreads, setShowThreads] = useState(true);
   const { wrapperRef, imgRef, box: imgBox, update } = useImageGeometry();
   const onlineUsers = usePresence(sku.sku, username);
-  const [zoomOverlay, setZoomOverlay] = useState<null | { x: number; y:  number; ax: number; ay: number }>(null);
+  const [zoomOverlay, setZoomOverlay] = useState<null | { x: number; y: number; ax: number; ay: number }>(null);
 
-  // ========================== STORES (selecciones finas)
+  // Threads (scoped a la imagen visible)
   const selectedImageKey = selectedImage?.name ?? "";
   const threadsRaw = useThreadsStore(
     useShallow((s) => (selectedImageKey ? s.byImage[selectedImageKey] ?? EMPTY_ARR : EMPTY_ARR))
@@ -229,7 +229,7 @@ export default function ImageViewer({
           (msgs || []).forEach((m: any) => {
             const mine = !!myId && m.created_by === myId;
 
-            // ⚠️ SOLO mis recibos si ajeno; recibos de otros si mío
+            // SOLO mis recibos si ajeno; recibos de otros si mío
             const receipts = (m.meta || []) as Array<{ user_id: string; read_at: string | null; delivered_at: string | null }>;
             let deliveryStatus: DeliveryState = "sent";
             if (mine) {
@@ -270,11 +270,13 @@ export default function ImageViewer({
         }
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sku.sku]);
 
-  // ========================== Selección forzada por URL ?thread=ID
+  // ========================== Selección forzada por URL ?thread=ID (robusta)
   useEffect(() => {
     if (suppressFollowThreadOnceRef.current) {
       suppressFollowThreadOnceRef.current = false;
@@ -286,8 +288,21 @@ export default function ImageViewer({
     }
     if (lastAppliedThreadRef.current === selectedThreadId) return;
 
-    const imgName = threadToImage.get(selectedThreadId) || null;
-    if (!imgName) return;
+    // 1) Intento rápido por el Map del store (puede estar aún vacío)
+    let imgName = useThreadsStore.getState().threadToImage.get(selectedThreadId) || null;
+
+    // 2) Fallback: escanear byImage ya hidratado
+    if (!imgName) {
+      const st = useThreadsStore.getState();
+      for (const img of images) {
+        const arr = st.byImage[img.name] || [];
+        if (arr.some((t) => t.id === selectedThreadId)) {
+          imgName = img.name;
+          break;
+        }
+      }
+    }
+    if (!imgName) return; // aún no está mapeado; reintentará al cambiar `loading`/`images`
 
     if (currentImageName !== imgName) {
       pendingUrlImageRef.current = imgName;
@@ -298,48 +313,19 @@ export default function ImageViewer({
     lastAppliedThreadRef.current = selectedThreadId;
 
     if (imgName === selectedImage?.name) {
-      const t = threadsRaw.find((x) => x.id === selectedThreadId);
+      const t = (threadsRaw || []).find((x) => x.id === selectedThreadId);
       if (t) setActiveKey(fp(imgName, t.x, t.y));
     }
   }, [
     selectedThreadId,
-    threadToImage,
+    images,            // reintento cuando haya imágenes/hilos cargados
     currentImageName,
     onSelectImage,
     setActiveThreadId,
     selectedImage?.name,
     threadsRaw,
+    loading,           // reintento tras hidratación
   ]);
-
-  // ========================== Atajos de teclado
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement | null;
-      const tag = el?.tagName?.toLowerCase();
-      const typing =
-        el?.isContentEditable || tag === "input" || tag === "textarea" || tag === "select";
-      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        if (selectedImageIndex > 0) selectImage(selectedImageIndex - 1);
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        if (selectedImageIndex < images.length - 1) selectImage(selectedImageIndex + 1);
-      } else if (e.key === "z" || e.key === "Z") {
-        setTool("zoom");
-      } else if (e.key === "p" || e.key === "P") {
-        setTool("pin");
-      } else if (e.key === "t" || e.key === "T") {
-        setShowThreads((v) => !v);
-      } else if (e.key === "Enter") {
-        if (!zoomOverlay) setZoomOverlay({ x: 50, y: 50, ax: 0.5, ay: 0.5 });
-      } else if (e.key === "Escape") {
-        if (zoomOverlay) setZoomOverlay(null);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [images.length, selectedImageIndex, zoomOverlay]);
 
   // ========================== Derivados solo de la imagen visible
   const threadsInImage: Thread[] = useMemo(() => {
@@ -351,8 +337,7 @@ export default function ImageViewer({
           id: m.id,
           text: m.text,
           createdAt: m.created_at,
-          createdByName:
-            m.created_by_display_name || m.created_by_username || "Desconocido",
+          createdByName: m.created_by_display_name || m.created_by_username || "Desconocido",
           createdByAuthId: m.created_by ?? null,
           isSystem: !!m.is_system,
           meta: {
@@ -369,29 +354,25 @@ export default function ImageViewer({
     if (!selectedImage?.name) return null;
     if (threadsRaw.some((t) => t.id === activeThreadId)) return activeThreadId;
     if (activeKey) {
-      const th = threadsRaw.find(
-        (t) => fp(selectedImage.name!, Number(t.x), Number(t.y)) === activeKey
-      );
+      const th = threadsRaw.find((t) => fp(selectedImage.name!, Number(t.x), Number(t.y)) === activeKey);
       if (th) return th.id;
     }
     return null;
   }, [threadsRaw, selectedImage, activeThreadId, activeKey]);
 
-  // ==========================
-  //  Acciones
-  // ==========================
+  // ========================== Acciones
   const createThreadAt = useCallback(
     async (imgName: string, x: number, y: number) => {
       const rx = round3(x);
       const ry = round3(y);
 
-      // 🔑 Evita que ?thread= anterior pise la selección optimista
+      // Evita que ?thread= anterior pise la selección optimista
       suppressFollowThreadOnceRef.current = true;
-      startTransition(() => onSelectThread?.(null)); // limpia URL en baja prioridad
+      startTransition(() => onSelectThread?.(null));
 
       const tempId = createThreadOptimistic(imgName, rx, ry);
       setCreatingThreadId(tempId);
-      setActiveThreadId(tempId); // UI inmediata
+      setActiveThreadId(tempId);
       setActiveKey(`${imgName}|${rx}|${ry}`);
 
       const sysText = `**@${username ?? "desconocido"}** ha creado un nuevo hilo de revisión.`;
@@ -462,8 +443,7 @@ export default function ImageViewer({
           thread_id: realId,
           text: sysText,
           created_at: sysCreated.created_at || sysCreated.createdAt || new Date().toISOString(),
-          updated_at:
-            sysCreated.updated_at || sysCreated.updatedAt || sysCreated.createdAt || new Date().toISOString(),
+          updated_at: sysCreated.updated_at || sysCreated.updatedAt || sysCreated.createdAt || new Date().toISOString(),
           created_by: sysCreated.created_by ?? "system",
           created_by_username: sysCreated.created_by_username ?? "system",
           created_by_display_name: sysCreated.created_by_display_name ?? "system",
@@ -534,8 +514,7 @@ export default function ImageViewer({
     async (_imgName: string, threadId: number, next: ThreadStatus) => {
       if (useThreadsStore.getState().pendingStatus.has(threadId)) return;
 
-      const { byImage, threadToImage, beginStatusOptimistic, clearPendingStatus } =
-        useThreadsStore.getState();
+      const { byImage, threadToImage, beginStatusOptimistic, clearPendingStatus } = useThreadsStore.getState();
       const img = threadToImage.get(threadId) || "";
       const prev = byImage[img]?.find((t) => t.id === threadId)?.status ?? "pending";
 
@@ -587,8 +566,8 @@ export default function ImageViewer({
 
   // ===== Helpers UI =====
   const openZoomAtEvent = (e: React.MouseEvent) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect?.() ||
-      imgRef.current?.getBoundingClientRect();
+    const r =
+      (e.currentTarget as HTMLElement).getBoundingClientRect?.() || imgRef.current?.getBoundingClientRect();
     if (!r) return;
     const xPct = ((e.clientX - r.left) / r.width) * 100;
     const yPct = ((e.clientY - r.top) / r.height) * 100;
@@ -650,7 +629,7 @@ export default function ImageViewer({
           <button className={styles.toolBtn} onClick={() => selectSku(null)} title="Volver">
             🏠
           </button>
-        <h1 className={styles.title}>
+          <h1 className={styles.title}>
             Revisión de SKU: <span className={styles.titleSku}>{sku.sku}</span>
           </h1>
           <div className={styles.imageCounter}>
@@ -734,9 +713,7 @@ export default function ImageViewer({
                       top: `${topPx}px`,
                       left: `${leftPx}px`,
                       background: bg,
-                      boxShadow: isActive
-                        ? `0 0 0 3px rgba(255,255,255,.35), 0 0 10px ${bg}`
-                        : "none",
+                      boxShadow: isActive ? `0 0 0 3px rgba(255,255,255,.35), 0 0 10px ${bg}` : "none",
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -744,13 +721,7 @@ export default function ImageViewer({
                       startTransition(() => onSelectThread?.(th.id));
                       if (selectedImage?.name) setActiveKey(fp(selectedImage.name, th.x, th.y));
                     }}
-                    title={
-                      th.status === "corrected"
-                        ? "Corregido"
-                        : th.status === "reopened"
-                        ? "Reabierto"
-                        : "Pendiente"
-                    }
+                    title={th.status === "corrected" ? "Corregido" : th.status === "reopened" ? "Reabierto" : "Pendiente"}
                   >
                     {index + 1}
                   </div>
@@ -795,7 +766,7 @@ export default function ImageViewer({
         onFocusThread={(id: number | null) => {
           setActiveThreadId(id);
           startTransition(() => onSelectThread?.(id ?? null));
-          // ⛔️ NO marcamos leído aquí: lo hará ThreadChat tras el scroll inicial
+          // ⛔️ El marcado leído lo hace ThreadChat tras el scroll inicial
           if (selectedImage?.name && id) {
             const t = (threadsRaw || []).find((x) => x.id === id);
             if (t) setActiveKey(fp(selectedImage.name, t.x, t.y));
@@ -810,11 +781,7 @@ export default function ImageViewer({
           if (selectedImage?.name) toggleThreadStatus(selectedImage.name, id, status);
         }}
         loading={loading}
-        composeLocked={
-          creatingThreadId != null &&
-          activeThreadId != null &&
-          creatingThreadId === activeThreadId
-        }
+        composeLocked={creatingThreadId != null && activeThreadId != null && creatingThreadId === activeThreadId}
         statusLocked={activeThreadId != null && pendingStatusMap.has(activeThreadId)}
       />
 
@@ -829,7 +796,7 @@ export default function ImageViewer({
           onFocusThread={(id: number | null) => {
             setActiveThreadId(id);
             startTransition(() => onSelectThread?.(id ?? null));
-            // ⛔️ Tampoco aquí: marcamos en ThreadChat
+            // ⛔️ Marcado en ThreadChat
           }}
           onAddThreadMessage={(threadId: number, text: string) => {
             if (creatingThreadId != null && threadId === creatingThreadId) return;
