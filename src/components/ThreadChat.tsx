@@ -92,20 +92,23 @@ const UnreadDividerAlign = React.memo(
 type Props = {
   activeThread: Thread;
   threadIndex: number;
-  onAddThreadMessage: (threadId: number, text: string) => Promise<void> | void;
+  // onAddThreadMessage: (threadId: number, text: string) => Promise<void> | void;
   onFocusThread: (threadId: number | null) => void;
   onToggleThreadStatus: (threadId: number, next: ThreadStatus) => void;
   onDeleteThread: (id: number) => void;
+  composeLocked?: boolean;
+  statusLocked?: boolean;
 };
 
 /* ============================ Componente ============================ */
 function ThreadChatInner({
   activeThread,
-  threadIndex,
-  onAddThreadMessage,
+  threadIndex,  
   onFocusThread,
   onToggleThreadStatus,
   onDeleteThread,
+  composeLocked,
+  statusLocked
 }: Props) {
   // Drafts por hilo
   const [drafts, setDrafts] = useState<Record<number, string>>({});
@@ -438,6 +441,7 @@ function ThreadChatInner({
     (s: ThreadStatus) => (s === "corrected" ? "Reabrir hilo" : "Validar correcciones"),
     []
   );
+  const colorByNextStatus =  useCallback((s: ThreadStatus) => (s === "corrected" ? "orange" : "green"),[]);
 
   return (
     <div
@@ -566,54 +570,50 @@ function ThreadChatInner({
         })}
       </div>
 
-      <div className={styles.composer}>
-        <AutoGrowTextarea
-          value={activeThread?.id ? getDraft(activeThread?.id) : ""}
-          onChange={(v: string) => activeThread.id && setDraft(activeThread.id, v)}
-          placeholder="Escribe un mensaje…"
-          minRows={1}
-          maxRows={5}
-          growsUp
-          onEnter={handleSend}
-        />
-        <button onClick={handleSend} title="Enviar mensaje">
-          Enviar
-        </button>
+      <div className={styles.composer} aria-disabled={composeLocked ? "true" : "false"}>
+          <AutoGrowTextarea
+            value={activeThread?.id ? getDraft(activeThread?.id) : ""}
+            onChange={(v: string) => activeThread.id && setDraft(activeThread.id, v)}
+            placeholder={composeLocked ? "Creando hilo… espera un momento" : "Escribe un mensaje…"}
+            minRows={1}
+            maxRows={5}
+            growsUp
+            onEnter={composeLocked ? undefined : handleSend}
+          />
+          <button
+            onClick={handleSend}
+            disabled={composeLocked}
+            aria-busy={composeLocked}
+            className={composeLocked ? `${styles.buttonLoading}` : undefined}
+            title={composeLocked ? "Guardando el nuevo hilo…" : "Enviar mensaje"}
+          >
+            {composeLocked ? <span className={styles.spinner} aria-hidden /> : "Enviar"}
+          </button>
       </div>
 
       <div className={styles.changeStatusBtnWrapper}>
         <button
-          className={`${styles.changeStatusBtn} ${
-            styles[`${activeThread.status === "corrected" ? "orange" : "green"}`]
+          className={`${styles.changeStatusBtn} ${styles[`${colorByNextStatus(activeThread.status)}`]} ${
+            statusLocked ? styles.buttonLoading : ""
           }`}
-          onClick={() => {
-            try {
-              onToggleThreadStatus(activeThread.id, nextStatus(activeThread.status));
-            } catch (e) {
-              toastError(e, {
-                title: "No se pudo cambiar el estado del hilo",
-                fallback: "Vuelve a intentarlo en unos segundos.",
-              });
-            }
-          }}
-          title={nextStatus(activeThread.status) === "reopened" ? "Reabrir hilo" : "Validar correcciones"}
+          onClick={() => onToggleThreadStatus(activeThread.id, nextStatus(activeThread.status))}
+          title={toggleLabel(activeThread.status)}
+          disabled={statusLocked}
+          aria-busy={statusLocked}
         >
-          {nextStatus(activeThread.status) === "reopened" ? "Reabrir hilo" : "Validar correcciones"}
+          {statusLocked ? (
+            <>
+              <span className={styles.spinner} aria-hidden /> Actualizando…
+            </>
+          ) : (
+            toggleLabel(activeThread.status)
+          )}
         </button>
 
         <button
           title="Borrar hilo"
           className={`${styles.red} ${styles.deleteThreadBtn}`}
-          onClick={() => {
-            try {
-              onDeleteThread(activeThread.id);
-            } catch (e) {
-              toastError(e, {
-                title: "No se pudo borrar el hilo",
-                fallback: "Comprueba tu conexión e inténtalo de nuevo.",
-              });
-            }
-          }}
+          onClick={() => onDeleteThread(activeThread.id)}
         >
           🗑
         </button>

@@ -197,6 +197,7 @@ export default function SidePanel({
                   onDeleteThread={onDeleteThread}
                   composeLocked={composeLocked}
                   statusLocked={statusLocked}
+                  
                 />
               )}
             </div>
