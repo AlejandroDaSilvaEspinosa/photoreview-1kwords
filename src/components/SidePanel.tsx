@@ -1,9 +1,17 @@
+// src/components/SidePanel.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import styles from "./SidePanel.module.css";
 import ThreadChat from "./ThreadChat";
 import type { Thread, ThreadStatus } from "@/types/review";
+import { emitToast } from "@/hooks/useToast";
+import { localGet, localSet, toastStorageOnce } from "@/lib/storage";
+
+/**
+ * SidePanel (refactor a helpers de storage)
+ * - Reemplaza acceso directo a localStorage por utilidades con toasts deduplicados.
+ */
 
 type Props = {
   name: string;
@@ -16,7 +24,10 @@ type Props = {
   onAddThreadMessage: (threadId: number, text: string) => Promise<void> | void;
   onDeleteThread: (id: number) => void;
   onFocusThread: (id: number | null) => void;
-  onToggleThreadStatus: (threadId: number, next: ThreadStatus) => Promise<void> | void;
+  onToggleThreadStatus: (
+    threadId: number,
+    next: ThreadStatus
+  ) => Promise<void> | void;
 
   onlineUsers?: { username: string }[];
 
@@ -27,14 +38,6 @@ type Props = {
 
   loading?: boolean;
   initialCollapsed?: boolean;
-
-  /** ⛔ Bloquea el envío en el chat del hilo activo */
-  composeLocked?: boolean;
-  /** ⛔ Bloquea el botón de cambiar estado del hilo activo */
-  statusLocked?: boolean;
-
-  /** 🚩 Epoch que incrementa cuando llegan datos fresh (se pasa a ThreadChat) */
-  dataEpoch?: number;
 };
 
 const LS_KEY = "photoreview:sidepanel:collapsed";
@@ -57,30 +60,41 @@ export default function SidePanel({
   totalImages,
   loading = false,
   initialCollapsed = false,
-  composeLocked = false,
-  statusLocked = false,
-  dataEpoch = 0,
 }: Props) {
   const [collapsed, setCollapsed] = useState<boolean>(initialCollapsed);
 
   useEffect(() => {
     try {
-      const v = localStorage.getItem(LS_KEY);
+      const v = localGet(LS_KEY);
       if (v != null) setCollapsed(v === "1");
-    } catch {}
+    } catch {
+      toastStorageOnce("leer la preferencia del panel");
+    }
   }, []);
   useEffect(() => {
-    try { localStorage.setItem(LS_KEY, collapsed ? "1" : "0"); } catch {}
+    try {
+      localSet(LS_KEY, collapsed ? "1" : "0");
+    } catch {
+      toastStorageOnce("guardar la preferencia del panel");
+    }
   }, [collapsed]);
 
   const selected = useMemo(
-    () => (activeThreadId != null ? threads.find((t) => t.id === activeThreadId) ?? null : null),
+    () =>
+      activeThreadId != null
+        ? threads.find((t) => t.id === activeThreadId) ?? null
+        : null,
     [activeThreadId, threads]
   );
 
   const hasOpenThreads = useMemo(
     () => threads.some((t) => t.status === "pending" || t.status === "reopened"),
     [threads]
+  );
+
+  const threadIndex = useMemo(
+    () => (activeThreadId ? threads.findIndex((t) => t.id === activeThreadId) + 1 : 0),
+    [threads, activeThreadId]
   );
 
   return (
@@ -173,15 +187,11 @@ export default function SidePanel({
               ) : (
                 <ThreadChat
                   activeThread={selected}
-                  threads={threads}
+                  threadIndex={threadIndex}
                   onAddThreadMessage={onAddThreadMessage}
                   onFocusThread={onFocusThread}
                   onToggleThreadStatus={onToggleThreadStatus}
                   onDeleteThread={onDeleteThread}
-                  composeLocked={composeLocked}
-                  statusLocked={statusLocked}
-                  /** 🚩 prop que permite a ThreadChat actualizar el separador una sola vez al llegar fresh */
-                  dataEpoch={dataEpoch}
                 />
               )}
             </div>

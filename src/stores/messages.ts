@@ -1,8 +1,13 @@
+// src/stores/messages.ts
 "use client";
 
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import type { MessageRow } from "@/types/review";
+import { emitToast, toastError } from "@/hooks/useToast";
+import { createVersionedCacheNS } from "@/lib/cache/versioned";
+import { makeSessionFlag } from "@/lib/session/flags";
+import { preferByRank } from "@/lib/common/rank";
 
 /* =========================
    Tipos y utilidades base
@@ -24,46 +29,31 @@ const DELIVERY_RANK: Record<LocalDelivery, number> = {
   read: 3,
 };
 
-const preferHigher = (a?: LocalDelivery, b?: LocalDelivery): LocalDelivery => {
-  const aa = (a ?? "sent") as LocalDelivery;
-  const bb = (b ?? "sent") as LocalDelivery;
-  return DELIVERY_RANK[aa] >= DELIVERY_RANK[bb] ? aa : bb;
-};
-
-const sortByCreatedAt = (a: Msg, b: Msg) =>
-  (a.created_at || "").localeCompare(b.created_at || "");
+const preferHigher = preferByRank<LocalDelivery>(DELIVERY_RANK);
+const sortByCreatedAt = (a: Msg, b: Msg) => (a.created_at || "").localeCompare(b.created_at || "");
 
 /* =========================
-   Cache SWR (localStorage)
+   Cache SWR (localStorage) por thread
    ========================= */
 
 const MSGS_CACHE_VER = 2;
-const msgsCacheKey = (threadId: number) => `rev_msgs:v${MSGS_CACHE_VER}:${threadId}`;
-type MessagesCachePayload = { v: number; at: number; rows: Msg[] };
-
-const safeParse = <T,>(raw: string | null): T | null => {
-  if (!raw) return null;
-  try { return JSON.parse(raw) as T; } catch { return null; }
-};
+const msgsCache = createVersionedCacheNS<{ rows: Msg[] }>("rev_msgs", MSGS_CACHE_VER);
 
 const loadMessagesCache = (threadId: number): Msg[] | null => {
   if (typeof window === "undefined") return null;
-  const payload = safeParse<MessagesCachePayload>(localStorage.getItem(msgsCacheKey(threadId)));
+  const payload = msgsCache.load(String(threadId));
   return payload?.rows ?? null;
 };
 
 const saveMessagesCache = (threadId: number, rows: Msg[]) => {
   if (typeof window === "undefined") return;
-  try {
-    const rowsStable = rows.filter((m) => (m.id ?? -1) >= 0);
-    const payload: MessagesCachePayload = { v: MSGS_CACHE_VER, at: Date.now(), rows: rowsStable };
-    localStorage.setItem(msgsCacheKey(threadId), JSON.stringify(payload));
-  } catch {}
+  const rowsStable = rows.filter((m) => (m.id ?? -1) >= 0);
+  msgsCache.save(String(threadId), { rows: rowsStable });
 };
 
 const clearMessagesCache = (threadId: number) => {
   if (typeof window === "undefined") return;
-  try { localStorage.removeItem(msgsCacheKey(threadId)); } catch {}
+  msgsCache.clear(String(threadId));
 };
 
 export const messagesCache = { load: loadMessagesCache, save: saveMessagesCache, clear: clearMessagesCache };
@@ -96,12 +86,12 @@ type Actions = {
   upsertReceipt: (messageId: number, userId: string, readAt?: string | null) => void;
   moveThreadMessages: (fromThreadId: number, toThreadId: number) => void;
 
-  /** Marca localmente delivered si están en 'sent' y son ajenos/no-sistema */
   markDeliveredLocalIfSent: (messageIds: number[]) => void;
 
-  /** Compat: devuelve estado rápido de un mensaje */
   quickStateByMessageId: (id: number) => QuickState;
 };
+
+const readFlag = makeSessionFlag("ack:read:v1");
 
 export const useMessagesStore = create<MessagesStoreState & Actions>()(
   subscribeWithSelector((set, get) => ({
@@ -114,31 +104,42 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
 
     setForThread: (threadId, rows) =>
       set((s) => {
+        const prevList = s.byThread[threadId] || [];
+        const prevById = new Map<number, Msg>();
+        for (const m of prevList) if (m.id != null) prevById.set(m.id, m);
+
         const pend = new Map(s.pendingReceipts);
         const selfId = s.selfAuthId;
 
         const list = [...rows]
-          .map((m) => {
+          .map((incoming) => {
+            const prev = incoming.id != null ? prevById.get(incoming.id) : null;
+
+            const incomingLD = (incoming.meta?.localDelivery ?? "sent") as LocalDelivery;
+            const prevLD = (prev?.meta?.localDelivery ?? "sent") as LocalDelivery;
+            const mergedLD = preferHigher(prevLD, incomingLD);
+
             const base: Msg = {
-              ...m,
+              ...incoming,
               thread_id: threadId,
               meta: {
-                ...(m.meta || {}),
-                localDelivery: (m.meta?.localDelivery ?? "sent") as LocalDelivery,
+                ...(incoming.meta || {}),
+                localDelivery: mergedLD,
+                isMine: prev?.meta?.isMine ?? incoming.meta?.isMine ?? undefined,
               },
             };
 
-            if (m.id != null) {
-              const pr = pend.get(m.id);
+            if (incoming.id != null) {
+              const pr = pend.get(incoming.id);
               if (pr && selfId) {
-                const isMine = m.created_by === selfId;
+                const isMine = incoming.created_by === selfId;
                 const applicable = isMine ? !pr.fromSelf : pr.fromSelf;
                 if (applicable) {
                   base.meta!.localDelivery = preferHigher(
-                    base.meta!.localDelivery as LocalDelivery,
+                    (base.meta!.localDelivery ?? "sent") as LocalDelivery,
                     pr.status
                   );
-                  pend.delete(m.id);
+                  pend.delete(incoming.id);
                 }
               }
             }
@@ -282,9 +283,6 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
         return { byThread: { ...s.byThread, [threadId]: copy }, messageToThread: map, pendingReceipts: pend };
       }),
 
-    /* 🔴 IMPORTANTE: marcar leído SIN mutar el estado local del receptor.
-       Solo POST + dedupe por sesión para minimizar renders/coste.
-    */
     markThreadRead: async (threadId) => {
       const { byThread, selfAuthId } = get();
       if (!selfAuthId) return;
@@ -292,8 +290,6 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
       const list = byThread[threadId] || [];
       if (!list.length) return;
 
-      // filtra mensajes ajenos, no-sistema, con id válido,
-      // que NO estén "sending" y que NO hayan sido enviados ya en esta sesión
       const toMark = list
         .filter((m) => {
           const isSystem = (m as any).is_system;
@@ -302,8 +298,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
           if (m.created_by === selfAuthId) return false;
           const ld = (m.meta?.localDelivery ?? "sent") as LocalDelivery;
           if (ld === "sending") return false;
-          // dedupe por sesión
-          return !readInSession(m.id as number);
+          return !readFlag.has(m.id as number);
         })
         .map((m) => m.id as number);
 
@@ -314,10 +309,11 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ messageIds: toMark, mark: "read" }),
-        }).catch(() => {});
+        }).catch((e) => {
+          toastError(e, { title: "No se pudo confirmar lectura", fallback: "Seguiremos intentando más tarde." });
+        });
       } finally {
-        // Marca en sessionStorage para no reenviar en esta sesión.
-        for (const id of toMark) markReadSession(id);
+        for (const id of toMark) readFlag.mark(id);
       }
     },
 
@@ -343,8 +339,8 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
 
         if (idx >= 0) {
           const copy = cleaned.slice();
-          const prevLD = copy[idx].meta?.localDelivery as LocalDelivery | undefined;
-          const nextLD: LocalDelivery = prevLD === "sending" ? "sent" : (prevLD ?? "sent");
+          const prevLD = (copy[idx].meta?.localDelivery ?? "sent") as LocalDelivery;
+          const baseLD: LocalDelivery = prevLD === "sending" ? "sent" : prevLD;
 
           copy[idx] = {
             ...copy[idx],
@@ -352,7 +348,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
             meta: {
               ...(copy[idx].meta || {}),
               ...(preservedMeta || {}),
-              localDelivery: nextLD,
+              localDelivery: baseLD,
               isMine: (copy[idx].meta as any)?.isMine ?? (preservedMeta?.isMine ?? false),
             },
           };
@@ -441,7 +437,6 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
             }
           }
         }
-
         if (!threadId) {
           const pend = new Map(s.pendingReceipts);
           const prev = pend.get(messageId);
@@ -464,7 +459,6 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
         const msg = copy[idx];
         const isMine = !!selfId && msg.created_by === selfId;
 
-        // aplica sólo si el recibo viene del otro “lado”
         if ((isMine && fromSelf) || (!isMine && !fromSelf)) return {};
 
         const prevLD = (msg.meta?.localDelivery ?? "sent") as LocalDelivery;
@@ -544,7 +538,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
 );
 
 /* ===================================================
-   ACK delivered — batch + dedupe + sessionStorage
+   Utilidades de estado rápido
    =================================================== */
 
 export type QuickState = "unknown" | "system" | "mine" | "read" | "delivered" | "sent";
@@ -562,114 +556,3 @@ function internalQuickState(s: MessagesStoreState, id: number): QuickState {
   if (ld === "delivered") return "delivered";
   return "sent";
 }
-
-const SS_KEY = (id: number) => `ack:delivered:v1:${id}`;
-const inSession = (id: number) => {
-  if (typeof sessionStorage === "undefined") return false;
-  try { return sessionStorage.getItem(SS_KEY(id)) != null; } catch { return false; }
-};
-const markSession = (id: number) => {
-  if (typeof sessionStorage === "undefined") return;
-  try { sessionStorage.setItem(SS_KEY(id), String(Date.now())); } catch {}
-};
-
-/* === Dedupe para READ por sesión === */
-const READ_SS_KEY = (id: number) => `ack:read:v1:${id}`;
-const readInSession = (id: number) => {
-  if (typeof sessionStorage === "undefined") return false;
-  try { return sessionStorage.getItem(READ_SS_KEY(id)) != null; } catch { return false; }
-};
-const markReadSession = (id: number) => {
-  if (typeof sessionStorage === "undefined") return;
-  try { sessionStorage.setItem(READ_SS_KEY(id), String(Date.now())); } catch {}
-};
-
-const runtimeDedup = new Set<number>();
-const pend = new Set<number>();
-let timer: number | null = null;
-let retryMs = 800;
-const RETRY_MAX = 15000;
-
-function schedule() {
-  if (timer != null) return;
-  timer = window.setTimeout(flushNow, 450) as unknown as number;
-}
-
-async function flushNow() {
-  const ids = Array.from(pend);
-  if (timer) { clearTimeout(timer); timer = null; }
-  pend.clear();
-  if (!ids.length) return;
-
-  // Solo 'sent' y no repetidos de sesión
-  const s = useMessagesStore.getState();
-  const eligible = ids.filter((id) => !inSession(id) && internalQuickState(s, id) === "sent");
-  if (!eligible.length) { runtimeDedup.clear(); return; }
-
-  // Optimista local (solo delivered)
-  useMessagesStore.getState().markDeliveredLocalIfSent(eligible);
-
-  try {
-    const res = await fetch("/api/messages/receipts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messageIds: eligible, mark: "delivered" }),
-    });
-    if (!res.ok) throw new Error("failed");
-
-    for (const id of eligible) markSession(id);
-    runtimeDedup.clear();
-    retryMs = 800;
-  } catch {
-    // Reintenta sólo los que sigan en 'sent'
-    const s2 = useMessagesStore.getState();
-    for (const id of eligible) {
-      if (internalQuickState(s2, id) === "sent") pend.add(id);
-    }
-    runtimeDedup.clear();
-    timer = window.setTimeout(flushNow, retryMs) as unknown as number;
-    retryMs = Math.min(RETRY_MAX, Math.round(retryMs * 1.8));
-  }
-}
-
-function enqueue(ids: number | number[] | null | undefined) {
-  if (ids == null) return;
-  const arr = Array.isArray(ids) ? ids : [ids];
-  if (!arr.length) return;
-
-  const s = useMessagesStore.getState();
-  if (!s.selfAuthId) return; // aún no autenticado → no acks
-
-  for (const id of arr) {
-    if (typeof id !== "number" || id < 0) continue; // ignora optimistas/invalid
-    if (runtimeDedup.has(id)) continue;
-    runtimeDedup.add(id);
-    pend.add(id);
-  }
-  schedule();
-}
-
-function enqueueFromNotifications(rows: Array<{ type: string; message_id?: number | null }>) {
-  const ids = rows
-    .filter((n) => n?.type === "new_message" && typeof n.message_id === "number")
-    .map((n) => n.message_id!) as number[];
-  enqueue(ids);
-}
-
-// compat: singular
-function enqueueFromNotification(row: { type: string; message_id?: number | null } | null | undefined) {
-  if (!row || row.type !== "new_message" || typeof row.message_id !== "number") return;
-  enqueue(row.message_id);
-}
-
-function quickState(id: number): QuickState {
-  return internalQuickState(useMessagesStore.getState(), id);
-}
-
-export const deliveryAck = {
-  enqueue,
-  enqueueFromNotifications,   // array
-  enqueueFromNotification,    // singular (compat)
-  flushNow,
-  quickState,
-};

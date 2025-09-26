@@ -32,7 +32,7 @@
     position: relative;
     width: var(--toastW);
     height: var(--toastH);
-    padding: 12px 12px 10px 10px;
+    padding: 10px;
     background: var(--bg);
     color: var(--fg);
     border: 1px solid var(--border);
@@ -307,17 +307,14 @@
 
 /* layout con thumb a la izquierda */
 .toast {
-    display: grid;
-    grid-template-columns: 56px 1fr;
-    /* thumb + contenido */
-    grid-template-rows: auto;
+    display: flex;
     column-gap: 10px;
     align-items: start;
 }
 
 .thumb {
-    width: 56px;
-    height: 56px;
+    width: 86px;
+    height: 86px;
     object-fit: cover;
     border-radius: 8px;
     border: 1px solid var(--border, #2a2a2a);

@@ -1,13 +1,17 @@
-// ZoomOverlay.tsx 
-
+// src/components/images/ZoomOverlay.tsx
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Dispatch,SetStateAction } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import styles from "./ZoomOverlay.module.css";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
-import ThreadChat from "./ThreadChat";
-import { Thread, ThreadStatus } from "@/types/review";
+import ThreadChat from "../ThreadChat";
+import type { Thread, ThreadStatus } from "@/types/review";
+import {
+  colorByThreadStatus,
+  nextThreadStatus,
+  toggleThreadStatusLabel,
+} from "@/lib/ui/status";
 
 type Props = {
   src: string;
@@ -21,19 +25,13 @@ type Props = {
   onFocusThread: (id: number | null) => void;
   onAddThreadMessage: (threadId: number, text: string) => void;
   onToggleThreadStatus: (threadId: number, next: ThreadStatus) => void;
-  onDeleteThread: ( id: number) => void;
+  onDeleteThread: (id: number) => void;
   onClose: () => void;
 };
 
 type ToolMode = "pan" | "pin";
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
-const colorByStatus = (s: ThreadStatus) =>
-  s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : s === "deleted" ? "#666" : "#FF0040";
-const toggleLabel = (s: ThreadStatus) => (s === "corrected" ? "Reabrir" : "Corregido");
-const nextStatus = (s: ThreadStatus): ThreadStatus =>
-  s === "corrected" ? "reopened" : "corrected";
-
 const dist = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax - bx, ay - by);
 const mid = (ax: number, ay: number, bx: number, by: number) => ({ x: (ax + bx) / 2, y: (ay + by) / 2 });
 
@@ -50,7 +48,6 @@ export default function ZoomOverlay({
   onClose,
   initial,
   hideThreads,
-  currentUsername
 }: Props) {
   // Tamaño real de la imagen
   const [imgW, setImgW] = useState(0);
@@ -64,7 +61,7 @@ export default function ZoomOverlay({
 
   const [hasInitialized, setHasInitialized] = useState(false);
   const [tool, setTool] = useState<ToolMode>("pan");
-  const [isDragging, setIsDragging] = useState(false)
+  const [isDragging, setIsDragging] = useState(false);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; y: number; cxPx: number; cyPx: number } | null>(null);
@@ -213,10 +210,9 @@ export default function ZoomOverlay({
   // ====== inicialización ======
   useEffect(() => {
     const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden"; 
-
+    document.body.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = original; 
+      document.body.style.overflow = original;
     };
   }, []);
 
@@ -241,20 +237,11 @@ export default function ZoomOverlay({
   useEffect(() => {
     initializeView();
   }, [initializeView]);
-  
-function normalize(s?: string | null) {
-  return (s ?? "").trim().toLowerCase();
-}
-  const isMine = (author?: string | null) => {
-    const me = normalize(currentUsername);
-    const a = normalize(author);
-    return !a || (!!me && a === me);
-  };
 
   // ====== rueda (desktop) ======
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
-      e.stopPropagation()
+      e.stopPropagation();
       const rect = wrapRef.current?.getBoundingClientRect();
       if (!rect || !imgW || !imgH) return;
 
@@ -299,8 +286,8 @@ function normalize(s?: string | null) {
     (nx: number, ny: number) => {
       const halfW = Math.min(visWpx / 2, imgW / 2);
       const halfH = Math.min(visHpx / 2, imgH / 2);
-      const newCx = ((clamp(nx, halfW, imgW - halfW)) / imgW) * 100;
-      const newCy = ((clamp(ny, halfH, imgH - halfH)) / imgH) * 100;
+      const newCx = (clamp(nx, halfW, imgW - halfW) / imgW) * 100;
+      const newCy = (clamp(ny, halfH, imgH - halfH) / imgH) * 100;
       setCx(newCx);
       setCy(newCy);
     },
@@ -310,7 +297,7 @@ function normalize(s?: string | null) {
   const onMouseDown = (e: React.MouseEvent) => {
     if (tool !== "pan") return;
     movedRef.current = false;
-    setIsDragging(true)
+    setIsDragging(true);
     dragRef.current = { x: e.clientX, y: e.clientY, cxPx, cyPx };
   };
   const onMouseMove = (e: React.MouseEvent) => {
@@ -320,7 +307,7 @@ function normalize(s?: string | null) {
     setCenterToPx(dragRef.current.cxPx - dx, dragRef.current.cyPx - dy);
   };
   const endDrag = () => {
-    setIsDragging(false)
+    setIsDragging(false);
     dragRef.current = null;
   };
 
@@ -335,7 +322,7 @@ function normalize(s?: string | null) {
     const yImgPx = (e.clientY - rect.top - ty) / zoom;
     const xPct = clamp((xImgPx / imgW) * 100, 0, 100);
     const yPct = clamp((yImgPx / imgH) * 100, 0, 100);
-    setHideThreads(true)
+    setHideThreads(true);
     onCreateThreadAt(xPct, yPct);
   };
 
@@ -389,19 +376,25 @@ function normalize(s?: string | null) {
   );
 
   // ✅ minimapa táctil (1 dedo)
-  const onMiniTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const t = e.touches[0];
-    if (!t) return;
-    moveViewportToMiniPos(t.clientX, t.clientY);
-  }, [moveViewportToMiniPos]);
+  const onMiniTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      if (!t) return;
+      moveViewportToMiniPos(t.clientX, t.clientY);
+    },
+    [moveViewportToMiniPos]
+  );
 
-  const onMiniTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const t = e.touches[0];
-    if (!t) return;
-    moveViewportToMiniPos(t.clientX, t.clientY);
-  }, [moveViewportToMiniPos]);
+  const onMiniTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      if (!t) return;
+      moveViewportToMiniPos(t.clientX, t.clientY);
+    },
+    [moveViewportToMiniPos]
+  );
 
   const vpStyle = useMemo(() => {
     const effW = Math.min(viewWPercent, 100);
@@ -421,6 +414,11 @@ function normalize(s?: string | null) {
     [threads, activeThreadId]
   );
 
+  const threadIndex = useMemo(
+    () => (activeThreadId ? threads.findIndex((t) => t.id === activeThreadId) + 1 : 0),
+    [threads, activeThreadId]
+  );
+
   const fitToView = useCallback(() => {
     const z = getFitZoom();
     setZoom(z);
@@ -429,7 +427,6 @@ function normalize(s?: string | null) {
   }, [getFitZoom]);
 
   // ====== MOBILE: touch gestures ======
-
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {
       e.preventDefault(); // evita gestos nativos (junto con touch-action:none)
@@ -449,7 +446,6 @@ function normalize(s?: string | null) {
         gestureRef.current.tapX = x;
         gestureRef.current.tapY = y;
         gestureRef.current.moved = false;
-        // NO reseteamos didPinch aquí; se resetea al terminar completamente el gesto
       } else if (e.touches.length >= 2) {
         const t0 = e.touches[0];
         const t1 = e.touches[1];
@@ -496,7 +492,7 @@ function normalize(s?: string | null) {
           gestureRef.current.moved = true;
         }
       } else if (gestureRef.current.mode === "pinch" && e.touches.length >= 2) {
-        // Throttle a rAF para evitar jitter (amplía-reduce “raro”)
+        // Throttle a rAF para evitar jitter
         if (pinchRAF.current != null) return;
         pinchRAF.current = requestAnimationFrame(() => {
           pinchRAF.current = null;
@@ -580,7 +576,7 @@ function normalize(s?: string | null) {
       // actualizar memoria de tap y resetear estado de gesto
       tapRef.current = { t: now, x: gestureRef.current.tapX, y: gestureRef.current.tapY };
       gestureRef.current.mode = "none";
-      gestureRef.current.didPinch = false; // IMPORTANTE: permite doble-tap en el siguiente gesto
+      gestureRef.current.didPinch = false; // permite doble-tap en el siguiente gesto
       if (pinchRAF.current) {
         cancelAnimationFrame(pinchRAF.current);
         pinchRAF.current = null;
@@ -608,14 +604,14 @@ function normalize(s?: string | null) {
     setCenterToPx(px, py);
     onFocusThread(t.id);
   };
-  const [cursor, setCursor] = useState("")
 
+  const [cursor, setCursor] = useState("");
   useEffect(() => {
-    setCursor(tool === "pin" ? "crosshair" : dragRef.current ? "grabbing" : "grab")
-  },[isDragging,tool])
+    setCursor(tool === "pin" ? "crosshair" : dragRef.current ? "grabbing" : "grab");
+  }, [isDragging, tool]);
 
   return (
-    <div className={styles.overlay} role="dialog" aria-label="Zoom" style={{ touchAction: "none" }} >
+    <div className={styles.overlay} role="dialog" aria-label="Zoom" style={{ touchAction: "none" }}>
       <button className={styles.close} onClick={onClose} aria-label="Cerrar">
         ×
       </button>
@@ -641,11 +637,13 @@ function normalize(s?: string | null) {
           📍
         </button>
         <button
-          className={`${styles.toolBtn} ${hideThreads ?  "":styles.toolActive}`}
+          className={`${styles.toolBtn} ${hideThreads ? "" : styles.toolActive}`}
           aria-pressed={hideThreads}
           title={`${hideThreads ? "Ocultar" : "Mostrar"} hilos — T`}
-          onClick={()=> setHideThreads((v) => !v)}
-        >🧵</button>
+          onClick={() => setHideThreads((v) => !v)}
+        >
+          🧵
+        </button>
       </div>
 
       {/* Viewport principal */}
@@ -664,17 +662,16 @@ function normalize(s?: string | null) {
         onTouchEnd={onTouchEnd}
         onTouchCancel={onTouchEnd}
       >
-      <div
-        className={styles.stage}
-        style={{
-          width: imgW || "100%",
-          height: imgH || "100%",
-          transform: imgReady ? `translate(${tx}px, ${ty}px) scale(${zoom})` : "none",
-          cursor,
-          // pasa el zoom como variable CSS para que los dots lo compensen
-          ['--zoom' as any]: zoom,
-        }}
-      >
+        <div
+          className={styles.stage}
+          style={{
+            width: imgW || "100%",
+            height: imgH || "100%",
+            transform: imgReady ? `translate(${tx}px, ${ty}px) scale(${zoom})` : "none",
+            cursor,
+            ["--zoom" as any]: zoom, // variable CSS para compensar dots
+          }}
+        >
           {/* Imagen principal */}
           <div className={styles.imgWrap}>
             <ImageWithSkeleton
@@ -696,22 +693,22 @@ function normalize(s?: string | null) {
             />
           </div>
 
-          {!hideThreads && dots.map((d) => (
-            <button
-              key={d.id}
-              className={`${styles.dot} ${activeThreadId === d.id ? styles.dotActive : ""}`}
-              style={{ left: d.left, top: d.top, background: colorByStatus(d.status) }}
-              title={`Hilo #${d.num}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onFocusThread(d.id);
-              }}
-            >
-              <span className={styles.dotNum}>{d.num}</span>
-            </button>
-          ))}
+          {!hideThreads &&
+            dots.map((d) => (
+              <button
+                key={d.id}
+                className={`${styles.dot} ${activeThreadId === d.id ? styles.dotActive : ""}`}
+                style={{ left: d.left, top: d.top, background: colorByThreadStatus(d.status) }}
+                title={`Hilo #${d.num}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFocusThread(d.id);
+                }}
+              >
+                <span className={styles.dotNum}>{d.num}</span>
+              </button>
+            ))}
         </div>
-
       </div>
 
       {/* Sidebar */}
@@ -755,32 +752,39 @@ function normalize(s?: string | null) {
           </div>
 
           {activeThread ? (
-              <ThreadChat
-                activeThread={activeThread}
-                threads={threads}          
-                onAddThreadMessage={onAddThreadMessage}
-                onFocusThread={onFocusThread}
-                onToggleThreadStatus={onToggleThreadStatus}
-                onDeleteThread={onDeleteThread}
-              />
-            ): 
+            <ThreadChat
+              activeThread={activeThread}
+              threadIndex={threadIndex}
+              onAddThreadMessage={onAddThreadMessage}
+              onFocusThread={onFocusThread}
+              onToggleThreadStatus={onToggleThreadStatus}
+              onDeleteThread={onDeleteThread}
+            />
+          ) : (
             <div className={styles.threadList}>
               <div className={styles.threadListTitle}>Hilos</div>
               <ul>
                 {threads.map((t, i) => (
-                  <li key={t.id} className={`${styles.threadRow} ${activeThreadId === t.id ? styles.threadRowActive : ""}`}>
+                  <li
+                    key={t.id}
+                    className={`${styles.threadRow} ${activeThreadId === t.id ? styles.threadRowActive : ""}`}
+                  >
                     <button className={styles.threadRowMain} onClick={() => centerToThread(t)}>
-                      <span className={styles.dotMini} style={{ background: colorByStatus(t.status) }} />
+                      <span className={styles.dotMini} style={{ background: colorByThreadStatus(t.status) }} />
                       <span className={styles.threadName}>Hilo #{i + 1}</span>
                     </button>
-                    <button className={styles.stateBtn} onClick={() => onToggleThreadStatus(t.id, nextStatus(t.status))} title={toggleLabel(t.status)}>
-                      {toggleLabel(t.status)}
+                    <button
+                      className={styles.stateBtn}
+                      onClick={() => onToggleThreadStatus(t.id, nextThreadStatus(t.status))}
+                      title={toggleThreadStatusLabel(t.status)}
+                    >
+                      {toggleThreadStatusLabel(t.status)}
                     </button>
                   </li>
                 ))}
               </ul>
             </div>
-            }
+          )}
         </div>
       </div>
     </div>

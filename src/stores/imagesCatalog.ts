@@ -2,6 +2,7 @@
 "use client";
 
 import { create } from "zustand";
+import { createVersionedCache } from "@/lib/cache/versioned";
 
 type ThumbInfo = {
   thumbnailUrl: string;
@@ -18,7 +19,11 @@ type State = {
 type Actions = {
   hydrateFromSkus: (skus: SkuLike[]) => void;
   thumbOf: (sku: string | null | undefined, imageName: string | null | undefined) => string | undefined;
+  hydrateFromCacheIfEmpty: () => void;
+  clearCache: () => void;
 };
+
+const cache = createVersionedCache<{ bySku: Record<string, Record<string, ThumbInfo>> }>("rev_img_catalog", 1);
 
 export const useImagesCatalogStore = create<State & Actions>()((set, get) => ({
   bySku: {},
@@ -40,10 +45,29 @@ export const useImagesCatalogStore = create<State & Actions>()((set, get) => ({
       next[s.sku] = m;
     }
     set({ bySku: next });
+    cache.save({ bySku: next });
   },
 
   thumbOf: (sku, imageName) => {
     if (!sku || !imageName) return undefined;
     return get().bySku[sku]?.[imageName]?.thumbnailUrl;
   },
+
+  hydrateFromCacheIfEmpty: () => {
+    const now = get();
+    if (Object.keys(now.bySku).length) return;
+    const payload = cache.load();
+    if (!payload) return;
+    set({ bySku: payload.bySku });
+  },
+
+  clearCache: () => {
+    cache.clear();
+  },
 }));
+
+export const imagesCatalogCache = {
+  load: () => cache.load()?.bySku ?? {},
+  save: (bySku: Record<string, Record<string, ThumbInfo>>) => cache.save({ bySku }),
+  clear: () => cache.clear(),
+};

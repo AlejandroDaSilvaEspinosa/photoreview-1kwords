@@ -2,17 +2,45 @@
 "use client";
 
 import { useMessagesStore } from "@/stores/messages";
-
-type LD = "sending" | "sent" | "delivered" | "read";
+import { emitToast } from "@/hooks/useToast";
 
 /**
- * ACK de "delivered" centralizado, con:
- * - Queue Set<number> (message_id)
- * - De-dup por sesión (sessionStorage)
- * - Revisión O(1) de estado local (indexById en messages store)
+ * DEV NOTES (entrega "delivered"):
+ * - Solo marcamos "delivered" para MENSAJES AJENOS y visibles (yo receptor).
+ * - Para mis mensajes, el "delivered/read" lo determina el otro lado (sus recibos).
+ * - Dedupe por sesión (sessionStorage) para no re-POSTear tras refresh.
+ * - Nunca degradamos LD: si localmente ya es delivered/read no hacemos nada.
  */
+
+type LD = "sending" | "sent" | "delivered" | "read";
 const SENT_KEY = "rev:ack:delivered:v1";
-const MAX_SENT_MEMORY = 5000; // limitamos persistencia para no crecer sin control
+const MAX_SENT_MEMORY = 5000;
+
+// 🛟 Evitar spam de toasts por almacenamiento
+let storageWarned = false;
+const toastStorageOnce = (action: string) => {
+  if (storageWarned) return;
+  storageWarned = true;
+  emitToast({
+    variant: "warning",
+    title: "Almacenamiento limitado",
+    description: `No se pudo ${action}. Algunas confirmaciones podrían repetirse o no persistir.`,
+    durationMs: 7000,
+  });
+};
+
+// 🛟 Evitar spam por fallos de flush
+let flushWarned = false;
+const toastFlushOnce = () => {
+  if (flushWarned) return;
+  flushWarned = true;
+  emitToast({
+    variant: "warning",
+    title: "Problema al confirmar entregas",
+    description: "No se pudieron marcar algunas entregas. Reintentaremos automáticamente.",
+    durationMs: 6000,
+  });
+};
 
 class DeliveryAck {
   private uid: string | null = null;
@@ -29,7 +57,9 @@ class DeliveryAck {
           const arr: number[] = JSON.parse(raw);
           for (const id of arr) this.sent.add(id);
         }
-      } catch {}
+      } catch (e) {
+        toastStorageOnce("leer la memoria de entregas de la sesión");
+      }
     }
   }
 
@@ -38,41 +68,37 @@ class DeliveryAck {
     return useMessagesStore.getState().quickStateByMessageId(id);
   }
 
-  /** Almacena en sessionStorage (con límite) */
+  /** Persistencia con límite */
   private persistSent() {
     try {
       const arr = Array.from(this.sent);
       const slice = arr.length > MAX_SENT_MEMORY ? arr.slice(arr.length - MAX_SENT_MEMORY) : arr;
       sessionStorage.setItem(SENT_KEY, JSON.stringify(slice));
-    } catch {}
+    } catch (e) {
+      toastStorageOnce("guardar la memoria de entregas");
+    }
   }
 
-  /** Añade desde notificación (solo tipo new_message con message_id) */
   enqueueFromNotification(messageId: number | null | undefined) {
     if (!this.uid || !messageId) return;
-
-    // ya enviado en esta sesión → no repetir
     if (this.sent.has(messageId)) return;
 
     const { ld, isMine } = this.quickState(messageId);
-
-    // nunca marcamos "delivered" para mensajes propios
+    // Nunca marcamos delivered para mensajes propios
     if (isMine) {
       this.sent.add(messageId);
       return;
     }
-    // si ya está delivered/read localmente → evita red y marca sent-set
+    // Si ya está delivered/read localmente → evita red y marca enviado en sesión
     if (ld === "delivered" || ld === "read") {
       this.sent.add(messageId);
       return;
     }
 
-    // casos "sent", "sending" o desconocido (null) → encolar
     this.queue.add(messageId);
     this.schedule();
   }
 
-  /** Borra timer si existe */
   private clearTimer() {
     if (this.flushTimer != null) {
       clearTimeout(this.flushTimer);
@@ -86,18 +112,17 @@ class DeliveryAck {
     this.flushTimer = window.setTimeout(() => this.flush(), 200) as unknown as number;
   }
 
-  /** Intento de envío batched (con nuevo filtrado previo) */
+  /** Intento de envío batched (con filtrado final) */
   async flush() {
     this.clearTimer();
     if (!this.uid || !this.queue.size) return;
 
-    // En segundo plano no hacemos trabajo: cuando se haga visible, reintentará
-    if (document.visibilityState !== "visible") {
+    // No trabajamos en background: reprogramamos cuando la página sea visible
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
       this.schedule();
       return;
     }
 
-    // Filtrado final: evita duplicar y evita los ya delivered/read
     const ids = Array.from(this.queue).filter((id) => {
       if (this.sent.has(id)) {
         this.queue.delete(id);
@@ -134,14 +159,15 @@ class DeliveryAck {
         this.queue.delete(id);
       });
       this.persistSent();
-    } catch {
+    } catch (_e) {
       // error → se quedan en queue para reintentar
       this.schedule();
+      toastFlushOnce();
     }
   }
 
   onVisibilityOrOnline() {
-    if (document.visibilityState === "visible") this.schedule();
+    if (typeof document !== "undefined" && document.visibilityState === "visible") this.schedule();
   }
 
   reset() {

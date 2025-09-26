@@ -1,27 +1,41 @@
+// src/components/Notifications.tsx
 "use client";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format } from "timeago.js";
 import "@/lib/timeago";
 import styles from "./Notifications.module.css";
 import { useWireNotificationsRealtime } from "@/lib/realtime/useWireNotificationsRealtime";
-import { useNotificationsStore, type NotificationRow } from "@/stores/notifications";
+import {
+  useNotificationsStore,
+  type NotificationRow,
+} from "@/stores/notifications";
 import { presentNotification } from "@/lib/notifications/presenter";
 import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
 
 const PAGE_SIZE = 30;
 
-export default function Notifications({ onOpenSku, initial }: { onOpenSku: (sku: string) => void; initial?: { items: NotificationRow[]; unseen?: number } | null; }) {
+export default function Notifications({
+  onOpenSku,
+  initial,
+}: {
+  onOpenSku: (sku: string) => void;
+  initial?: { items: NotificationRow[]; unseen?: number } | null;
+}) {
   useWireNotificationsRealtime({ initial, prefetchFromApi: !initial, limit: PAGE_SIZE });
 
   const [open, setOpen] = useState(false);
-  const items  = useNotificationsStore((s) => s.items);
+  const items = useNotificationsStore((s) => s.items);
   const unseen = useNotificationsStore((s) => s.unseen);
   const markViewedLocal = useNotificationsStore((s) => s.markViewedLocal);
   const appendOlder = useNotificationsStore((s) => s.appendOlder);
 
   const hasBadge = unseen > 0;
-  const currentCursor = useMemo(() => (items.length ? items[items.length - 1].created_at : null), [items]);
+  const currentCursor = useMemo(
+    () => (items.length ? items[items.length - 1].created_at : null),
+    [items]
+  );
 
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -31,7 +45,11 @@ export default function Notifications({ onOpenSku, initial }: { onOpenSku: (sku:
     const ids = items.filter((n) => !n.viewed).map((n) => n.id);
     if (!ids.length) return;
     markViewedLocal(ids);
-    fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }).catch(() => {});
+    fetch("/api/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    }).catch(() => {});
   }, [open, items, markViewedLocal]);
 
   const loadMore = async () => {
@@ -57,9 +75,13 @@ export default function Notifications({ onOpenSku, initial }: { onOpenSku: (sku:
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!open) return;
-    const container = panelRef.current, sentinel = sentinelRef.current;
+    const container = panelRef.current,
+      sentinel = sentinelRef.current;
     if (!container || !sentinel) return;
-    const io = new IntersectionObserver((entries) => entries.forEach(e => e.isIntersecting && loadMore()), { root: container, rootMargin: "100px", threshold: 0 });
+    const io = new IntersectionObserver(
+      (entries) => entries.forEach((e) => e.isIntersecting && loadMore()),
+      { root: container, rootMargin: "100px", threshold: 0 }
+    );
     io.observe(sentinel);
     return () => io.disconnect();
   }, [open, items.length, currentCursor, hasMore, loadingMore]);
@@ -80,30 +102,60 @@ export default function Notifications({ onOpenSku, initial }: { onOpenSku: (sku:
 
   return (
     <div className={styles.wrap}>
-      <button className={styles.bellBtn} aria-label="Notificaciones" onClick={() => setOpen((o) => !o)}>
+      <button
+        className={styles.bellBtn}
+        aria-label="Notificaciones"
+        onClick={() => setOpen((o) => !o)}
+      >
         🔔 {hasBadge && <span className={styles.badge} />}
       </button>
 
       {open && (
-        <div className={styles.panel} onClick={(e) => e.stopPropagation()} ref={panelRef}>
+        <div
+          className={styles.panel}
+          onClick={(e) => e.stopPropagation()}
+          ref={panelRef}
+        >
           <div className={styles.panelHeader}>
             <strong>Notificaciones</strong>
-            <button className={styles.closeBtn} onClick={() => setOpen(false)}>×</button>
+            <button
+              className={styles.closeBtn}
+              onClick={() => setOpen(false)}
+            >
+              ×
+            </button>
           </div>
 
           <div className={styles.list}>
-            {items.length === 0 && <div className={styles.empty}>No hay notificaciones</div>}
+            {items.length === 0 && (
+              <div className={styles.empty}>No hay notificaciones</div>
+            )}
 
             {items.map((n) => {
               const pres = presentNotification(n);
               return (
-                <div key={n.id} className={styles.item} onClick={() => openTarget(n)}>
-                  {pres.thumbUrl ?  <Image width={56} height={56} className={styles.thumb} src={pres.thumbUrl} alt="" aria-hidden /> : null}
+                <div
+                  key={n.id}
+                  className={styles.item}
+                  onClick={() => openTarget(n)}
+                >
+                  {pres.thumbUrl ? (
+                    <Image
+                      width={64}
+                      height={64}
+                      className={styles.thumb}
+                      src={pres.thumbUrl}
+                      alt=""
+                      aria-hidden
+                    />
+                  ) : null}
 
                   <div className={styles.itemContent}>
                     <div className={styles.itemTop}>
                       <span className={styles.kind}>{pres.title}</span>
-                      <span className={styles.time}>{format(n.created_at, "es")}</span>
+                      <span className={styles.time}>
+                        {format(n.created_at, "es")}
+                      </span>
                     </div>
 
                     <div className={styles.line}>{pres.description}</div>
@@ -111,8 +163,18 @@ export default function Notifications({ onOpenSku, initial }: { onOpenSku: (sku:
                     {n.sku && (
                       <div className={styles.meta}>
                         SKU: <code>{n.sku}</code>
-                        {n.image_name ? <> — Imagen: <code>{n.image_name}</code></> : null}
-                        {typeof n.thread_id === "number" ? <> — Hilo: <code>#{n.thread_id}</code></> : null}
+                        {n.image_name ? (
+                          <>
+                            {" "}
+                            — Imagen: <code>{n.image_name}</code>
+                          </>
+                        ) : null}
+                        {typeof n.thread_id === "number" ? (
+                          <>
+                            {" "}
+                            — Hilo: <code>#{n.thread_id}</code>
+                          </>
+                        ) : null}
                       </div>
                     )}
                   </div>
@@ -123,7 +185,10 @@ export default function Notifications({ onOpenSku, initial }: { onOpenSku: (sku:
             <div ref={sentinelRef} />
             <div className={styles.footerState}>
               {loadingMore ? (
-                <div className={styles.loadingMore}><span className={styles.spinner} aria-hidden />Cargando más…</div>
+                <div className={styles.loadingMore}>
+                  <span className={styles.spinner} aria-hidden />
+                  Cargando más…
+                </div>
               ) : !hasMore && items.length > 0 ? (
                 <div className={styles.end}>Has llegado al final</div>
               ) : null}

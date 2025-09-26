@@ -1,7 +1,9 @@
+// src/stores/notifications.ts
 "use client";
 
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
+import { createVersionedCache } from "@/lib/cache/versioned";
 
 export type NotificationType =
   | "new_message"
@@ -15,7 +17,7 @@ export type NotificationRow = {
   user_id: string;
   author_id: string | null;
   author_username?: string | null;
-  type: "new_message" | "new_thread" | "thread_status_changed" | "image_status_changed" | "sku_status_changed";
+  type: NotificationType;
   sku: string | null;
   image_name: string | null;
   thread_id: number | null;
@@ -25,7 +27,6 @@ export type NotificationRow = {
   viewed: boolean;
   created_at: string;
 };
-
 
 type State = {
   items: NotificationRow[];
@@ -42,7 +43,6 @@ type Actions = {
   reset: () => void;
 };
 
-/* ---------- Helpers ---------- */
 const sortDesc = (a: NotificationRow, b: NotificationRow) =>
   (b.created_at || "").localeCompare(a.created_at || "") || (b.id - a.id);
 
@@ -56,43 +56,14 @@ const sameNotif = (a: NotificationRow, b: NotificationRow) =>
   a.sku === b.sku &&
   a.image_name === b.image_name &&
   a.thread_id === b.thread_id &&
-  a.message_id === b.message_id && // ⬅️ compara también el message_id
+  a.message_id === b.message_id &&
   a.created_at === b.created_at;
 
-const defer = (fn: () => void) => {
-  const ric = (globalThis as any)?.requestIdleCallback as undefined | ((cb: () => void) => any);
-  if (typeof ric === "function") ric(fn);
-  else setTimeout(fn, 0);
-};
+const defer = (fn: () => void) => (window as any)?.requestIdleCallback?.(fn) ?? setTimeout(fn, 0);
 
-/* ---------- Cache SWR (localStorage) ---------- */
-const NOTIFS_CACHE_VER = 3; // ⬆️ bump por nuevo campo message_id
-const NOTIFS_CACHE_KEY = `rev_notifs:v${NOTIFS_CACHE_VER}`;
-
-type NotifsCachePayload = { v: number; at: number; rows: NotificationRow[]; unseen: number };
-
-const safeParse = <T,>(raw: string | null): T | null => {
-  if (!raw) return null;
-  try { return JSON.parse(raw) as T; } catch { return null; }
-};
-
-const loadCache = (): { rows: NotificationRow[]; unseen: number } | null => {
-  if (typeof window === "undefined") return null;
-  const payload = safeParse<NotifsCachePayload>(localStorage.getItem(NOTIFS_CACHE_KEY));
-  if (!payload) return null;
-  return { rows: payload.rows ?? [], unseen: payload.unseen ?? 0 };
-};
-
-const saveCache = (rows: NotificationRow[], unseen: number) => {
-  if (typeof window === "undefined") return;
-  try {
-    const payload: NotifsCachePayload = { v: NOTIFS_CACHE_VER, at: Date.now(), rows, unseen };
-    localStorage.setItem(NOTIFS_CACHE_KEY, JSON.stringify(payload));
-  } catch {}
-};
-
-/* ---------- Store ---------- */
 const MAX_ITEMS = 1000;
+
+const cache = createVersionedCache<{ rows: NotificationRow[]; unseen: number }>("rev_notifs", 3);
 
 export const useNotificationsStore = create<State & Actions>()(
   subscribeWithSelector((set, get) => ({
@@ -116,7 +87,7 @@ export const useNotificationsStore = create<State & Actions>()(
         }
       }
       if (!changed) {
-        saveCache(prev, typeof unseenArg === "number" ? unseenArg : sNow.unseen);
+        cache.save({ rows: prev, unseen: typeof unseenArg === "number" ? unseenArg : sNow.unseen });
         return;
       }
 
@@ -127,7 +98,7 @@ export const useNotificationsStore = create<State & Actions>()(
             typeof unseenArg === "number"
               ? unseenArg
               : items.filter((x) => !x.viewed).length;
-          saveCache(items, unseen);
+          cache.save({ rows: items, unseen });
           return { items, unseen };
         }, false);
       });
@@ -147,7 +118,7 @@ export const useNotificationsStore = create<State & Actions>()(
         if (!prev && !row.viewed) unseen += 1;
         if (prev && !prev.viewed && row.viewed) unseen = Math.max(0, unseen - 1);
 
-        saveCache(items, unseen);
+        cache.save({ rows: items, unseen });
         return { items, unseen };
       }),
 
@@ -162,7 +133,7 @@ export const useNotificationsStore = create<State & Actions>()(
         }
         const items = Array.from(map.values()).sort(sortDesc).slice(0, MAX_ITEMS);
         const unseen = items.filter((x) => !x.viewed).length;
-        saveCache(items, unseen);
+        cache.save({ rows: items, unseen });
         return { items, unseen };
       }),
 
@@ -176,15 +147,18 @@ export const useNotificationsStore = create<State & Actions>()(
           if (!n.viewed) unseen = Math.max(0, unseen - 1);
           return { ...n, viewed: true };
         });
-        saveCache(items, unseen);
+        cache.save({ rows: items, unseen });
         return { items, unseen };
       }),
 
     reset: () => {
-      saveCache([], 0);
+      cache.save({ rows: [], unseen: 0 });
       return { items: [], unseen: 0 };
     },
   }))
 );
 
-export const notificationsCache = { load: loadCache, save: saveCache };
+export const notificationsCache = {
+  load: () => cache.load() ?? { rows: [], unseen: 0 },
+  save: (rows: NotificationRow[], unseen: number) => cache.save({ rows, unseen }),
+};
