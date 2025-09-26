@@ -316,16 +316,12 @@ function ThreadChatInner({
             (((m.meta?.localDelivery as DeliveryState | undefined) ?? "sent") !== "read")
         );
         if (firstNewUnread) {
-          // Si el usuario está leyendo al fondo, NO creamos divisor (convención UX)
-          const atBottom = isNearBottom(listRef.current);
-          if (!atBottom) {
             stickyRef.current = {
               cutoffId: (firstNewUnread.id as number) ?? null,
               // congelamos el contador del snapshot actual si existe; si no, al menos 1
               count: Math.max(computeSnap()?.count ?? 1, 1),
             };
             stickyLockedRef.current = true;
-          }
         }
       }
     }
