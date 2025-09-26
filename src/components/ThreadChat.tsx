@@ -11,42 +11,46 @@ import { toastError } from "@/hooks/useToast";
 
 type DeliveryState = "sending" | "sent" | "delivered" | "read";
 
-/* ========= UnreadDividerAlign (memo por hilo) ========= */
+/* ========= Utilidades scroll ========= */
+const NEAR_BOTTOM_PX = 48;
+function isNearBottom(el: HTMLDivElement | null, slackPx = NEAR_BOTTOM_PX) {
+  if (!el) return true;
+  const dist = el.scrollHeight - (el.scrollTop + el.clientHeight);
+  return dist <= slackPx;
+}
+
+/* ========= UnreadDividerAlign (alinear una vez por hilo/cutoff) ========= */
 const UnreadDividerAlign = React.memo(
   function UnreadDividerAlign({
     containerRef,
     label,
     threadId,
+    cutoffId,
     offsetPx = 16,
     behavior = "auto",
   }: {
     containerRef: React.RefObject<HTMLDivElement | null>;
     label: string;
     threadId: number;
+    cutoffId: number | null;
     offsetPx?: number;
     behavior?: ScrollBehavior;
   }) {
-    console.log("test")
     const sepRef = useRef<HTMLDivElement | null>(null);
-    const doneForThreadRef = useRef<{ id: number | null; done: boolean }>({
-      id: null,
-      done: false,
-    });
-    const raf1Ref = useRef<number | null>(null);
-    const raf2Ref = useRef<number | null>(null);
+    const doneKeyRef = useRef<string>("");
 
     useEffect(() => {
-      if (doneForThreadRef.current.id !== threadId) {
-        doneForThreadRef.current = { id: threadId, done: false };
-      }
-      if (doneForThreadRef.current.done) return;
+      const key = `${threadId}:${cutoffId ?? "none"}`;
+      if (doneKeyRef.current === key) return;
+      doneKeyRef.current = key;
 
       const cont = containerRef.current;
       const el = sepRef.current;
       if (!cont || !el) return;
 
-      raf1Ref.current = requestAnimationFrame(() => {
-        raf2Ref.current = requestAnimationFrame(() => {
+      // doble rAF para asegurar layout estable
+      const r1 = requestAnimationFrame(() => {
+        const r2 = requestAnimationFrame(() => {
           const contRect = cont.getBoundingClientRect();
           const elRect = el.getBoundingClientRect();
           const delta = elRect.top - contRect.top - offsetPx;
@@ -54,21 +58,16 @@ const UnreadDividerAlign = React.memo(
             0,
             Math.min(cont.scrollHeight - cont.clientHeight, cont.scrollTop + delta)
           );
-
           if (typeof (cont as any).scrollTo === "function" && behavior) {
             (cont as any).scrollTo({ top: targetTop, behavior });
           } else {
             cont.scrollTop = targetTop;
           }
-          doneForThreadRef.current.done = true;
         });
+        return () => cancelAnimationFrame(r2);
       });
-
-      return () => {
-        if (raf1Ref.current) cancelAnimationFrame(raf1Ref.current);
-        if (raf2Ref.current) cancelAnimationFrame(raf2Ref.current);
-      };
-    }, [threadId, containerRef, offsetPx, behavior]);
+      return () => cancelAnimationFrame(r1);
+    }, [threadId, cutoffId, containerRef, offsetPx, behavior]);
 
     return (
       <div
@@ -85,7 +84,10 @@ const UnreadDividerAlign = React.memo(
       </div>
     );
   },
-  (prev, next) => prev.threadId === next.threadId
+  (prev, next) =>
+    prev.threadId === next.threadId &&
+    prev.cutoffId === next.cutoffId &&
+    prev.label === next.label
 );
 
 /* ================================ Props ================================ */
@@ -165,6 +167,7 @@ function ThreadChatInner({
     clearDraft(id);
     try {
       await onAddThreadMessage(id, draft);
+      // baja si el mensaje es mío
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const el = listRef.current;
@@ -204,30 +207,69 @@ function ThreadChatInner({
   const timeHHmm = (d: Date) =>
     d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", hour12: false });
 
-  // Snapshot de no-leídos
+  // =================== Modelo sticky/unread ===================
   type UnreadSnap = {
     tid: number;
-    cutoffId: number | null;
-    count: number;
-    idsToRead: number[];
+    cutoffId: number | null; // primer no leído
+    count: number; // total no leídos actuales
+    idsToRead: number[]; // ids a marcar leído (se envían recibos)
   };
-  const [snap, setSnap] = useState<UnreadSnap | null>(null);
 
-  // Sticky por hilo
-  const stickyUnreadRef = useRef<{ cutoffId: number | null; count: number } | null>(null);
+  // Snapshot “vivo” (recalculado por lista)
+  const [snap, setSnap] = useState<UnreadSnap | null>(null);
+  // Sticky congelado por hilo (posición + contador)
+  const stickyRef = useRef<{ cutoffId: number | null; count: number } | null>(null);
   const stickyLockedRef = useRef<boolean>(false);
+  // “Hasta aquí visto” en el momento de crear el sticky o al entrar
   const lastSeenMessageIdRef = useRef<number | null>(null);
-  // Reset al cambiar de hilo
+
+  // reset al cambiar de hilo
   useEffect(() => {
     setSnap(null);
     prevDeliveryRef.current.clear();
-    stickyUnreadRef.current = null;
+    stickyRef.current = null;
     stickyLockedRef.current = false;
-    // Agregar: resetear el tracking de mensajes vistos
-    lastSeenMessageIdRef.current = null;
-  }, [activeThread?.id]);
 
+    const list = activeThread?.messages ?? [];
+    if (!list.length) {
+      lastSeenMessageIdRef.current = null;
+      return;
+    }
 
+    // 1) Si ya hay no-leídos al entrar → congela ahí
+    const firstUnread = list.find(
+      (m) =>
+        !m.isSystem &&
+        !isMine(m) &&
+        (((m.meta?.localDelivery as DeliveryState | undefined) ?? "sent") !== "read")
+    );
+    if (firstUnread) {
+      stickyRef.current = {
+        cutoffId: (firstUnread.id as number) ?? null,
+        count: list.reduce((acc, m) => {
+          const sys =
+            !!m.isSystem ||
+            (m.createdByName || "").toLowerCase() === "system" ||
+            (m.createdByName || "").toLowerCase() === "sistema";
+          if (sys) return acc;
+          if (isMine(m)) return acc;
+          const d = (m.meta?.localDelivery as DeliveryState | undefined) ?? "sent";
+          return d !== "read" ? acc + 1 : acc;
+        }, 0),
+      };
+      stickyLockedRef.current = true;
+
+      // Último visto = mensaje anterior al cutoff (si existe)
+      const idx = list.findIndex((mm) => mm.id === firstUnread.id);
+      lastSeenMessageIdRef.current = idx > 0 ? (list[idx - 1].id as number) : null;
+    } else {
+      // 2) No hay no-leídos → recordamos el último id para anclar cuando lleguen nuevos
+      const last = list[list.length - 1];
+      lastSeenMessageIdRef.current = (last?.id as number) ?? null;
+    }
+  }, [activeThread?.id, isMine]);
+
+  // Recalcular snapshot vivo en cada cambio de mensajes
   const computeSnap = useCallback((): UnreadSnap | null => {
     const tid = activeThread?.id;
     const list = activeThread?.messages ?? [];
@@ -256,71 +298,43 @@ function ThreadChatInner({
   }, [activeThread?.id, activeThread?.messages, isMine]);
 
   useEffect(() => {
-    const s = computeSnap();
-    setSnap(s);
+    setSnap(computeSnap() ?? null);
 
-// Lógica mejorada para el sticky:
-  if (!stickyLockedRef.current && s && s.count > 0) {
-    // Primera vez que hay mensajes no leídos: congelar el divisor
-    stickyUnreadRef.current = {
-      cutoffId: s.cutoffId,
-      count: s.count
-    };
-    stickyLockedRef.current = true;
-    
-    // Marcar el último mensaje visto en este momento
-    const list = activeThread?.messages ?? [];
-    const lastSeenIdx = list.findIndex(m => m.id === s.cutoffId) - 1;
-    if (lastSeenIdx >= 0) {
-      lastSeenMessageIdRef.current = list[lastSeenIdx].id as number;
-    }
-  } else if (stickyLockedRef.current && s) {
-    // Ya hay un sticky congelado, pero verificar si hay NUEVOS mensajes no leídos
-    const list = activeThread?.messages ?? [];
-    const lastSeen = lastSeenMessageIdRef.current;
-    
-    if (lastSeen) {
-      // Buscar mensajes nuevos DESPUÉS del último visto
-      const lastSeenIdx = list.findIndex(m => m.id === lastSeen);
-      if (lastSeenIdx >= 0) {
-        let newUnreadCount = 0;
-        let newCutoffId = stickyUnreadRef.current?.cutoffId ?? null;
-        
-        // Contar nuevos mensajes no leídos después del último visto
-        for (let i = lastSeenIdx + 1; i < list.length; i++) {
-          const m = list[i];
-          const sys = !!m.isSystem || 
-                     (m.createdByName || "").toLowerCase() === "system" ||
-                     (m.createdByName || "").toLowerCase() === "sistema";
-          if (sys) continue;
-          if (isMine(m)) continue;
-          
-          const delivery = (m.meta?.localDelivery ?? "sent") as DeliveryState;
-          if (delivery !== "read") {
-            if (newCutoffId === null || newCutoffId === stickyUnreadRef.current?.cutoffId) {
-              // Establecer nuevo cutoff en el primer mensaje nuevo no leído
-              newCutoffId = m.id as number;
-            }
-            newUnreadCount++;
+    // Si no estaba bloqueado y llegan nuevos no-leídos (durante la sesión):
+    if (!stickyLockedRef.current) {
+      const list = activeThread?.messages ?? [];
+      const lastSeen = lastSeenMessageIdRef.current;
+
+      // ¿han aparecido mensajes no-leídos después de lastSeen?
+      if (list.length && lastSeen != null) {
+        const startIdx = list.findIndex((m) => m.id === lastSeen);
+        const slice = startIdx >= 0 ? list.slice(startIdx + 1) : list;
+        const firstNewUnread = slice.find(
+          (m) =>
+            !m.isSystem &&
+            !isMine(m) &&
+            (((m.meta?.localDelivery as DeliveryState | undefined) ?? "sent") !== "read")
+        );
+        if (firstNewUnread) {
+          // Si el usuario está leyendo al fondo, NO creamos divisor (convención UX)
+          const atBottom = isNearBottom(listRef.current);
+          if (!atBottom) {
+            stickyRef.current = {
+              cutoffId: (firstNewUnread.id as number) ?? null,
+              // congelamos el contador del snapshot actual si existe; si no, al menos 1
+              count: Math.max(computeSnap()?.count ?? 1, 1),
+            };
+            stickyLockedRef.current = true;
           }
-        }
-        
-        // Si hay nuevos mensajes no leídos, actualizar el sticky
-        if (newUnreadCount > 0 && newCutoffId !== stickyUnreadRef.current?.cutoffId) {
-          stickyUnreadRef.current = {
-            cutoffId: newCutoffId,
-            count: s.count // Usar el conteo total actual
-          };
         }
       }
     }
-  }
-  }, [computeSnap]);
+  }, [computeSnap, activeThread?.messages, isMine]);
 
-  // Filas de render
+  // ---- Filas de render
   type Row =
     | { kind: "divider"; key: string; label: string }
-    | { kind: "unread"; key: string; label: string }
+    | { kind: "unread"; key: string; label: string; cutoffId: number | null }
     | { kind: "msg"; msg: ThreadMessage };
 
   const rows: Row[] = useMemo(() => {
@@ -329,7 +343,7 @@ function ThreadChatInner({
     const list = activeThread?.messages ?? [];
 
     const locked = stickyLockedRef.current;
-    const sticky = stickyUnreadRef.current;
+    const sticky = stickyRef.current;
     const cutId = locked ? sticky?.cutoffId ?? null : snap?.cutoffId ?? null;
     const unreadCount = locked ? sticky?.count ?? 0 : snap?.count ?? 0;
 
@@ -343,11 +357,12 @@ function ThreadChatInner({
       if (cutId != null && m.id === cutId) {
         out.push({
           kind: "unread",
-          key: `unread-${m.id}`,
+          key: `unread-${activeThread.id}-${m.id}`,
           label:
             unreadCount && unreadCount > 0
               ? `Mensajes no leídos (${unreadCount})`
               : `Mensajes no leídos`,
+          cutoffId: m.id as number,
         });
       }
       out.push({ kind: "msg", msg: m });
@@ -355,7 +370,7 @@ function ThreadChatInner({
     return out;
   }, [activeThread?.id, activeThread?.messages, snap]);
 
-  // ---- Scroll al final si NO hay divisor al abrir (una vez por hilo)
+  // ---- Scroll inicial: solo si NO hay divisor
   const didInitialBottomRef = useRef<Set<number>>(new Set());
   useEffect(() => {
     const container = listRef.current;
@@ -364,7 +379,7 @@ function ThreadChatInner({
     if (didInitialBottomRef.current.has(tid)) return;
 
     const locked = stickyLockedRef.current;
-    const hasFrozen = !!(stickyUnreadRef.current && stickyUnreadRef.current.cutoffId != null);
+    const hasFrozen = !!(stickyRef.current && stickyRef.current.cutoffId != null);
     const hasSnap = !!(snap && snap.tid === tid && snap.count > 0 && snap.cutoffId != null);
     const hasUnreadDivider = locked ? hasFrozen : hasSnap;
 
@@ -379,7 +394,7 @@ function ThreadChatInner({
     }
   }, [activeThread?.id, snap]);
 
-  // ---- Autoscroll en mensaje nuevo
+  // ---- Autoscroll en mensaje nuevo (respetando sticky)
   const lastMsgKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const list = activeThread?.messages ?? [];
@@ -390,15 +405,21 @@ function ThreadChatInner({
 
     if (!prevKey || !currentKey || prevKey === currentKey) return;
 
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const el = listRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
-      });
-    });
-  }, [activeThread?.messages]);
+    const mine = last ? isMine(last) : false;
+    const locked = stickyLockedRef.current;
 
-  // ---- Marcar leído
+    // baja solo si el mensaje es mío o estamos ya casi al fondo, y no si hay sticky
+    if (!locked && (mine || isNearBottom(listRef.current))) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const el = listRef.current;
+          if (el) el.scrollTop = el.scrollHeight;
+        });
+      });
+    }
+  }, [activeThread?.messages, isMine]);
+
+  // ---- Enviar "read receipts" (manteniendo sticky congelado visualmente)
   useEffect(() => {
     const tid = activeThread?.id;
     if (!tid || !snap) return;
@@ -474,12 +495,13 @@ function ThreadChatInner({
           if (row.kind === "unread") {
             return (
               <UnreadDividerAlign
-                key={`unread-thread-${activeThread.id}`}
+                key={`unread-thread-${activeThread.id}-${row.cutoffId ?? "none"}`}
                 containerRef={listRef}
                 label={row.label}
                 offsetPx={16}
                 behavior="auto"
                 threadId={activeThread.id}
+                cutoffId={row.cutoffId}
               />
             );
           }
@@ -578,10 +600,7 @@ function ThreadChatInner({
           }`}
           onClick={() => {
             try {
-              onToggleThreadStatus(
-                activeThread.id,
-                nextStatus(activeThread.status)
-              );
+              onToggleThreadStatus(activeThread.id, nextStatus(activeThread.status));
             } catch (e) {
               toastError(e, {
                 title: "No se pudo cambiar el estado del hilo",
@@ -631,13 +650,10 @@ function messagesSignature(list: ThreadMessage[] = []): string {
 function areEqual(prev: any, next: any) {
   if (prev.activeThread.id !== next.activeThread.id) return false;
   if (prev.activeThread.status !== next.activeThread.status) return false;
-
   const prevSig = messagesSignature(prev.activeThread.messages);
   const nextSig = messagesSignature(next.activeThread.messages);
   if (prevSig !== nextSig) return false;
-
   if (prev.threadIndex !== next.threadIndex) return false;
-
   return true;
 }
 
