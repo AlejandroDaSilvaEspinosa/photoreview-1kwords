@@ -16,6 +16,7 @@ import SkuCard from "@/components/home/SkuCard";
 import { useImagesCatalogStore } from "@/stores/imagesCatalog";
 import { emitToast, toastError } from "@/hooks/useToast";
 import { localGetJSON, localSetJSON } from "@/lib/storage";
+import { initMessagesOutbox } from "@/lib/net/messagesOutbox";
 
 /**
  * DEV NOTES
@@ -43,6 +44,11 @@ const ALL: SkuStatus[] = ["pending_validation", "needs_correction", "validated",
 const LS_KEY = "home.filters.statuses.v1";
 
 export default function Home({ username, skus, clientInfo }: Props) {
+
+  useEffect(() => {
+    initMessagesOutbox(); // idempotente
+  }, [])
+  
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

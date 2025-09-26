@@ -8,7 +8,7 @@ import { Thread, ThreadMessage, ThreadStatus } from "@/types/review";
 import AutoGrowTextarea from "./AutoGrowTextarea";
 import { useSupabaseUserId } from "@/hooks/useSupabaseUserId";
 import { toastError } from "@/hooks/useToast";
-
+import { sendMessage } from "@/lib/messages/send";
 type DeliveryState = "sending" | "sent" | "delivered" | "read";
 
 /* ========= Utilidades scroll ========= */
@@ -142,14 +142,19 @@ function ThreadChatInner({
   );
 
   const handleSend = useCallback(async () => {
-    const id = activeThread?.id;
-    if (!id) return;
-    const draft = getDraft(id).trim();
+    const tid = activeThread?.id;
+    if (!tid) return;
+
+    const draft = getDraft(tid).trim();
     if (!draft) return;
-    clearDraft(id);
+
+    clearDraft(tid);
+
     try {
-      await onAddThreadMessage(id, draft);
-      // baja si el mensaje es mío
+      // Encola + crea optimista; NO hace falta await.
+      sendMessage(tid, draft);
+
+      // Baja al final (mensaje propio). Doble RAF para esperar render del optimista.
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const el = listRef.current;
@@ -157,12 +162,13 @@ function ThreadChatInner({
         });
       });
     } catch (e) {
+      // Solo capturará errores síncronos (muy raro). Los fallos de red los gestiona el outbox.
       toastError(e, {
-        title: "No se pudo enviar el mensaje",
+        title: "No se pudo encolar el mensaje",
         fallback: "Revisa tu conexión e inténtalo de nuevo.",
       });
     }
-  }, [activeThread?.id, getDraft, clearDraft, onAddThreadMessage]);
+  }, [activeThread?.id, getDraft, clearDraft]);
 
   // Fechas/formatos
   const dateKey = (d: Date) => {
