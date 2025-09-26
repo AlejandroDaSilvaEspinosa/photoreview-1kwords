@@ -47,7 +47,6 @@ const UnreadDividerAlign = React.memo(
       const cont = containerRef.current;
       const el = sepRef.current;
       if (!cont || !el) return;
-        console.log("test")
         el.scrollIntoView({ behavior: "auto", block: "start", inline: "nearest" });
     }, [threadId, cutoffId, containerRef, offsetPx, behavior]);
 
@@ -75,9 +74,9 @@ const UnreadDividerAlign = React.memo(
 /* ================================ Props ================================ */
 type Props = {
   activeThread: Thread;
-  /** Calculado en el padre para no pasar `threads` completos */
+  composeLocked?: boolean;
+  statusLocked?: boolean;
   threadIndex: number;
-  onAddThreadMessage: (threadId: number, text: string) => Promise<void> | void;
   onFocusThread: (threadId: number | null) => void;
   onToggleThreadStatus: (threadId: number, next: ThreadStatus) => void;
   onDeleteThread: (id: number) => void;
@@ -87,10 +86,11 @@ type Props = {
 function ThreadChatInner({
   activeThread,
   threadIndex,
-  onAddThreadMessage,
   onFocusThread,
   onToggleThreadStatus,
   onDeleteThread,
+  composeLocked,
+  statusLocked
 }: Props) {
   // Drafts por hilo
   const [drafts, setDrafts] = useState<Record<number, string>>({});
@@ -129,7 +129,7 @@ function ThreadChatInner({
         : "#FF0040",
     []
   );
-
+  const colorByNextStatus = (s: ThreadStatus) => (s === "corrected" ? "orange" : "green");
   const isMine = useCallback(
     (m: ThreadMessage) => {
       const meta = (m.meta || {}) as any;
@@ -318,7 +318,8 @@ function ThreadChatInner({
       }
     }
   }, [computeSnap, activeThread?.messages, isMine]);
-
+  
+  
   // ---- Filas de render
   type Row =
     | { kind: "divider"; key: string; label: string }
@@ -568,41 +569,47 @@ function ThreadChatInner({
           );
         })}
       </div>
-
-      <div className={styles.composer}>
+ <div className={styles.composer} aria-disabled={composeLocked ? "true" : "false"}>
         <AutoGrowTextarea
           value={activeThread?.id ? getDraft(activeThread?.id) : ""}
           onChange={(v: string) => activeThread.id && setDraft(activeThread.id, v)}
-          placeholder="Escribe un mensaje…"
+          placeholder={composeLocked ? "Creando hilo… espera un momento" : "Escribe un mensaje…"}
           minRows={1}
           maxRows={5}
           growsUp
-          onEnter={handleSend}
+          onEnter={composeLocked ? undefined : handleSend}
         />
-        <button onClick={handleSend} title="Enviar mensaje">
-          Enviar
+        <button
+          onClick={handleSend}
+          disabled={composeLocked}
+          aria-busy={composeLocked}
+          className={composeLocked ? `${styles.buttonLoading}` : undefined}
+          title={composeLocked ? "Guardando el nuevo hilo…" : "Enviar mensaje"}
+        >
+          {composeLocked ? <span className={styles.spinner} aria-hidden /> : "Enviar"}
         </button>
       </div>
 
       <div className={styles.changeStatusBtnWrapper}>
         <button
-          className={`${styles.changeStatusBtn} ${
-            styles[`${activeThread.status === "corrected" ? "orange" : "green"}`]
+          className={`${styles.changeStatusBtn} 
+          ${styles[`${colorByNextStatus(activeThread.status)}`]} ${
+            statusLocked ? styles.buttonLoading : ""
           }`}
-          onClick={() => {
-            try {
-              onToggleThreadStatus(activeThread.id, nextStatus(activeThread.status));
-            } catch (e) {
-              toastError(e, {
-                title: "No se pudo cambiar el estado del hilo",
-                fallback: "Vuelve a intentarlo en unos segundos.",
-              });
-            }
-          }}
+          onClick={() => onToggleThreadStatus(activeThread.id, nextStatus(activeThread.status))}
           title={toggleLabel(activeThread.status)}
+          disabled={statusLocked}
+          aria-busy={statusLocked}
         >
-          {toggleLabel(activeThread.status)}
+          {statusLocked ? (
+            <>
+              <span className={styles.spinner} aria-hidden /> Actualizando…
+            </>
+          ) : (
+            toggleLabel(activeThread.status)
+          )}
         </button>
+
 
         <button
           title="Borrar hilo"

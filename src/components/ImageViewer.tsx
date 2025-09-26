@@ -167,7 +167,7 @@ export default function ImageViewer({
   const createThreadOptimistic = useThreadsStore((s) => s.createOptimistic);
   const confirmCreate = useThreadsStore((s) => s.confirmCreate);
   const rollbackCreate = useThreadsStore((s) => s.rollbackCreate);
-
+  const pendingStatusMap = useThreadsStore((s) => s.pendingStatus);
   // ========================== HIDRATACIÓN (cache + fresh) — sin epoch
   useEffect(() => {
     let cancelled = false;
@@ -706,6 +706,28 @@ export default function ImageViewer({
       ),
     [images, threadsByNeededImages]
   );
+  const onFocusThread = (id: number | null) => {
+    try {
+      setActiveThreadId(id);
+      startTransition(() => onSelectThread?.(id ?? null));
+      if (selectedImage?.name && id) {
+        const t = (threadsRaw || []).find((x) => x.id === id);
+        if (t) setActiveKey(pointKey(selectedImage.name, t.x, t.y));
+      }
+    } catch (e) {
+      toastError(e, { title: "No se pudo enfocar el hilo" });
+    }
+  }
+  // ✅ Al desmontar, limpiar el foco del hilo
+  useEffect(() => {
+    return () => {
+      try {
+        onFocusThread(null);
+      } catch {
+        // noop
+      }
+    };
+  }, []);
 
   const rehydrateThreadMessages = useCallback(
     async (tid: number) => {
@@ -944,6 +966,8 @@ export default function ImageViewer({
         isValidated={false}
         threads={threadsInImage}
         activeThreadId={resolvedActiveThreadId}
+        composeLocked={creatingThreadId != null && activeThreadId != null && creatingThreadId === activeThreadId}
+        statusLocked={activeThreadId != null && pendingStatusMap.has(activeThreadId)}
         onValidateSku={() => {
           try {
             emitToast({
@@ -980,18 +1004,7 @@ export default function ImageViewer({
             toastError(e, { title: "No se pudo borrar el hilo" });
           }
         }}
-        onFocusThread={(id: number | null) => {
-          try {
-            setActiveThreadId(id);
-            startTransition(() => onSelectThread?.(id ?? null));
-            if (selectedImage?.name && id) {
-              const t = (threadsRaw || []).find((x) => x.id === id);
-              if (t) setActiveKey(pointKey(selectedImage.name, t.x, t.y));
-            }
-          } catch (e) {
-            toastError(e, { title: "No se pudo enfocar el hilo" });
-          }
-        }}
+        onFocusThread={onFocusThread}
         withCorrectionsCount={0}
         validatedImagesCount={0}
         totalCompleted={0}

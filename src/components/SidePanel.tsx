@@ -38,6 +38,8 @@ type Props = {
 
   loading?: boolean;
   initialCollapsed?: boolean;
+  composeLocked?: boolean;
+  statusLocked?: boolean;
 };
 
 const LS_KEY = "photoreview:sidepanel:collapsed";
@@ -49,7 +51,6 @@ export default function SidePanel({
   activeThreadId,
   onValidateSku,
   onUnvalidateSku,
-  onAddThreadMessage,
   onDeleteThread,
   onFocusThread,
   onToggleThreadStatus,
@@ -57,6 +58,8 @@ export default function SidePanel({
   withCorrectionsCount,
   validatedImagesCount,
   totalCompleted,
+  composeLocked,
+  statusLocked,
   totalImages,
   loading = false,
   initialCollapsed = false,
@@ -97,6 +100,7 @@ export default function SidePanel({
     [threads, activeThreadId]
   );
 
+  
   return (
     <aside
       className={`${styles.panel} ${collapsed ? styles.isCollapsed : ""}`}
@@ -188,10 +192,11 @@ export default function SidePanel({
                 <ThreadChat
                   activeThread={selected}
                   threadIndex={threadIndex}
-                  onAddThreadMessage={onAddThreadMessage}
                   onFocusThread={onFocusThread}
                   onToggleThreadStatus={onToggleThreadStatus}
                   onDeleteThread={onDeleteThread}
+                  composeLocked={composeLocked}
+                  statusLocked={statusLocked}
                 />
               )}
             </div>
