@@ -23,7 +23,7 @@ export const safeParse = <T,>(raw: string | null): T | null => {
 };
 
 export const persistIdle = (fn: () => void) => {
-  const anyWin = window as any;
+  const anyWin = window as Window;
   anyWin?.requestIdleCallback ? anyWin.requestIdleCallback(fn) : setTimeout(fn, 0);
 };
 
@@ -53,4 +53,40 @@ export const sessionGet = (key: string) => {
 export const sessionSet = (key: string, value: string) => {
   try { sessionStorage.setItem(key, value); }
   catch { toastStorageOnce(`registrar datos de sesión ("${key}")`); }
+};
+
+/* ===== Helpers JSON tipados (nuevo) ===== */
+
+export const localGetJSON = <T,>(key: string, fallback: T | null = null): T | null => {
+  const raw = localGet(key);
+  const parsed = safeParse<T>(raw);
+  return parsed ?? fallback;
+};
+
+export const localSetJSON = (key: string, value: unknown, useIdle = true) => {
+  try {
+    const str = JSON.stringify(value);
+    localSet(key, str, useIdle);
+  } catch {
+    // JSON.stringify puede fallar en estructuras circulares
+    toastStorageOnce(`serializar y guardar el dato "${key}" en el dispositivo`);
+  }
+};
+
+export const sessionGetJSON = <T,>(key: string, fallback: T | null = null): T | null => {
+  try {
+    const raw = sessionGet(key);
+    const parsed = safeParse<T>(raw);
+    return parsed ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+export const sessionSetJSON = (key: string, value: unknown) => {
+  try {
+    sessionSet(key, JSON.stringify(value));
+  } catch {
+    toastStorageOnce(`serializar y registrar datos de sesión ("${key}")`);
+  }
 };

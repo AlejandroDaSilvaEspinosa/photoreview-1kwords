@@ -12,7 +12,7 @@ import { toastError } from "@/hooks/useToast";
 type DeliveryState = "sending" | "sent" | "delivered" | "read";
 
 /* ========= Utilidades scroll ========= */
-const NEAR_BOTTOM_PX = 48;
+const NEAR_BOTTOM_PX = 130; // margen para decidir autoscroll con mensaje entrante
 function isNearBottom(el: HTMLDivElement | null, slackPx = NEAR_BOTTOM_PX) {
   if (!el) return true;
   const dist = el.scrollHeight - (el.scrollTop + el.clientHeight);
@@ -41,32 +41,14 @@ const UnreadDividerAlign = React.memo(
 
     useEffect(() => {
       const key = `${threadId}:${cutoffId ?? "none"}`;
-      if (doneKeyRef.current === key) return;
+      if (doneKeyRef.current === key) return; // nunca re-alinear si ya lo hicimos para este cutoff
       doneKeyRef.current = key;
 
       const cont = containerRef.current;
       const el = sepRef.current;
       if (!cont || !el) return;
-
-      // doble rAF para asegurar layout estable
-      const r1 = requestAnimationFrame(() => {
-        const r2 = requestAnimationFrame(() => {
-          const contRect = cont.getBoundingClientRect();
-          const elRect = el.getBoundingClientRect();
-          const delta = elRect.top - contRect.top - offsetPx;
-          const targetTop = Math.max(
-            0,
-            Math.min(cont.scrollHeight - cont.clientHeight, cont.scrollTop + delta)
-          );
-          if (typeof (cont as any).scrollTo === "function" && behavior) {
-            (cont as any).scrollTo({ top: targetTop, behavior });
-          } else {
-            cont.scrollTop = targetTop;
-          }
-        });
-        return () => cancelAnimationFrame(r2);
-      });
-      return () => cancelAnimationFrame(r1);
+        console.log("test")
+        el.scrollIntoView({ behavior: "auto", block: "start", inline: "nearest" });
     }, [threadId, cutoffId, containerRef, offsetPx, behavior]);
 
     return (
@@ -217,8 +199,8 @@ function ThreadChatInner({
 
   // Snapshot “vivo” (recalculado por lista)
   const [snap, setSnap] = useState<UnreadSnap | null>(null);
-  // Sticky congelado por hilo (posición + contador)
-  const stickyRef = useRef<{ cutoffId: number | null; count: number } | null>(null);
+  // Sticky congelado por hilo (posición + contador y etiqueta)
+  const stickyRef = useRef<{ cutoffId: number | null; count: number; label: string } | null>(null);
   const stickyLockedRef = useRef<boolean>(false);
   // “Hasta aquí visto” en el momento de crear el sticky o al entrar
   const lastSeenMessageIdRef = useRef<number | null>(null);
@@ -244,18 +226,21 @@ function ThreadChatInner({
         (((m.meta?.localDelivery as DeliveryState | undefined) ?? "sent") !== "read")
     );
     if (firstUnread) {
+      const frozenCount = list.reduce((acc, m) => {
+        const sys =
+          !!m.isSystem ||
+          (m.createdByName || "").toLowerCase() === "system" ||
+          (m.createdByName || "").toLowerCase() === "sistema";
+        if (sys) return acc;
+        if (isMine(m)) return acc;
+        const d = (m.meta?.localDelivery as DeliveryState | undefined) ?? "sent";
+        return d !== "read" ? acc + 1 : acc;
+      }, 0);
+
       stickyRef.current = {
         cutoffId: (firstUnread.id as number) ?? null,
-        count: list.reduce((acc, m) => {
-          const sys =
-            !!m.isSystem ||
-            (m.createdByName || "").toLowerCase() === "system" ||
-            (m.createdByName || "").toLowerCase() === "sistema";
-          if (sys) return acc;
-          if (isMine(m)) return acc;
-          const d = (m.meta?.localDelivery as DeliveryState | undefined) ?? "sent";
-          return d !== "read" ? acc + 1 : acc;
-        }, 0),
+        count: frozenCount,
+        label: frozenCount > 0 ? `Mensajes no leídos (${frozenCount})` : "Mensajes no leídos",
       };
       stickyLockedRef.current = true;
 
@@ -298,14 +283,14 @@ function ThreadChatInner({
   }, [activeThread?.id, activeThread?.messages, isMine]);
 
   useEffect(() => {
-    setSnap(computeSnap() ?? null);
+    const newSnap = computeSnap();
+    setSnap(newSnap ?? null);
 
-    // Si no estaba bloqueado y llegan nuevos no-leídos (durante la sesión):
+    // Si NO estaba bloqueado, podemos fijar sticky cuando aparezcan no-leídos tras lastSeen
     if (!stickyLockedRef.current) {
       const list = activeThread?.messages ?? [];
       const lastSeen = lastSeenMessageIdRef.current;
 
-      // ¿han aparecido mensajes no-leídos después de lastSeen?
       if (list.length && lastSeen != null) {
         const startIdx = list.findIndex((m) => m.id === lastSeen);
         const slice = startIdx >= 0 ? list.slice(startIdx + 1) : list;
@@ -316,12 +301,13 @@ function ThreadChatInner({
             (((m.meta?.localDelivery as DeliveryState | undefined) ?? "sent") !== "read")
         );
         if (firstNewUnread) {
-            stickyRef.current = {
-              cutoffId: (firstNewUnread.id as number) ?? null,
-              // congelamos el contador del snapshot actual si existe; si no, al menos 1
-              count: Math.max(computeSnap()?.count ?? 1, 1),
-            };
-            stickyLockedRef.current = true;
+          const frozenCount = Math.max(newSnap?.count ?? 1, 1);
+          stickyRef.current = {
+            cutoffId: (firstNewUnread.id as number) ?? null,
+            count: frozenCount,
+            label: frozenCount > 0 ? `Mensajes no leídos (${frozenCount})` : "Mensajes no leídos",
+          };
+          stickyLockedRef.current = true;
         }
       }
     }
@@ -341,7 +327,11 @@ function ThreadChatInner({
     const locked = stickyLockedRef.current;
     const sticky = stickyRef.current;
     const cutId = locked ? sticky?.cutoffId ?? null : snap?.cutoffId ?? null;
-    const unreadCount = locked ? sticky?.count ?? 0 : snap?.count ?? 0;
+    const unreadLabel = locked
+      ? sticky?.label ?? "Mensajes no leídos"
+      : (snap && snap.count > 0
+          ? `Mensajes no leídos (${snap.count})`
+          : "Mensajes no leídos");
 
     for (const m of list) {
       const dt = new Date(m.createdAt);
@@ -354,10 +344,7 @@ function ThreadChatInner({
         out.push({
           kind: "unread",
           key: `unread-${activeThread.id}-${m.id}`,
-          label:
-            unreadCount && unreadCount > 0
-              ? `Mensajes no leídos (${unreadCount})`
-              : `Mensajes no leídos`,
+          label: unreadLabel,
           cutoffId: m.id as number,
         });
       }
@@ -390,7 +377,7 @@ function ThreadChatInner({
     }
   }, [activeThread?.id, snap]);
 
-  // ---- Autoscroll en mensaje nuevo (respetando sticky)
+  // ---- Autoscroll en mensaje nuevo (respetando sticky y con margen 130px)
   const lastMsgKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const list = activeThread?.messages ?? [];
@@ -404,8 +391,10 @@ function ThreadChatInner({
     const mine = last ? isMine(last) : false;
     const locked = stickyLockedRef.current;
 
-    // baja solo si el mensaje es mío o estamos ya casi al fondo, y no si hay sticky
-    if (!locked && (mine || isNearBottom(listRef.current))) {
+    // Requisito 2: si entra mensaje (mío o de realtime) y el usuario está cerca del fondo,
+    // bajamos al final. Si hay sticky, NO movemos (requisito 1).
+    console.log("??")
+    if ((mine || isNearBottom(listRef.current, NEAR_BOTTOM_PX))) {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const el = listRef.current;

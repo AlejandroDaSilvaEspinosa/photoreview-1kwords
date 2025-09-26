@@ -290,6 +290,10 @@
     /* gris claro por defecto */
 }
 
+.unreadDivider {
+    scroll-margin-top: 16px
+}
+
 /* en ThreadChat.module.css */
 .ticks.justDelivered {
     animation: pulseDelivered 450ms ease-out;

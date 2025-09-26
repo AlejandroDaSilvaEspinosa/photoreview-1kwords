@@ -15,6 +15,7 @@ import StatusHeading from "@/components/home/StatusHeading";
 import SkuCard from "@/components/home/SkuCard";
 import { useImagesCatalogStore } from "@/stores/imagesCatalog";
 import { emitToast, toastError } from "@/hooks/useToast";
+import { localGetJSON, localSetJSON } from "@/lib/storage";
 
 /**
  * DEV NOTES
@@ -201,20 +202,16 @@ export default function Home({ username, skus, clientInfo }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSku, imageParam]);
 
-  // ==================== Filtros (LocalStorage) ====================
+  // ==================== Filtros (LocalStorage con util) ====================
   const [active, setActive] = useState<Set<SkuStatus>>(() => new Set(ALL));
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(LS_KEY);
-      if (!raw) return;
-      const arr = JSON.parse(raw) as SkuStatus[];
-      if (Array.isArray(arr) && arr.length) setActive(new Set(arr));
-    } catch {}
+    const arr = localGetJSON<SkuStatus[]>(LS_KEY);
+    if (Array.isArray(arr) && arr.length) setActive(new Set(arr));
   }, []);
 
   useEffect(() => {
-    try { window.localStorage.setItem(LS_KEY, JSON.stringify(Array.from(active))); } catch {}
+    localSetJSON(LS_KEY, Array.from(active)); // escribe en idle y con toast en caso de error
   }, [active]);
 
   const toggle = useCallback((s: SkuStatus) => {
