@@ -27,7 +27,11 @@ export default function ThumbnailGrid({
   // Auto-scroll suave al elemento seleccionado
   useEffect(() => {
     const el = document.getElementById(ids[selectedIndex]);
-    el?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
+    el?.scrollIntoView({
+      block: "nearest",
+      inline: "center",
+      behavior: "smooth",
+    });
   }, [selectedIndex, ids]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -113,8 +117,22 @@ export default function ThumbnailGrid({
             </div>
 
             {/* Badges (coherentes con ThreadChat: verde validado, ámbar notas) */}
-            {hasNotes && <span className={`${styles.badge} ${styles.warn}`} aria-label="Tiene comentarios">💬</span>}
-            {isValidated && <span className={`${styles.badge} ${styles.ok}`} aria-label="Validada">✓</span>}
+            {hasNotes && (
+              <span
+                className={`${styles.badge} ${styles.warn}`}
+                aria-label="Tiene comentarios"
+              >
+                💬
+              </span>
+            )}
+            {isValidated && (
+              <span
+                className={`${styles.badge} ${styles.ok}`}
+                aria-label="Validada"
+              >
+                ✓
+              </span>
+            )}
           </button>
         );
       })}

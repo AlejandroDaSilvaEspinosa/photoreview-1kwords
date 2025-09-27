@@ -34,4 +34,3 @@ export function usePresence(room: string, username: string | undefined) {
 
   return online;
 }
-

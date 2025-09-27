@@ -77,7 +77,7 @@ export default function ImageViewer({
 
   // ===== Navegación / imagen seleccionada
   const [currentImageName, setCurrentImageName] = useState<string | null>(
-    selectedImageName ?? images[0]?.name ?? null
+    selectedImageName ?? images[0]?.name ?? null,
   );
   const pendingUrlImageRef = useRef<string | null>(null);
   const suppressFollowThreadOnceRef = useRef<boolean>(false);
@@ -123,16 +123,19 @@ export default function ImageViewer({
 
   const { wrapperRef, imgRef, box: imgBox, update } = useImageGeometry();
   const onlineUsers = usePresence(sku.sku, username);
-  const [zoomOverlay, setZoomOverlay] = useState<
-    null | { x: number; y: number; ax: number; ay: number }
-  >(null);
+  const [zoomOverlay, setZoomOverlay] = useState<null | {
+    x: number;
+    y: number;
+    ax: number;
+    ay: number;
+  }>(null);
 
   // ===== Threads (imagen visible)
   const selectedImageKey = selectedImage?.name ?? "";
   const threadsRaw = useThreadsStore(
     useShallow((s) =>
-      selectedImageKey ? s.byImage[selectedImageKey] ?? EMPTY_ARR : EMPTY_ARR
-    )
+      selectedImageKey ? (s.byImage[selectedImageKey] ?? EMPTY_ARR) : EMPTY_ARR,
+    ),
   );
 
   // ✅ Reactivo: mapa threadId → imageName
@@ -145,9 +148,10 @@ export default function ImageViewer({
         string,
         { id: number; x: number; y: number; status: ThreadStatus }[]
       > = {};
-      for (const img of images) out[img.name] = s.byImage[img.name] ?? EMPTY_ARR;
+      for (const img of images)
+        out[img.name] = s.byImage[img.name] ?? EMPTY_ARR;
       return out;
-    })
+    }),
   );
 
   const threadToImageMapSize = threadToImage.size; // para deps baratas
@@ -196,7 +200,7 @@ export default function ImageViewer({
                 tid,
                 cachedMsgs
                   .map((m) => m.id as number)
-                  .filter((x) => Number.isFinite(x))
+                  .filter((x) => Number.isFinite(x)),
               );
             }
           }
@@ -255,7 +259,7 @@ export default function ImageViewer({
               `
               id,thread_id,text,created_at,updated_at,created_by,created_by_username,created_by_display_name,is_system,
               meta:review_message_receipts!review_message_receipts_message_fkey ( user_id, read_at, delivered_at )
-            `
+            `,
             )
             .in("thread_id", allThreadIds)
             .order("created_at", { ascending: true });
@@ -274,7 +278,8 @@ export default function ImageViewer({
             if (mine) {
               const others = receipts.filter((r) => r.user_id !== myId);
               if (others.some((r) => r.read_at)) delivery = "read";
-              else if (others.some((r) => r.delivered_at)) delivery = "delivered";
+              else if (others.some((r) => r.delivered_at))
+                delivery = "delivered";
             } else {
               const mineRec = receipts.find((r) => r.user_id === myId);
               if (mineRec?.read_at) delivery = "read";
@@ -293,7 +298,7 @@ export default function ImageViewer({
             setMsgsForThread(tid, grouped[tid]);
             setThreadMsgIds(
               tid,
-              grouped[tid].map((x) => x.id)
+              grouped[tid].map((x) => x.id),
             );
           }
         }
@@ -307,7 +312,7 @@ export default function ImageViewer({
           setLoadError(
             servedFromCache
               ? "No se pudo actualizar (modo sin conexión)"
-              : e?.message || "Error de carga"
+              : e?.message || "Error de carga",
           );
           setLoading(false);
           toastError(e, { title: "Fallo cargando anotaciones" });
@@ -408,7 +413,8 @@ export default function ImageViewer({
     if (threadsRaw.some((t) => t.id === activeThreadId)) return activeThreadId;
     if (activeKey) {
       const th = threadsRaw.find(
-        (t) => pointKey(selectedImage.name!, Number(t.x), Number(t.y)) === activeKey
+        (t) =>
+          pointKey(selectedImage.name!, Number(t.x), Number(t.y)) === activeKey,
       );
       if (th) return th.id;
     }
@@ -486,7 +492,11 @@ export default function ImageViewer({
           const sysCreated = await fetch("/api/messages", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ threadId: realId, text: sysText, isSystem: true }),
+            body: JSON.stringify({
+              threadId: realId,
+              text: sysText,
+              isSystem: true,
+            }),
           }).then((r) => (r.ok ? r.json() : null));
 
           if (sysCreated?.id) {
@@ -512,7 +522,9 @@ export default function ImageViewer({
             });
           }
         } catch (e) {
-          toastError(e, { title: "No se pudo registrar el mensaje del sistema" });
+          toastError(e, {
+            title: "No se pudo registrar el mensaje del sistema",
+          });
         }
       } catch (e) {
         rollbackCreate(tempId);
@@ -533,7 +545,7 @@ export default function ImageViewer({
       onSelectThread,
       selectedThreadId,
       createThreadOptimistic,
-    ]
+    ],
   );
 
   const addMessage = useCallback(
@@ -561,7 +573,8 @@ export default function ImageViewer({
           body: JSON.stringify({ threadId, text }),
         }).then((r) => (r.ok ? r.json() : null));
 
-        if (!created?.id) throw new Error("El servidor no devolvió un ID de mensaje.");
+        if (!created?.id)
+          throw new Error("El servidor no devolvió un ID de mensaje.");
 
         confirmMessage(threadId, tempId, {
           id: created.id,
@@ -571,7 +584,8 @@ export default function ImageViewer({
           updated_at:
             created.updated_at || created.updatedAt || created.createdAt || now,
           created_by: created.created_by,
-          created_by_username: created.created_by_username ?? username ?? "Usuario",
+          created_by_username:
+            created.created_by_username ?? username ?? "Usuario",
           created_by_display_name:
             created.created_by_display_name ?? username ?? "Usuario",
           is_system: !!created.is_system,
@@ -581,13 +595,17 @@ export default function ImageViewer({
         toastError(e, { title: "No se pudo enviar el mensaje" });
       }
     },
-    [addOptimisticMsg, confirmMessage, username, creatingThreadId]
+    [addOptimisticMsg, confirmMessage, username, creatingThreadId],
   );
 
   const toggleThreadStatus = useCallback(
     async (_imgName: string, threadId: number, next: ThreadStatus) => {
-      const { byImage, threadToImage, beginStatusOptimistic, clearPendingStatus } =
-        useThreadsStore.getState();
+      const {
+        byImage,
+        threadToImage,
+        beginStatusOptimistic,
+        clearPendingStatus,
+      } = useThreadsStore.getState();
       const img = threadToImage.get(threadId) || "";
       const prev =
         byImage[img]?.find((t) => t.id === threadId)?.status ?? "pending";
@@ -625,7 +643,7 @@ export default function ImageViewer({
         toastError(e, { title: "No se pudo cambiar el estado" });
       }
     },
-    [setThreadStatus, addOptimisticMsg, username]
+    [setThreadStatus, addOptimisticMsg, username],
   );
 
   const removeThread = useCallback(
@@ -635,7 +653,10 @@ export default function ImageViewer({
         await fetch(`/api/threads/status`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ threadId: id, status: "deleted" as ThreadStatus }),
+          body: JSON.stringify({
+            threadId: id,
+            status: "deleted" as ThreadStatus,
+          }),
         });
       } catch (e) {
         toastError(e, { title: "No se pudo borrar el hilo" });
@@ -643,7 +664,7 @@ export default function ImageViewer({
       if (resolvedActiveThreadId === id)
         startTransition(() => onSelectThread?.(null));
     },
-    [setThreadStatus, resolvedActiveThreadId, onSelectThread]
+    [setThreadStatus, resolvedActiveThreadId, onSelectThread],
   );
 
   // ===== UI helpers
@@ -702,9 +723,9 @@ export default function ImageViewer({
             ...t,
             messages: [],
           })),
-        ])
+        ]),
       ),
-    [images, threadsByNeededImages]
+    [images, threadsByNeededImages],
   );
   const onFocusThread = (id: number | null) => {
     try {
@@ -717,7 +738,7 @@ export default function ImageViewer({
     } catch (e) {
       toastError(e, { title: "No se pudo enfocar el hilo" });
     }
-  }
+  };
   // ✅ Al desmontar, limpiar el foco del hilo
   useEffect(() => {
     return () => {
@@ -738,10 +759,12 @@ export default function ImageViewer({
 
         const { data: msgs, error } = await sb
           .from("review_messages")
-          .select(`
+          .select(
+            `
             id,thread_id,text,created_at,updated_at,created_by,created_by_username,created_by_display_name,is_system,
             meta:review_message_receipts!review_message_receipts_message_fkey ( user_id, read_at, delivered_at )
-          `)
+          `,
+          )
           .eq("thread_id", tid)
           .order("created_at", { ascending: true });
 
@@ -774,13 +797,13 @@ export default function ImageViewer({
         setMsgsForThread(tid, grouped as any);
         setThreadMsgIds(
           tid,
-          grouped.map((x: any) => x.id)
+          grouped.map((x: any) => x.id),
         );
       } catch (e) {
         toastError(e, { title: "No se pudieron cargar los mensajes del hilo" });
       }
     },
-    [setMsgsForThread, setThreadMsgIds]
+    [setMsgsForThread, setThreadMsgIds],
   );
 
   useEffect(() => {
@@ -868,7 +891,11 @@ export default function ImageViewer({
             style={{ cursor: parentCursor }}
           >
             {loading && (
-              <div className={styles.overlayLoader} role="status" aria-live="polite">
+              <div
+                className={styles.overlayLoader}
+                role="status"
+                aria-live="polite"
+              >
                 <div className={styles.loaderSpinner} />
                 <div className={styles.loaderText}>Cargando anotaciones…</div>
               </div>
@@ -892,7 +919,9 @@ export default function ImageViewer({
               quality={100}
               minSkeletonMs={0}
               onReady={update}
-              fallbackText={(selectedImage?.name || "").slice(0, 2).toUpperCase()}
+              fallbackText={(selectedImage?.name || "")
+                .slice(0, 2)
+                .toUpperCase()}
             />
 
             {showThreads &&
@@ -926,8 +955,8 @@ export default function ImageViewer({
                       th.status === "corrected"
                         ? "Corregido"
                         : th.status === "reopened"
-                        ? "Reabierto"
-                        : "Pendiente"
+                          ? "Reabierto"
+                          : "Pendiente"
                     }
                     aria-label={`Hilo #${index + 1} — ${STATUS_LABEL[th.status]}`}
                   >
@@ -947,8 +976,8 @@ export default function ImageViewer({
           </button>
 
           <div className={styles.shortcutHint} aria-hidden>
-            ←/→ imagen · <b>Z</b> lupa · <b>P</b> anotar · <b>T</b> hilos on/off ·{" "}
-            <b>Enter</b> zoom · <b>Esc</b> cerrar
+            ←/→ imagen · <b>Z</b> lupa · <b>P</b> anotar · <b>T</b> hilos on/off
+            · <b>Enter</b> zoom · <b>Esc</b> cerrar
           </div>
         </div>
 
@@ -966,8 +995,14 @@ export default function ImageViewer({
         isValidated={false}
         threads={threadsInImage}
         activeThreadId={resolvedActiveThreadId}
-        composeLocked={creatingThreadId != null && activeThreadId != null && creatingThreadId === activeThreadId}
-        statusLocked={activeThreadId != null && pendingStatusMap.has(activeThreadId)}
+        composeLocked={
+          creatingThreadId != null &&
+          activeThreadId != null &&
+          creatingThreadId === activeThreadId
+        }
+        statusLocked={
+          activeThreadId != null && pendingStatusMap.has(activeThreadId)
+        }
         onValidateSku={() => {
           try {
             emitToast({
@@ -984,7 +1019,8 @@ export default function ImageViewer({
             emitToast({
               variant: "info",
               title: "Acción no implementada",
-              description: "Quitar validación del SKU se implementa en otra capa.",
+              description:
+                "Quitar validación del SKU se implementa en otra capa.",
             });
           } catch (e) {
             toastError(e, { title: "No se pudo quitar la validación" });
@@ -1012,7 +1048,8 @@ export default function ImageViewer({
         onlineUsers={onlineUsers}
         onToggleThreadStatus={(id: number, status: ThreadStatus) => {
           try {
-            if (selectedImage?.name) toggleThreadStatus(selectedImage.name, id, status);
+            if (selectedImage?.name)
+              toggleThreadStatus(selectedImage.name, id, status);
           } catch (e) {
             toastError(e, { title: "No se pudo cambiar el estado del hilo" });
           }
@@ -1038,7 +1075,8 @@ export default function ImageViewer({
           }}
           onAddThreadMessage={(threadId: number, text: string) => {
             try {
-              if (creatingThreadId != null && threadId === creatingThreadId) return;
+              if (creatingThreadId != null && threadId === creatingThreadId)
+                return;
               if (selectedImage?.name) addMessage(threadId, text);
             } catch (e) {
               toastError(e, { title: "No se pudo enviar el mensaje" });
@@ -1046,7 +1084,8 @@ export default function ImageViewer({
           }}
           onToggleThreadStatus={(id, status) => {
             try {
-              if (selectedImage?.name) toggleThreadStatus(selectedImage.name, id, status);
+              if (selectedImage?.name)
+                toggleThreadStatus(selectedImage.name, id, status);
             } catch (e) {
               toastError(e, { title: "No se pudo cambiar el estado del hilo" });
             }

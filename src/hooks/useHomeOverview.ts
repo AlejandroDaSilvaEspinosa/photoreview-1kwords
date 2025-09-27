@@ -25,7 +25,10 @@ const isCountable = (s: unknown): s is CountableStatus =>
   s === "pending" || s === "corrected" || s === "reopened";
 
 export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
-  const skuList = useMemo(() => (skus?.length ? skus.map((s) => s.sku) : []), [skus]);
+  const skuList = useMemo(
+    () => (skus?.length ? skus.map((s) => s.sku) : []),
+    [skus],
+  );
 
   const [stats, setStats] = useState<StatsBySku>({});
   const [unread, setUnread] = useState<UnreadBySku>({});
@@ -63,7 +66,11 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
         if (error) throw error;
 
         const map: StatsBySku = {};
-        for (const r of (data ?? []) as { sku: string; image_name: string; status: ThreadStatus }[]) {
+        for (const r of (data ?? []) as {
+          sku: string;
+          image_name: string;
+          status: ThreadStatus;
+        }[]) {
           if (!r?.sku || !r.image_name || !isCountable(r.status)) continue;
           const byImg = (map[r.sku] ||= {});
           const st = (byImg[r.image_name] ||= emptyStats());
@@ -102,7 +109,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
               user_id,
               read_at
             )
-          `
+          `,
           )
           .in("review_threads.sku", skuList as string[]);
 
@@ -117,8 +124,10 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
           if (!sku) continue;
           if (row.created_by === selfId) continue;
 
-          const receipts =
-            (row.review_message_receipts ?? []) as { user_id: string; read_at: string | null }[];
+          const receipts = (row.review_message_receipts ?? []) as {
+            user_id: string;
+            read_at: string | null;
+          }[];
 
           const mineRec = receipts.find((r) => r.user_id === selfId);
           const isUnread = !mineRec || !mineRec.read_at;
@@ -126,7 +135,9 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
         }
         setUnread(anyUnread);
       } catch (e) {
-        toastError(e, { title: "No se pudieron cargar los mensajes no leídos" });
+        toastError(e, {
+          title: "No se pudieron cargar los mensajes no leídos",
+        });
       }
     })();
 
@@ -140,7 +151,9 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
     if (!skuList.length) return;
 
     const sb = supabaseBrowser();
-    const ch = sb.channel("home-overview", { config: { broadcast: { ack: true } } });
+    const ch = sb.channel("home-overview", {
+      config: { broadcast: { ack: true } },
+    });
 
     // THREADS → actualizar barras por imagen
     ch.on(
@@ -149,14 +162,14 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
       (p) => {
         try {
           const evt = p.eventType;
-          const row =
-            (evt === "DELETE" ? (p as any).old : (p as any).new) as {
-              sku?: string;
-              image_name?: string;
-              status?: ThreadStatus;
-            } | null;
+          const row = (evt === "DELETE" ? (p as any).old : (p as any).new) as {
+            sku?: string;
+            image_name?: string;
+            status?: ThreadStatus;
+          } | null;
 
-          if (!row?.sku || !row.image_name || !skuList.includes(row.sku)) return;
+          if (!row?.sku || !row.image_name || !skuList.includes(row.sku))
+            return;
 
           setStats((prev) => {
             const next: StatsBySku = { ...prev };
@@ -169,13 +182,22 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
                 st.total += 1;
               }
             } else if (evt === "UPDATE") {
-              const oldStatus = (p as any).old?.status as ThreadStatus | undefined;
-              const newStatus = (p as any).new?.status as ThreadStatus | undefined;
-              if (isCountable(oldStatus)) st[oldStatus] = Math.max(0, (st[oldStatus] ?? 0) - 1);
-              if (isCountable(newStatus)) st[newStatus] = (st[newStatus] ?? 0) + 1;
+              const oldStatus = (p as any).old?.status as
+                | ThreadStatus
+                | undefined;
+              const newStatus = (p as any).new?.status as
+                | ThreadStatus
+                | undefined;
+              if (isCountable(oldStatus))
+                st[oldStatus] = Math.max(0, (st[oldStatus] ?? 0) - 1);
+              if (isCountable(newStatus))
+                st[newStatus] = (st[newStatus] ?? 0) + 1;
             } else if (evt === "DELETE") {
-              const delStatus = (p as any).old?.status as ThreadStatus | undefined;
-              if (isCountable(delStatus)) st[delStatus] = Math.max(0, (st[delStatus] ?? 0) - 1);
+              const delStatus = (p as any).old?.status as
+                | ThreadStatus
+                | undefined;
+              if (isCountable(delStatus))
+                st[delStatus] = Math.max(0, (st[delStatus] ?? 0) - 1);
               st.total = Math.max(0, st.total - 1);
             }
             return next;
@@ -183,7 +205,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
         } catch (e) {
           toastError(e, { title: "Error en tiempo real de hilos" });
         }
-      }
+      },
     );
 
     // RECEIPTS → actualizar bandera de no leídos
@@ -207,7 +229,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
               id,
               review_threads!inner(sku),
               review_message_receipts!left(user_id, read_at)
-            `
+            `,
             )
             .eq("id", merged.message_id)
             .limit(1)
@@ -217,8 +239,10 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
           const sku = data.review_threads.sku as string;
 
           // ¿Sigue habiendo mensajes no leídos para ese SKU?
-          const receipts =
-            (data.review_message_receipts ?? []) as { user_id: string; read_at: string | null }[];
+          const receipts = (data.review_message_receipts ?? []) as {
+            user_id: string;
+            read_at: string | null;
+          }[];
           const mineRec = receipts.find((r) => r.user_id === selfId);
           const stillUnread = !mineRec || !mineRec.read_at;
 
@@ -226,7 +250,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
         } catch (e) {
           toastError(e, { title: "Error actualizando lectura de mensajes" });
         }
-      }
+      },
     );
 
     ch.subscribe((status) => {

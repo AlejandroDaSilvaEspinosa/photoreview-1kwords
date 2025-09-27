@@ -5,14 +5,14 @@ import { useMessagesStore } from "@/stores/messages";
 import { emitToast } from "@/hooks/useToast";
 
 /**
- * Outbox ligero y estable:
- * - Envío inmediato si hay conexión; si falla por red/offline → encola una vez.
- * - Siempre crea optimista (id < 0) con clientNonce para reconciliar con realtime/confirm.
- * - Flush secuencial al recuperar conexión o cuando lo invocas.
+ * Outbox ligero y robusto:
+ * - Envía inmediato si hay red; en fallo de red → encola.
+ * - Crea optimista (id < 0) con clientNonce para reconciliar con realtime/confirm.
+ * - Flush secuencial al reconectar o bajo demanda, con reintentos y backoff.
  */
 
-const OUTBOX_VER = 2;
-const STORAGE_KEY = `rev_outbox_v${OUTBOX_VER}`;
+const OUTBOX_VERSION = 3;
+const STORAGE_KEY = `rev_outbox_v${OUTBOX_VERSION}`;
 
 type QueueItem = {
   qid: string;
@@ -21,87 +21,151 @@ type QueueItem = {
   clientNonce: string;
   request: { url: string; init: RequestInit };
   createdAt: number;
+  retries: number;
+  lastError?: string;
 };
 
 type OutboxState = { q: QueueItem[] };
 
+// In-memory
 const memory: OutboxState = { q: [] };
 let flushing = false;
 let warnedOffline = false;
+let listenersBound = false;
 
 /* ===== Utils ===== */
 const now = () => Date.now();
-const uid = () =>
-  (typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? (crypto as any).randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
 
-const isOnline = () => typeof navigator === "undefined" || navigator.onLine;
+const uuid = (): string => {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return (crypto as any).randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+};
 
-function load() {
+const online = (): boolean =>
+  typeof navigator === "undefined" || navigator.onLine;
+
+const isNetworkError = (err: unknown): boolean => {
+  const msg = String((err as any)?.message ?? err ?? "");
+  return /network|fetch|Failed to fetch|TypeError|NetworkError|ERR_NETWORK/i.test(
+    msg,
+  );
+};
+
+/* ===== Storage ===== */
+function loadFromStorage(): void {
+  if (typeof window === "undefined") return;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     const parsed = JSON.parse(raw) as OutboxState;
-    if (parsed?.q && Array.isArray(parsed.q)) memory.q = parsed.q;
-  } catch {}
+    if (parsed && Array.isArray(parsed.q)) memory.q = parsed.q;
+  } catch (e) {
+    console.warn("Outbox: load error → clearing", e);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {}
+  }
 }
 
-function save() {
+function saveToStorage(): void {
+  if (typeof window === "undefined") return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ q: memory.q }));
-  } catch {}
+  } catch (e) {
+    console.warn("Outbox: save error", e);
+  }
 }
 
 function push(item: QueueItem) {
   memory.q.push(item);
-  save();
+  saveToStorage();
 }
 
-function shift(): QueueItem | undefined {
-  const it = memory.q.shift();
-  save();
-  return it;
+function removeAt(index: number) {
+  memory.q.splice(index, 1);
+  saveToStorage();
 }
 
-/* ===== Flush secuencial ===== */
-async function flushInternal() {
-  if (flushing) return;
+function updateAt(index: number, patch: Partial<QueueItem>) {
+  const cur = memory.q[index];
+  if (!cur) return;
+  memory.q[index] = { ...cur, ...patch };
+  saveToStorage();
+}
+
+/* ===== Sender ===== */
+const MAX_RETRIES = 3;
+const RETRY_BASE_MS = 900;
+
+async function sendOnce(item: QueueItem) {
+  const res = await fetch(item.request.url, item.request.init);
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status}${txt ? `: ${txt}` : ""}`);
+  }
+  return res.json();
+}
+
+async function processQueueItem(
+  item: QueueItem,
+  index: number,
+): Promise<boolean> {
+  try {
+    const data = await sendOnce(item);
+    const { confirmMessage } = useMessagesStore.getState();
+    confirmMessage(item.threadId, item.tempId, data as any);
+    return true; // success → eliminar
+  } catch (err) {
+    const net = isNetworkError(err) || !online();
+    const nextRetries = (item.retries ?? 0) + 1;
+
+    updateAt(index, {
+      retries: nextRetries,
+      lastError: String((err as any)?.message ?? err),
+    });
+
+    if (net) {
+      // fallo de red: mantenemos en cola y paramos el flush
+      return false;
+    }
+
+    // error no-red → reintentos con backoff
+    if (nextRetries < MAX_RETRIES) {
+      const delay = RETRY_BASE_MS * nextRetries;
+      await new Promise((r) => setTimeout(r, delay));
+      return processQueueItem(memory.q[index], index);
+    }
+
+    // agotado
+    emitToast({
+      variant: "error",
+      title: "Error enviando mensaje",
+      description: "No se pudo enviar el mensaje después de varios intentos.",
+      timeAgo: "",
+      actionLabel: "",
+      onAction: () => {},
+      thumbUrl: "",
+    });
+
+    return true; // eliminar de la cola
+  }
+}
+
+async function flushInternal(): Promise<void> {
+  if (flushing || !memory.q.length) return;
   flushing = true;
   try {
-    while (memory.q.length && isOnline()) {
-      const item = memory.q[0];
-
-      try {
-        const res = await fetch(item.request.url, item.request.init);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-
-        const { confirmMessage } = useMessagesStore.getState();
-        confirmMessage(item.threadId, item.tempId, json as any);
-
-        shift();
-      } catch (e) {
-        const offline = !isOnline();
-        const msg = String((e as any)?.message || e || "");
-        const networky = /network|fetch|Failed to fetch|TypeError/i.test(msg);
-
-        if (offline || networky) {
-          if (!warnedOffline && offline) {
-            warnedOffline = true;
-            emitToast({
-              variant: "warning",
-              title: "Sin conexión",
-              description: "Enviaré los mensajes pendientes al recuperar la conexión.",
-              timeAgo: "",
-              actionLabel: "",
-              onAction: () => {},
-              thumbUrl: "",
-            });
-          }
-          break; // parar flush, esperar reconexión
-        }
-        // Si es 4xx/5xx no transitorio, mantenemos en cola (decisión del usuario más tarde).
+    const i = 0;
+    while (i < memory.q.length && online()) {
+      const item = memory.q[i];
+      const ok = await processQueueItem(item, i);
+      if (ok) {
+        removeAt(i);
+        // no incrementamos i porque el array se ha corrido
+      } else {
+        // fallo de red → paramos el flush
         break;
       }
     }
@@ -110,72 +174,126 @@ async function flushInternal() {
   }
 }
 
-export function flushOutbox() {
+/* ===== Public API ===== */
+
+export function flushOutbox(): void {
   warnedOffline = false;
-  if (!memory.q.length) return;
-  if (!isOnline()) return;
-  void flushInternal();
+  if (!memory.q.length || !online()) return;
+  setTimeout(() => {
+    flushInternal().catch((e) => console.error("Outbox flush error:", e));
+  }, 0);
 }
 
-/* ===== API pública ===== */
-
-export function initMessagesOutbox() {
+export function initMessagesOutbox(): () => void | undefined {
   if (typeof window === "undefined") return;
-  load();
-
+  loadFromStorage();
   flushOutbox();
-  window.addEventListener("online", () => {
-    warnedOffline = false;
-    flushOutbox();
-  });
+
+  if (!listenersBound) {
+    listenersBound = true;
+    const onOnline = () => {
+      warnedOffline = false;
+      flushOutbox();
+    };
+    const onOffline = () => {
+      warnedOffline = false;
+    };
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      listenersBound = false;
+    };
+  }
+  return;
 }
 
 /**
- * Encola una petición y crea optimista siempre (mejor UX).
+ * Crea mensaje optimista y envía; si falla → encola.
  * Devuelve el tempId negativo.
  */
 export function enqueueMessageRequest(
   threadId: number,
   makeRequest: (clientNonce: string) => { url: string; init: RequestInit },
-  optimistic?: { text?: string; is_system?: boolean; created_at?: string; clientNonce?: string }
+  optimistic?: {
+    text?: string;
+    is_system?: boolean;
+    created_at?: string;
+    clientNonce?: string;
+  },
 ): number {
   const tempId = -Math.floor(Date.now() + Math.random() * 1000);
-  const nonce = optimistic?.clientNonce || uid();
-  const opt = optimistic ?? {};
+  const clientNonce = optimistic?.clientNonce || uuid();
 
-  // Crear optimista inmediatamente con clientNonce
+  // Crear optimista inmediato
   const { addOptimistic } = useMessagesStore.getState();
   addOptimistic(threadId, tempId, {
-    text: opt.text,
-    is_system: !!opt.is_system,
-    created_at: opt.created_at ?? new Date().toISOString(),
-    meta: { clientNonce: nonce },
+    text: optimistic?.text ?? "",
+    is_system: !!optimistic?.is_system,
+    created_at: optimistic?.created_at ?? new Date().toISOString(),
+    meta: { clientNonce },
   } as any);
 
-  const req = makeRequest(nonce);
+  const request = makeRequest(clientNonce);
 
-  if (isOnline()) {
+  const sendOrQueue = async () => {
+    try {
+      const data = await sendOnce({} as any, request as any); // dummy to satisfy TS (not used)
+    } catch {}
+  };
+
+  if (online()) {
     (async () => {
       try {
-        const res = await fetch(req.url, req.init);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-        const { confirmMessage } = useMessagesStore.getState();
-        confirmMessage(threadId, tempId, json as any);
-        flushOutbox();
-      } catch {
-        push({ qid: uid(), threadId, tempId, clientNonce: nonce, request: req, createdAt: now() });
-        flushOutbox();
-      }
+        const data = await sendOnce({} as any, request as any); // dummy for TS
+      } catch {}
     })();
-  } else {
-    push({ qid: uid(), threadId, tempId, clientNonce: nonce, request: req, createdAt: now() });
   }
+
+  // Mejor: intentamos de una
+  (async () => {
+    try {
+      const data = await sendOnce({} as any, request as any);
+      const { confirmMessage } = useMessagesStore.getState();
+      confirmMessage(threadId, tempId, data as any);
+      flushOutbox(); // por si hay cola antigua
+    } catch (err) {
+      // Encolar
+      const item: QueueItem = {
+        qid: uuid(),
+        threadId,
+        tempId,
+        clientNonce,
+        request,
+        createdAt: now(),
+        retries: 0,
+        lastError: String((err as any)?.message ?? err ?? ""),
+      };
+      push(item);
+
+      if (!online() && !warnedOffline) {
+        warnedOffline = true;
+        emitToast({
+          variant: "warning",
+          title: "Sin conexión",
+          description:
+            "Enviaré los mensajes pendientes al recuperar la conexión.",
+          timeAgo: "",
+          actionLabel: "",
+          onAction: () => {},
+          thumbUrl: "",
+        });
+      }
+      flushOutbox();
+    }
+  })();
 
   return tempId;
 }
 
-export function enqueueSendMessage(threadId: number, text: string) {
+export function enqueueSendMessage(threadId: number, text: string): number {
   return enqueueMessageRequest(
     threadId,
     (clientNonce) => ({
@@ -183,10 +301,17 @@ export function enqueueSendMessage(threadId: number, text: string) {
       init: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // ⚠️ Enviar el nonce para reconciliar en realtime (el backend debe propagarlo)
         body: JSON.stringify({ threadId, text, clientNonce }),
       },
     }),
-    { text }
+    { text },
   );
+}
+
+export function getOutboxStatus() {
+  return {
+    queueLength: memory.q.length,
+    isProcessing: flushing,
+    hasOfflineWarning: warnedOffline,
+  };
 }

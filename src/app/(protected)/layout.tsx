@@ -11,12 +11,19 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "1K Words - Revisión de Productos",
-  description: "Panel de revisión de imágenes de productos para Castejón Joyeros",
+  description:
+    "Panel de revisión de imágenes de productos para Castejón Joyeros",
 };
 
-export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
+export default async function ProtectedLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const supabase = await supabaseServer();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user) {
     redirect("/login");

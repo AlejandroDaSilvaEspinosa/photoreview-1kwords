@@ -6,7 +6,7 @@ export function onTable<T>(
   ch: any, // RealtimeChannel
   table: string,
   handler: (evt: Event, row: T) => void,
-  opts?: { schema?: string; filter?: string; event?: Event }
+  opts?: { schema?: string; filter?: string; event?: Event },
 ) {
   const { schema = "public", filter, event = "*" } = opts || {};
   ch.on(
@@ -17,7 +17,7 @@ export function onTable<T>(
       const row = (evt === "DELETE" ? p.old : p.new) as T | null;
       if (!row) return;
       handler(evt, row);
-    }
+    },
   );
   return ch;
 }

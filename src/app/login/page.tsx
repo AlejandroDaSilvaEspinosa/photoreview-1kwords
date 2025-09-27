@@ -8,7 +8,7 @@ import styles from "./page.module.css";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");         // ← usa email
+  const [email, setEmail] = useState(""); // ← usa email
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -35,7 +35,13 @@ export default function LoginPage() {
   return (
     <div className={styles.loginContainer}>
       <div className={styles.logoWrapper}>
-        <Image src="/1kwords-logo.png" alt="1K Words Logo" width={250} height={70} priority />
+        <Image
+          src="/1kwords-logo.png"
+          alt="1K Words Logo"
+          width={250}
+          height={70}
+          priority
+        />
       </div>
 
       <div className={styles.loginBox}>
@@ -66,7 +72,12 @@ export default function LoginPage() {
 
           {error && <p className={styles.error}>{error}</p>}
 
-          <button type="submit" className={styles.button} disabled={submitting} aria-busy={submitting}>
+          <button
+            type="submit"
+            className={styles.button}
+            disabled={submitting}
+            aria-busy={submitting}
+          >
             {submitting ? "Accediendo…" : "Acceder"}
           </button>
         </form>

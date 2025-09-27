@@ -1,45 +1,45 @@
 /* src/components/home/ProgressList.module.css */
 .list {
-    display: grid;
-    gap: 6px;
+  display: grid;
+  gap: 6px;
 }
 
 .row {
-    display: grid;
-    gap: 6px;
+  display: grid;
+  gap: 6px;
 }
 
 .bar {
-    display: flex;
-    width: 100%;
-    height: 10px;
-    border-radius: 999px;
-    overflow: hidden;
-    background: #222;
-    border: 1px solid var(--border-1);
+  display: flex;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #222;
+  border: 1px solid var(--border-1);
 }
 
 .pending {
-    background: var(--red-bg);
-    height: 100%;
-    border-right: 1px solid var(--red-border);
+  background: var(--red-bg);
+  height: 100%;
+  border-right: 1px solid var(--red-border);
 }
 
 .corrected {
-    background: var(--green-bg);
-    height: 100%;
-    border-right: 1px solid var(--green-border);
+  background: var(--green-bg);
+  height: 100%;
+  border-right: 1px solid var(--green-border);
 }
 
 .reopened {
-    background: var(--orange-bg);
-    height: 100%;
+  background: var(--orange-bg);
+  height: 100%;
 }
 
 .legend {
-    font-size: 11px;
-    color: #bbb;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  font-size: 11px;
+  color: #bbb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

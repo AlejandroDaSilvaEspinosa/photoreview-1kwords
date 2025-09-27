@@ -9,12 +9,12 @@ type Props = Omit<ImageProps, "onError"> & {
   minSkeletonMs?: number;
   fallbackText?: string;
   forceSkeletonOnSrcChange?: boolean;
-  onReady?: (img:any) => void; 
+  onReady?: (img: any) => void;
 };
 
 function srcToString(src: any): string {
   if (typeof src === "string") return src;
-  return src?.src  ?? "";
+  return src?.src ?? "";
 }
 
 const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
@@ -28,7 +28,7 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
       onReady,
       ...imgProps
     },
-    ref
+    ref,
   ) => {
     const [loaded, setLoaded] = useState(false);
     const [error, setError] = useState(false);
@@ -55,7 +55,7 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
       };
     }, []);
 
-    const handleLoaded = (img:HTMLImageElement) => {
+    const handleLoaded = (img: HTMLImageElement) => {
       if (error) return;
       const elapsed = Date.now() - mountedAt;
       const remaining = Math.max(0, minSkeletonMs - elapsed);
@@ -70,7 +70,6 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
         }, remaining) as unknown as number;
       }
     };
-
 
     return (
       <div
@@ -90,7 +89,7 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
             key={srcKey}
             {...imgProps}
             onLoad={(e) => {
-              const img = e.currentTarget as HTMLImageElement
+              const img = e.currentTarget as HTMLImageElement;
               setRatio(img.naturalWidth / img.naturalHeight);
               handleLoaded(img);
             }}
@@ -98,7 +97,6 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
               setError(true);
               setLoaded(false);
             }}
-            
             className={`${styles.image} ${loaded ? styles.imageVisible : ""} ${className ?? ""}`}
           />
         ) : (
@@ -108,7 +106,7 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
         )}
       </div>
     );
-  }
+  },
 );
 
 ImageWithSkeleton.displayName = "ImageWithSkeleton";

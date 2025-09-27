@@ -1,7 +1,13 @@
 // app/(protected)/home.tsx
 "use client";
 
-import { useEffect, useMemo, useState, useCallback, startTransition } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  startTransition,
+} from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ImageViewer from "@/components/ImageViewer";
 import Header from "@/components/Header";
@@ -16,7 +22,6 @@ import SkuCard from "@/components/home/SkuCard";
 import { useImagesCatalogStore } from "@/stores/imagesCatalog";
 import { emitToast, toastError } from "@/hooks/useToast";
 import { localGetJSON, localSetJSON } from "@/lib/storage";
-import { initMessagesOutbox } from "@/lib/net/messagesOutbox";
 
 /**
  * DEV NOTES
@@ -40,15 +45,15 @@ const STATUS_LABEL: Record<SkuStatus, string> = {
   reopened: "Reabierto",
 };
 
-const ALL: SkuStatus[] = ["pending_validation", "needs_correction", "validated", "reopened"];
+const ALL: SkuStatus[] = [
+  "pending_validation",
+  "needs_correction",
+  "validated",
+  "reopened",
+];
 const LS_KEY = "home.filters.statuses.v1";
 
 export default function Home({ username, skus, clientInfo }: Props) {
-
-  useEffect(() => {
-    initMessagesOutbox(); // idempotente
-  }, [])
-  
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -91,9 +96,12 @@ export default function Home({ username, skus, clientInfo }: Props) {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch("/api/notifications?limit=30", { cache: "no-store" });
+        const res = await fetch("/api/notifications?limit=30", {
+          cache: "no-store",
+        });
         if (!alive) return;
-        if (!res.ok) throw new Error("No se pudieron obtener las notificaciones.");
+        if (!res.ok)
+          throw new Error("No se pudieron obtener las notificaciones.");
         const json = await res.json();
         setNotifPrefetch({ items: json.items ?? [], unseen: json.unseen ?? 0 });
       } catch (e) {
@@ -101,7 +109,9 @@ export default function Home({ username, skus, clientInfo }: Props) {
         toastError(e, { title: "Fallo cargando notificaciones" });
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // ==================== URL <-> selección helpers ====================
@@ -113,7 +123,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
         startTransition(() => router.replace(target, { scroll: false }));
       }
     },
-    [pathname, router, searchParams]
+    [pathname, router, searchParams],
   );
 
   const selectSku = useCallback(
@@ -122,14 +132,16 @@ export default function Home({ username, skus, clientInfo }: Props) {
       if (sku) {
         next.set("sku", sku.sku);
         const img = next.get("image");
-        if (img && !sku.images.some((i) => i.name === img)) next.delete("image");
+        if (img && !sku.images.some((i) => i.name === img))
+          next.delete("image");
       } else {
-        next.delete("sku"); next.delete("image");
+        next.delete("sku");
+        next.delete("image");
       }
       next.delete("thread");
       replaceParams(next);
     },
-    [searchParams, replaceParams]
+    [searchParams, replaceParams],
   );
 
   const selectImage = useCallback(
@@ -140,7 +152,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
       next.delete("thread");
       replaceParams(next);
     },
-    [searchParams, replaceParams]
+    [searchParams, replaceParams],
   );
 
   const selectThread = useCallback(
@@ -150,12 +162,13 @@ export default function Home({ username, skus, clientInfo }: Props) {
       else next.delete("thread");
       replaceParams(next);
     },
-    [searchParams, replaceParams]
+    [searchParams, replaceParams],
   );
 
   const onOpenSku = useCallback(
-    (sku: string) => selectSku(effectiveSkus.find((s) => s.sku === sku) ?? null),
-    [selectSku, effectiveSkus]
+    (sku: string) =>
+      selectSku(effectiveSkus.find((s) => s.sku === sku) ?? null),
+    [selectSku, effectiveSkus],
   );
 
   const onOpenImage = useCallback(
@@ -169,7 +182,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
       next.delete("thread");
       replaceParams(next);
     },
-    [effectiveSkus, replaceParams, searchParams]
+    [effectiveSkus, replaceParams, searchParams],
   );
 
   // URL params → selección actual
@@ -177,17 +190,25 @@ export default function Home({ username, skus, clientInfo }: Props) {
   const imageParam = searchParams.get("image");
   const threadParam = searchParams.get("thread");
 
-  const bySku = useMemo(() => new Map(effectiveSkus.map((s) => [s.sku, s])), [effectiveSkus]);
-  const selectedSku: SkuWithImagesAndStatus | null = skuParam ? bySku.get(skuParam) ?? null : null;
+  const bySku = useMemo(
+    () => new Map(effectiveSkus.map((s) => [s.sku, s])),
+    [effectiveSkus],
+  );
+  const selectedSku: SkuWithImagesAndStatus | null = skuParam
+    ? (bySku.get(skuParam) ?? null)
+    : null;
 
   const selectedImageName: string | null = useMemo(() => {
     if (!selectedSku || !imageParam) return null;
-    return selectedSku.images.some((i) => i.name === imageParam) ? imageParam : null;
+    return selectedSku.images.some((i) => i.name === imageParam)
+      ? imageParam
+      : null;
   }, [selectedSku, imageParam]);
 
   const selectedThreadId: number | null = useMemo(
-    () => (threadParam && /^-?\d+$/.test(threadParam) ? Number(threadParam) : null),
-    [threadParam]
+    () =>
+      threadParam && /^-?\d+$/.test(threadParam) ? Number(threadParam) : null,
+    [threadParam],
   );
 
   // Evita incoherencias imagen/thread si la imagen no pertenece al SKU
@@ -196,7 +217,8 @@ export default function Home({ username, skus, clientInfo }: Props) {
     const belongs = selectedSku.images.some((i) => i.name === imageParam);
     if (!belongs) {
       const next = new URLSearchParams(searchParams.toString());
-      next.delete("image"); next.delete("thread");
+      next.delete("image");
+      next.delete("thread");
       replaceParams(next);
       emitToast({
         variant: "warning",
@@ -230,11 +252,15 @@ export default function Home({ username, skus, clientInfo }: Props) {
   }, []);
 
   // ==================== Derivados ====================
-  const filtered = useMemo(() => effectiveSkus.filter((s) => active.has(s.status)), [effectiveSkus, active]);
+  const filtered = useMemo(
+    () => effectiveSkus.filter((s) => active.has(s.status)),
+    [effectiveSkus, active],
+  );
 
   const grouped = useMemo(() => {
     const m = new Map<SkuStatus, SkuWithImagesAndStatus[]>();
-    for (const s of filtered) (m.get(s.status) || (m.set(s.status, []), m.get(s.status)!)).push(s);
+    for (const s of filtered)
+      (m.get(s.status) || (m.set(s.status, []), m.get(s.status)!)).push(s);
     return m;
   }, [filtered]);
 
@@ -271,7 +297,14 @@ export default function Home({ username, skus, clientInfo }: Props) {
               <FilterPills
                 all={ALL}
                 labels={STATUS_LABEL}
-                totals={Object.fromEntries(ALL.map((s) => [s, effectiveSkus.filter((x) => x.status === s).length])) as Record<SkuStatus, number>}
+                totals={
+                  Object.fromEntries(
+                    ALL.map((s) => [
+                      s,
+                      effectiveSkus.filter((x) => x.status === s).length,
+                    ]),
+                  ) as Record<SkuStatus, number>
+                }
                 active={active}
                 onToggle={toggle}
               />
@@ -282,7 +315,9 @@ export default function Home({ username, skus, clientInfo }: Props) {
 
                 return (
                   <section key={k} className={styles.section}>
-                    <StatusHeading label={`${STATUS_LABEL[k]} · ${items.length}`} />
+                    <StatusHeading
+                      label={`${STATUS_LABEL[k]} · ${items.length}`}
+                    />
                     <div className={styles.skuGrid} role="list">
                       {items.map((sku) => (
                         <SkuCard

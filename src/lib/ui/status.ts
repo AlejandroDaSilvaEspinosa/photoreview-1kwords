@@ -16,7 +16,13 @@ export const SKU_LABEL: Record<SkuStatus, string> = {
 };
 
 export const colorByThreadStatus = (s: ThreadStatus) =>
-  s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : s === "deleted" ? "#666" : "#FF0040";
+  s === "corrected"
+    ? "#0FA958"
+    : s === "reopened"
+      ? "#FFB000"
+      : s === "deleted"
+        ? "#666"
+        : "#FF0040";
 
 export const nextThreadStatus = (s: ThreadStatus): ThreadStatus =>
   s === "corrected" ? "reopened" : "corrected";

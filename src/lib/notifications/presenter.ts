@@ -12,7 +12,11 @@ export type Presentation = {
 
 export function buildDeeplink(n: NotificationRow): string | undefined {
   if (n.thread_id && n.sku && n.image_name) {
-    const q = new URLSearchParams({ sku: n.sku, image: n.image_name, thread: String(n.thread_id) });
+    const q = new URLSearchParams({
+      sku: n.sku,
+      image: n.image_name,
+      thread: String(n.thread_id),
+    });
     return `?${q.toString()}`;
   }
   if (n.type === "image_status_changed" && n.sku && n.image_name) {
@@ -27,7 +31,10 @@ export function buildDeeplink(n: NotificationRow): string | undefined {
 }
 
 export function presentNotification(n: NotificationRow): Presentation {
-  const VARIANT: Record<NotificationRow["type"], "info" | "success" | "warning" | "error"> = {
+  const VARIANT: Record<
+    NotificationRow["type"],
+    "info" | "success" | "warning" | "error"
+  > = {
     new_message: "info",
     new_thread: "info",
     thread_status_changed: "warning",
@@ -38,7 +45,9 @@ export function presentNotification(n: NotificationRow): Presentation {
   const deeplink = buildDeeplink(n);
 
   // Resuelve thumbnail por (sku, image_name) si viene
-  const thumbUrl = useImagesCatalogStore.getState().thumbOf(n.sku, n.image_name);
+  const thumbUrl = useImagesCatalogStore
+    .getState()
+    .thumbOf(n.sku, n.image_name);
 
   if (n.type === "new_message") {
     const imgName = n.image_name || "";
@@ -53,7 +62,7 @@ export function presentNotification(n: NotificationRow): Presentation {
       variant: VARIANT[n.type],
       actionLabel: "Ver mensaje",
       deeplink,
-      thumbUrl, 
+      thumbUrl,
     };
   }
 
@@ -70,9 +79,8 @@ export function presentNotification(n: NotificationRow): Presentation {
     description: (n.message ?? "").trim(),
     variant: VARIANT[n.type] ?? "info",
     actionLabel:
-      (n.image_name && n.sku) ? "Abrir imagen" :
-      (n.sku) ? "Abrir SKU" : undefined,
+      n.image_name && n.sku ? "Abrir imagen" : n.sku ? "Abrir SKU" : undefined,
     deeplink,
-    thumbUrl, 
+    thumbUrl,
   };
 }

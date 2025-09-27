@@ -11,15 +11,16 @@ import { toastError } from "@/hooks/useToast";
 import { connectWithBackoff } from "@/lib/realtime/channel";
 
 const round3 = (n: number) => Math.round(Number(n) * 1000) / 1000;
-const keyOf = (image: string, x: number, y: number) => `${image}|${round3(x)}|${round3(y)}`;
+const keyOf = (image: string, x: number, y: number) =>
+  `${image}|${round3(x)}|${round3(y)}`;
 
 export function useWireSkuRealtime(sku: string) {
   const upThread = useThreadsStore((s) => s.upsertFromRealtime);
   const delThread = useThreadsStore((s) => s.removeFromRealtime);
-  const upMsg    = useMessagesStore((s) => s.upsertFromRealtime);
-  const delMsg   = useMessagesStore((s) => s.removeFromRealtime);
-  const upSku    = useStatusesStore((s) => s.upsertSku);
-  const upImg    = useStatusesStore((s) => s.upsertImage);
+  const upMsg = useMessagesStore((s) => s.upsertFromRealtime);
+  const delMsg = useMessagesStore((s) => s.removeFromRealtime);
+  const upSku = useStatusesStore((s) => s.upsertSku);
+  const upImg = useStatusesStore((s) => s.upsertImage);
 
   useEffect(() => {
     const sb = supabaseBrowser();
@@ -37,7 +38,9 @@ export function useWireSkuRealtime(sku: string) {
         const pendingByKey = useThreadsStore.getState().pendingByKey;
         for (const row of (threads || []) as ThreadRow[]) {
           upThread(row);
-          const tempId = pendingByKey.get(keyOf(row.image_name, row.x as any, row.y as any));
+          const tempId = pendingByKey.get(
+            keyOf(row.image_name, row.x as any, row.y as any),
+          );
           if (tempId != null && tempId !== row.id) {
             useMessagesStore.getState().moveThreadMessages(tempId, row.id);
           }
@@ -73,7 +76,9 @@ export function useWireSkuRealtime(sku: string) {
         if (e4) throw e4;
         for (const r of (skuStatus || []) as SkuStatusRow[]) upSku(r);
       } catch (e) {
-        toastError(e, { title: "Fallo obteniendo últimas actualizaciones del SKU" });
+        toastError(e, {
+          title: "Fallo obteniendo últimas actualizaciones del SKU",
+        });
       }
     };
 
@@ -83,10 +88,17 @@ export function useWireSkuRealtime(sku: string) {
         // THREADS
         ch.on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "review_threads", filter: `sku=eq.${sku}` },
+          {
+            event: "*",
+            schema: "public",
+            table: "review_threads",
+            filter: `sku=eq.${sku}`,
+          },
           (p) => {
             const evt = (p as any).eventType as "INSERT" | "UPDATE" | "DELETE";
-            const row = (evt === "DELETE" ? (p as any).old : (p as any).new) as ThreadRow | null;
+            const row = (
+              evt === "DELETE" ? (p as any).old : (p as any).new
+            ) as ThreadRow | null;
             if (!row) return;
 
             if (evt === "DELETE") {
@@ -95,12 +107,14 @@ export function useWireSkuRealtime(sku: string) {
             }
 
             const tmpMap = useThreadsStore.getState().pendingByKey;
-            const tempId = tmpMap.get(keyOf(row.image_name, row.x as any, row.y as any));
+            const tempId = tmpMap.get(
+              keyOf(row.image_name, row.x as any, row.y as any),
+            );
             upThread(row);
             if (tempId != null && tempId !== row.id) {
               useMessagesStore.getState().moveThreadMessages(tempId, row.id);
             }
-          }
+          },
         );
 
         // MESSAGES (global table)
@@ -109,7 +123,9 @@ export function useWireSkuRealtime(sku: string) {
           { event: "*", schema: "public", table: "review_messages" },
           async (p) => {
             const evt = (p as any).eventType as "INSERT" | "UPDATE" | "DELETE";
-            const row = (evt === "DELETE" ? (p as any).old : (p as any).new) as MessageRow | null;
+            const row = (
+              evt === "DELETE" ? (p as any).old : (p as any).new
+            ) as MessageRow | null;
             if (!row) return;
 
             if (evt === "DELETE") {
@@ -129,7 +145,10 @@ export function useWireSkuRealtime(sku: string) {
                     await fetch("/api/messages/receipts", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ messageIds: [row.id], mark: "delivered" }),
+                      body: JSON.stringify({
+                        messageIds: [row.id],
+                        mark: "delivered",
+                      }),
                     });
 
                     const activeId = useThreadsStore.getState().activeThreadId;
@@ -137,36 +156,60 @@ export function useWireSkuRealtime(sku: string) {
                       await fetch("/api/messages/receipts", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ messageIds: [row.id], mark: "read" }),
+                        body: JSON.stringify({
+                          messageIds: [row.id],
+                          mark: "read",
+                        }),
                       });
                     }
                   } catch (e) {
-                    toastError(e, { title: "Fallo enviando confirmación de lectura de mensaje" });
+                    toastError(e, {
+                      title:
+                        "Fallo enviando confirmación de lectura de mensaje",
+                    });
                   }
                 }
               }
             }
-          }
+          },
         );
 
         // IMAGE STATUS
         ch.on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "review_images_status", filter: `sku=eq.${sku}` },
+          {
+            event: "*",
+            schema: "public",
+            table: "review_images_status",
+            filter: `sku=eq.${sku}`,
+          },
           (p) => {
-            const row = ((p as any).eventType === "DELETE" ? (p as any).old : (p as any).new) as ImageStatusRow | null;
+            const row = (
+              (p as any).eventType === "DELETE"
+                ? (p as any).old
+                : (p as any).new
+            ) as ImageStatusRow | null;
             if (row) upImg(row);
-          }
+          },
         );
 
         // SKU STATUS
         ch.on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "review_skus_status", filter: `sku=eq.${sku}` },
+          {
+            event: "*",
+            schema: "public",
+            table: "review_skus_status",
+            filter: `sku=eq.${sku}`,
+          },
           (p) => {
-            const row = ((p as any).eventType === "DELETE" ? (p as any).old : (p as any).new) as SkuStatusRow | null;
+            const row = (
+              (p as any).eventType === "DELETE"
+                ? (p as any).old
+                : (p as any).new
+            ) as SkuStatusRow | null;
             if (row) upSku(row);
-          }
+          },
         );
 
         // RECEIPTS
@@ -182,8 +225,12 @@ export function useWireSkuRealtime(sku: string) {
             if (!merged.message_id || !merged.user_id) return;
             useMessagesStore
               .getState()
-              .upsertReceipt(merged.message_id, merged.user_id, merged.read_at ?? null);
-          }
+              .upsertReceipt(
+                merged.message_id,
+                merged.user_id,
+                merged.read_at ?? null,
+              );
+          },
         );
       },
       onCatchUp: catchUp,

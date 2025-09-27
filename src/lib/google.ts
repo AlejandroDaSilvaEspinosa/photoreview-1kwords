@@ -25,11 +25,11 @@ const credentials = loadServiceAccount();
 
 export const auth = new google.auth.GoogleAuth({
   scopes: [
-    "https://www.googleapis.com/auth/spreadsheets",  // ← escritura/lectura Sheets
-    "https://www.googleapis.com/auth/drive.readonly" // ← si listáis/mostráis cosas desde Drive
+    "https://www.googleapis.com/auth/spreadsheets", // ← escritura/lectura Sheets
+    "https://www.googleapis.com/auth/drive.readonly", // ← si listáis/mostráis cosas desde Drive
   ],
   ...(credentials ? { credentials } : { keyFile: "credentials.json" }),
 });
 
 export const sheets: sheets_v4.Sheets = google.sheets({ version: "v4", auth });
-export const drive: drive_v3.Drive  = google.drive({ version: "v3", auth });
+export const drive: drive_v3.Drive = google.drive({ version: "v3", auth });

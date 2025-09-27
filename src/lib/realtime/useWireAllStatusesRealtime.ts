@@ -32,7 +32,9 @@ export function useWireAllStatusesRealtime() {
         if (e2) throw e2;
         (imgSt || []).forEach((r: any) => upImg(r as ImageStatusRow));
       } catch (e) {
-        toastError(e, { title: "Fallo obteniendo últimas actualizaciones de estado" });
+        toastError(e, {
+          title: "Fallo obteniendo últimas actualizaciones de estado",
+        });
       }
     };
 
@@ -43,17 +45,25 @@ export function useWireAllStatusesRealtime() {
           "postgres_changes",
           { event: "*", schema: "public", table: "review_skus_status" },
           (p) => {
-            const row = ((p as any).eventType === "DELETE" ? (p as any).old : (p as any).new) as SkuStatusRow | null;
+            const row = (
+              (p as any).eventType === "DELETE"
+                ? (p as any).old
+                : (p as any).new
+            ) as SkuStatusRow | null;
             if (row) upSku(row);
-          }
+          },
         );
         ch.on(
           "postgres_changes",
           { event: "*", schema: "public", table: "review_images_status" },
           (p) => {
-            const row = ((p as any).eventType === "DELETE" ? (p as any).old : (p as any).new) as ImageStatusRow | null;
+            const row = (
+              (p as any).eventType === "DELETE"
+                ? (p as any).old
+                : (p as any).new
+            ) as ImageStatusRow | null;
             if (row) upImg(row);
-          }
+          },
         );
       },
       onCatchUp: catchUp,

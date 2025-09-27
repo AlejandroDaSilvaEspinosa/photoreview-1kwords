@@ -3,13 +3,15 @@ import { supabaseFromRequest } from "@/lib/supabase/route";
 
 export async function DELETE(
   req: NextRequest,
-  ctx: RouteContext<'/api/threads/[id]'>
+  ctx: RouteContext<"/api/threads/[id]">,
 ) {
   const { id } = await ctx.params; // params es async en Next 15
 
   const { client: sb } = supabaseFromRequest(req);
 
-  const { data: { user } } = await sb.auth.getUser();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

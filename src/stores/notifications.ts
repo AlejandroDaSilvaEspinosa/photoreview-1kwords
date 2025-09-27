@@ -44,7 +44,7 @@ type Actions = {
 };
 
 const sortDesc = (a: NotificationRow, b: NotificationRow) =>
-  (b.created_at || "").localeCompare(a.created_at || "") || (b.id - a.id);
+  (b.created_at || "").localeCompare(a.created_at || "") || b.id - a.id;
 
 const sameNotif = (a: NotificationRow, b: NotificationRow) =>
   a.id === b.id &&
@@ -59,11 +59,15 @@ const sameNotif = (a: NotificationRow, b: NotificationRow) =>
   a.message_id === b.message_id &&
   a.created_at === b.created_at;
 
-const defer = (fn: () => void) => (window as any)?.requestIdleCallback?.(fn) ?? setTimeout(fn, 0);
+const defer = (fn: () => void) =>
+  (window as any)?.requestIdleCallback?.(fn) ?? setTimeout(fn, 0);
 
 const MAX_ITEMS = 1000;
 
-const cache = createVersionedCache<{ rows: NotificationRow[]; unseen: number }>("rev_notifs", 3);
+const cache = createVersionedCache<{ rows: NotificationRow[]; unseen: number }>(
+  "rev_notifs",
+  3,
+);
 
 export const useNotificationsStore = create<State & Actions>()(
   subscribeWithSelector((set, get) => ({
@@ -83,11 +87,17 @@ export const useNotificationsStore = create<State & Actions>()(
       let changed = next.length !== prev.length;
       if (!changed) {
         for (let i = 0; i < next.length; i++) {
-          if (!sameNotif(prev[i], next[i])) { changed = true; break; }
+          if (!sameNotif(prev[i], next[i])) {
+            changed = true;
+            break;
+          }
         }
       }
       if (!changed) {
-        cache.save({ rows: prev, unseen: typeof unseenArg === "number" ? unseenArg : sNow.unseen });
+        cache.save({
+          rows: prev,
+          unseen: typeof unseenArg === "number" ? unseenArg : sNow.unseen,
+        });
         return;
       }
 
@@ -112,11 +122,14 @@ export const useNotificationsStore = create<State & Actions>()(
         const merged = { ...(prev || {}), ...row };
         if (prev && sameNotif(prev, merged)) return {};
         map.set(row.id, merged);
-        const items = Array.from(map.values()).sort(sortDesc).slice(0, MAX_ITEMS);
+        const items = Array.from(map.values())
+          .sort(sortDesc)
+          .slice(0, MAX_ITEMS);
 
         let unseen = s.unseen;
         if (!prev && !row.viewed) unseen += 1;
-        if (prev && !prev.viewed && row.viewed) unseen = Math.max(0, unseen - 1);
+        if (prev && !prev.viewed && row.viewed)
+          unseen = Math.max(0, unseen - 1);
 
         cache.save({ rows: items, unseen });
         return { items, unseen };
@@ -131,7 +144,9 @@ export const useNotificationsStore = create<State & Actions>()(
           const prev = map.get(r.id);
           if (!prev || !sameNotif(prev, r)) map.set(r.id, r);
         }
-        const items = Array.from(map.values()).sort(sortDesc).slice(0, MAX_ITEMS);
+        const items = Array.from(map.values())
+          .sort(sortDesc)
+          .slice(0, MAX_ITEMS);
         const unseen = items.filter((x) => !x.viewed).length;
         cache.save({ rows: items, unseen });
         return { items, unseen };
@@ -155,10 +170,11 @@ export const useNotificationsStore = create<State & Actions>()(
       cache.save({ rows: [], unseen: 0 });
       return { items: [], unseen: 0 };
     },
-  }))
+  })),
 );
 
 export const notificationsCache = {
   load: () => cache.load() ?? { rows: [], unseen: 0 },
-  save: (rows: NotificationRow[], unseen: number) => cache.save({ rows, unseen }),
+  save: (rows: NotificationRow[], unseen: number) =>
+    cache.save({ rows, unseen }),
 };

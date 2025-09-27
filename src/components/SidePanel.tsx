@@ -26,7 +26,7 @@ type Props = {
   onFocusThread: (id: number | null) => void;
   onToggleThreadStatus: (
     threadId: number,
-    next: ThreadStatus
+    next: ThreadStatus,
   ) => Promise<void> | void;
 
   onlineUsers?: { username: string }[];
@@ -51,6 +51,7 @@ export default function SidePanel({
   activeThreadId,
   onValidateSku,
   onUnvalidateSku,
+  onAddThreadMessage,
   onDeleteThread,
   onFocusThread,
   onToggleThreadStatus,
@@ -58,11 +59,11 @@ export default function SidePanel({
   withCorrectionsCount,
   validatedImagesCount,
   totalCompleted,
-  composeLocked,
-  statusLocked,
   totalImages,
   loading = false,
   initialCollapsed = false,
+  composeLocked,
+  statusLocked,
 }: Props) {
   const [collapsed, setCollapsed] = useState<boolean>(initialCollapsed);
 
@@ -85,22 +86,25 @@ export default function SidePanel({
   const selected = useMemo(
     () =>
       activeThreadId != null
-        ? threads.find((t) => t.id === activeThreadId) ?? null
+        ? (threads.find((t) => t.id === activeThreadId) ?? null)
         : null,
-    [activeThreadId, threads]
+    [activeThreadId, threads],
   );
 
   const hasOpenThreads = useMemo(
-    () => threads.some((t) => t.status === "pending" || t.status === "reopened"),
-    [threads]
+    () =>
+      threads.some((t) => t.status === "pending" || t.status === "reopened"),
+    [threads],
   );
 
   const threadIndex = useMemo(
-    () => (activeThreadId ? threads.findIndex((t) => t.id === activeThreadId) + 1 : 0),
-    [threads, activeThreadId]
+    () =>
+      activeThreadId
+        ? threads.findIndex((t) => t.id === activeThreadId) + 1
+        : 0,
+    [threads, activeThreadId],
   );
 
-  
   return (
     <aside
       className={`${styles.panel} ${collapsed ? styles.isCollapsed : ""}`}
@@ -111,7 +115,9 @@ export default function SidePanel({
         <div className={styles.rail} aria-hidden>
           <div className={styles.railHeader}>
             <span className={styles.dotMini} />
-            <span className={styles.presenceText}>{onlineUsers.length} en línea</span>
+            <span className={styles.presenceText}>
+              {onlineUsers.length} en línea
+            </span>
           </div>
           <button
             type="button"
@@ -130,7 +136,9 @@ export default function SidePanel({
           <header className={styles.header}>
             <div className={styles.presenceWrap}>
               <span className={styles.dotMini} />
-              <span className={styles.presenceText}>{onlineUsers.length} en línea</span>
+              <span className={styles.presenceText}>
+                {onlineUsers.length} en línea
+              </span>
             </div>
             <button
               type="button"
@@ -144,7 +152,9 @@ export default function SidePanel({
           </header>
 
           <span className={styles.fileName}>Revisión de: {name}</span>
-          {isValidated && <span className={styles.validatedBadge}>Validada</span>}
+          {isValidated && (
+            <span className={styles.validatedBadge}>Validada</span>
+          )}
 
           <div className={styles.validationButtons}>
             {!isValidated ? (
@@ -192,22 +202,27 @@ export default function SidePanel({
                 <ThreadChat
                   activeThread={selected}
                   threadIndex={threadIndex}
+                  onAddThreadMessage={onAddThreadMessage}
                   onFocusThread={onFocusThread}
                   onToggleThreadStatus={onToggleThreadStatus}
                   onDeleteThread={onDeleteThread}
                   composeLocked={composeLocked}
                   statusLocked={statusLocked}
-                  
                 />
               )}
             </div>
           )}
 
-          <section className={styles.reviewSummary} aria-label="Progreso de revisión">
+          <section
+            className={styles.reviewSummary}
+            aria-label="Progreso de revisión"
+          >
             <h4>Progreso</h4>
             <div className={styles.progressInfo}>
               <span>Con correcciones</span>
-              <strong className={styles.countWarn}>{withCorrectionsCount}</strong>
+              <strong className={styles.countWarn}>
+                {withCorrectionsCount}
+              </strong>
             </div>
             <div className={styles.progressInfo}>
               <span>Validadas</span>

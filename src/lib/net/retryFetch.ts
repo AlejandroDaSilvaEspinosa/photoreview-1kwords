@@ -8,7 +8,7 @@ const jitter = (ms: number) => Math.floor(ms * (0.75 + Math.random() * 0.5));
 export async function fetchJsonRetry<T>(
   input: RequestInfo,
   init: RequestInit = {},
-  opts: { retries?: number; baseMs?: number; timeoutMs?: number } = {}
+  opts: { retries?: number; baseMs?: number; timeoutMs?: number } = {},
 ): Promise<T> {
   const { retries = 2, baseMs = 600, timeoutMs = 10000 } = opts;
 
@@ -18,7 +18,11 @@ export async function fetchJsonRetry<T>(
     try {
       const res = await fetch(input, { ...init, signal: ctrl.signal });
       clearTimeout(t);
-      if (!res.ok) throw new ApiError((await res.text().catch(()=>"")) || "Error del servidor", res.status);
+      if (!res.ok)
+        throw new ApiError(
+          (await res.text().catch(() => "")) || "Error del servidor",
+          res.status,
+        );
       return res.json() as Promise<T>;
     } catch (e) {
       clearTimeout(t);

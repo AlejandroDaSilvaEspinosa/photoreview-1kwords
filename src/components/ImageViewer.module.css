@@ -5,7 +5,8 @@
   height: 100vh;
   background: #1a1a1a;
   color: var(--text-1);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 .mainViewer {
@@ -30,7 +31,7 @@
   font-size: 15px;
   font-weight: 700;
   color: var(--text-1);
-  letter-spacing: .2px;
+  letter-spacing: 0.2px;
 }
 
 .titleSku {
@@ -76,7 +77,7 @@
   max-height: 100%;
   object-fit: contain;
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 /* Pista de atajos (look coherente) */
@@ -91,8 +92,8 @@
   padding: 8px 16px;
   border-radius: 8px 0 0 0;
   font-size: 14px;
-  letter-spacing: .2px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+  letter-spacing: 0.2px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   -webkit-user-select: none;
   -moz-user-select: none;
   user-select: none;
@@ -111,7 +112,6 @@
   }
 }
 
-
 /* ===== Navegación lateral ===== */
 .navButton {
   position: absolute;
@@ -127,7 +127,9 @@
   color: #eee;
   z-index: 5;
   cursor: pointer;
-  transition: background .2s ease, transform .08s ease;
+  transition:
+    background 0.2s ease,
+    transform 0.08s ease;
 }
 
 .navButton:hover:not(:disabled) {
@@ -139,7 +141,7 @@
 }
 
 .navButton:disabled {
-  opacity: .35;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
@@ -157,7 +159,7 @@
   width: 30px;
   height: 30px;
   border-radius: 999px;
-  border: 2px solid rgba(255, 255, 255, .85);
+  border: 2px solid rgba(255, 255, 255, 0.85);
   display: grid;
   place-items: center;
   color: #fff;
@@ -165,8 +167,11 @@
   font-weight: 800;
   transform: translate(-50%, -50%);
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .5);
-  transition: transform .08s ease, filter .12s ease, box-shadow .15s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  transition:
+    transform 0.08s ease,
+    filter 0.12s ease,
+    box-shadow 0.15s ease;
 }
 
 .annotationNode:hover {
@@ -174,7 +179,9 @@
 }
 
 .nodeActive {
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, .35), 0 0 10px rgba(255, 255, 255, .2);
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.35),
+    0 0 10px rgba(255, 255, 255, 0.2);
   transform: translate(-50%, -50%) scale(1.15);
 }
 
@@ -184,10 +191,9 @@
   inset: 0;
   display: flex;
   place-items: center;
-  grid-gap: .75rem;
-  gap: .75rem;
-  background:
-    color-mix(in srgb, #000 40%, transparent);
+  grid-gap: 0.75rem;
+  gap: 0.75rem;
+  background: color-mix(in srgb, #000 40%, transparent);
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   border-radius: inherit;
@@ -204,8 +210,8 @@
   border: 3px solid transparent;
   border-top-color: var(--accent-red);
   border-right-color: var(--accent-red);
-  animation: iv-spin .8s linear infinite;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .15);
+  animation: iv-spin 0.8s linear infinite;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
 }
 
 @keyframes iv-spin {
@@ -215,11 +221,11 @@
 }
 
 .loaderText {
-  font-size: .95rem;
+  font-size: 0.95rem;
   font-weight: 500;
   color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
-  letter-spacing: .2px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  letter-spacing: 0.2px;
 }
 
 /* ===== Toolbox flotante (mismo que en ZoomOverlay) ===== */
@@ -231,11 +237,11 @@
   z-index: 5;
   display: grid;
   gap: 8px;
-  background: rgba(18, 18, 18, .95);
+  background: rgba(18, 18, 18, 0.95);
   border: 1px solid var(--border-1);
   border-radius: 12px;
   padding: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 .toolBtn {
@@ -249,7 +255,11 @@
   font-size: 18px;
   display: grid;
   place-items: center;
-  transition: background .15s ease, transform .06s ease, border-color .15s ease, box-shadow .15s ease;
+  transition:
+    background 0.15s ease,
+    transform 0.06s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .toolBtn:hover {
@@ -262,7 +272,7 @@
 
 .toolActive {
   border-color: var(--accent-red);
-  box-shadow: 0 0 0 2px rgba(255, 0, 64, .25);
+  box-shadow: 0 0 0 2px rgba(255, 0, 64, 0.25);
 }
 
 /* ===== Errores ===== */

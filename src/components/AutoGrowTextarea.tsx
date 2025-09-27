@@ -7,10 +7,10 @@ type Props = {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
-  minRows?: number;     // por defecto 1
-  maxRows?: number;     // por defecto 5
+  minRows?: number; // por defecto 1
+  maxRows?: number; // por defecto 5
   className?: string;
-  growsUp?: boolean;    // si true, la altura “empuja” hacia arriba (default)
+  growsUp?: boolean; // si true, la altura “empuja” hacia arriba (default)
   onEnter?: () => void; // enviar con Enter (Shift+Enter hace salto de línea)
 };
 
@@ -47,7 +47,9 @@ export default function AutoGrowTextarea({
     el.style.overflowY = el.scrollHeight > maxH ? "auto" : "hidden";
   }, [minRows, maxRows]);
 
-  useEffect(() => { resize(); }, [value, resize]);
+  useEffect(() => {
+    resize();
+  }, [value, resize]);
 
   useEffect(() => {
     const ro = new ResizeObserver(() => resize());

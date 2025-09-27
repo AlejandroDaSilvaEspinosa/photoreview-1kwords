@@ -1,3 +1,3 @@
 // Fichero: declarations.d.ts
 
-declare module 'react-image-zoom';
+declare module "react-image-zoom";

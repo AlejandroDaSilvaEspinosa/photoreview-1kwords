@@ -9,7 +9,6 @@
 
 /* Header fijo con “peek” */
 .appHeader {
-
   position: fixed;
   inset: 0 0 auto 0;
   z-index: 1002;
@@ -21,11 +20,13 @@
   padding: 10px 16px;
   background: var(--surface-0);
   border-bottom: 1px solid var(--border-2);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .35), inset 0 -1px 0 rgba(255, 255, 255, .03);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.35),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(10px);
   transform: translateY(-100%);
   /* peek */
-  transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .open {
@@ -45,8 +46,13 @@
   width: 70px;
   height: 4px;
   border-radius: 4px;
-  background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
-  opacity: .65;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--accent-red),
+    transparent
+  );
+  opacity: 0.65;
   pointer-events: none;
 }
 
@@ -86,7 +92,7 @@
   font-size: 14px;
   color: var(--text-1);
   font-weight: 700;
-  letter-spacing: .2px;
+  letter-spacing: 0.2px;
 }
 
 .heading p {
@@ -108,7 +114,9 @@
   background: transparent;
   color: #eee;
   cursor: pointer;
-  transition: background .15s ease, transform .06s ease;
+  transition:
+    background 0.15s ease,
+    transform 0.06s ease;
 }
 
 /* .pinBtn:hover {
@@ -138,8 +146,6 @@
   font-size: 12.5px;
   color: var(--text-2);
 }
-
-
 
 /* Responsivo */
 @media (max-width: 860px) {

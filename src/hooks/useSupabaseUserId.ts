@@ -22,7 +22,10 @@ export function useSupabaseUserId() {
         if (alive) setId(data.user?.id ?? null);
       } catch (e) {
         if (alive) setId(null);
-        toastError(e, { title: "No se pudo obtener la sesión", fallback: "Intenta recargar la página." });
+        toastError(e, {
+          title: "No se pudo obtener la sesión",
+          fallback: "Intenta recargar la página.",
+        });
       }
     })();
     return () => {

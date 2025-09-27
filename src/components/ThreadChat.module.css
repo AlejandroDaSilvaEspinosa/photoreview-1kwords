@@ -1,328 +1,327 @@
 /* ThreadChat.module.css */
 
 .chatDock {
-    background: rgba(18, 18, 18, 0.95);
-    border: 1px solid #2a2a2a;
-    border-radius: 12px;
-    overflow: hidden;
-    display: grid;
-    grid-template-rows: auto 1fr auto;
+  background: rgba(18, 18, 18, 0.95);
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
 }
 
 .chatHeader {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 10px;
-    background: #141414;
-    border-bottom: 1px solid #242424;
-    color: #ddd;
-    font-weight: 600;
-    justify-content: space-between;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #141414;
+  border-bottom: 1px solid #242424;
+  color: #ddd;
+  font-weight: 600;
+  justify-content: space-between;
 }
 
 .chatHeader span {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .chatList {
-    overflow: auto;
-    padding: 10px;
-    display: grid;
-    gap: 8px;
-    max-height: 600px;
+  overflow: auto;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  max-height: 600px;
 }
 
 .bubble {
-    max-width: 85%;
-    word-break: break-word;
-    overflow-wrap: anywhere;
-    background: #222;
-    color: #eaeaea;
-    border: 1px solid #2f2f2f;
-    border-radius: 10px;
-    padding: 8px 10px;
-    font-size: 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-width: 40%;
+  max-width: 85%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  background: #222;
+  color: #eaeaea;
+  border: 1px solid #2f2f2f;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 40%;
 }
 
 .system {
-    max-width: 100%;
-    background: none;
-    border: none;
-    padding: 8px 2px;
+  max-width: 100%;
+  background: none;
+  border: none;
+  padding: 8px 2px;
 }
 
 .bubbleText {
-    white-space: pre-wrap;
+  white-space: pre-wrap;
 }
 
 .bubbleMeta {
-    display: flex;
-    gap: 8px;
-    margin-top: 4px;
-    font-size: 11px;
-    color: #aaa;
-    justify-content: space-between;
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #aaa;
+  justify-content: space-between;
 }
 
 .messageMeta {
-    display: flex;
-    gap: 4px;
+  display: flex;
+  gap: 4px;
 }
 
 .author {
-    color: #ddd;
+  color: #ddd;
 }
 
 .timeago {
-    color: #999;
+  color: #999;
 }
 
 .ticks.read {
-    color: aqua;
+  color: aqua;
 }
 
 .composer {
-    display: flex;
-    gap: 8px;
-    padding: 8px;
-    border-top: 1px solid #242424;
-    background: #131313;
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid #242424;
+  background: #131313;
 }
 
 .composer textarea {
-    flex: 1 1 auto;
-    resize: none;
-    min-height: 36px;
-    max-height: 120px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    background: #222;
-    color: #eee;
-    border: 1px solid var(--border-1);
-    outline: none;
+  flex: 1 1 auto;
+  resize: none;
+  min-height: 36px;
+  max-height: 120px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #222;
+  color: #eee;
+  border: 1px solid var(--border-1);
+  outline: none;
 }
 
 .composer button {
-    flex: 0 0 auto;
-    padding: 0 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border-1);
-    background: #222;
-    color: #eee;
-    cursor: pointer;
-    max-height: 54px;
-    height: 100%;
-    align-self: end;
+  flex: 0 0 auto;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-1);
+  background: #222;
+  color: #eee;
+  cursor: pointer;
+  max-height: 54px;
+  height: 100%;
+  align-self: end;
 }
 
 /* 🔄 estado de carga en el botón */
 .composer button[disabled] {
-    opacity: 0.65;
-    cursor: not-allowed;
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .buttonLoading {
-    position: relative;
-    padding: 0;
+  position: relative;
+  padding: 0;
 }
 
 .spinner {
-    width: 10px;
-    height: 10px;
-    border: 2px solid rgba(255, 255, 255, 0.35);
-    border-top-color: #fff;
-    border-radius: 50%;
-    display: inline-block;
-    margin-right: 8px;
-    animation: spin .8s linear infinite;
-    vertical-align: -2px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+  animation: spin 0.8s linear infinite;
+  vertical-align: -2px;
 }
 
 @keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .changeStatusBtn[disabled] {
-    opacity: 0.65;
-    cursor: not-allowed;
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .changeStatusBtnWrapper {
-    display: flex;
-    gap: 8px;
-    padding: 8px;
-    border-top: 1px solid #242424;
-    background: #131313;
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid #242424;
+  background: #131313;
 }
 
 .changeStatusBtn {
-    flex: 1;
-    padding: 0 12px;
-    border-radius: 8px;
-    border: 1px solid #2a2a2a;
-    background: #2a2a2a;
-    color: #eee;
-    cursor: pointer;
-    height: 36px;
-    width: 100%;
+  flex: 1;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #2a2a2a;
+  background: #2a2a2a;
+  color: #eee;
+  cursor: pointer;
+  height: 36px;
+  width: 100%;
 }
 
 .deleteThreadBtn {
-    max-width: fit-content;
-    padding: 0 12px;
-    border-radius: 8px;
-    border: 1px solid #2a2a2a;
-    background: #2a2a2a;
-    color: #eee;
-    cursor: pointer;
-    height: 36px;
-    width: 100%;
+  max-width: fit-content;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #2a2a2a;
+  background: #2a2a2a;
+  color: #eee;
+  cursor: pointer;
+  height: 36px;
+  width: 100%;
 }
 
 .orange {
-    border-color: var(--orange-border);
-    background: var(--orange-bg);
+  border-color: var(--orange-border);
+  background: var(--orange-bg);
 }
 
 .red {
-    border-color: var(--red-border);
-    background: var(--red-bg);
+  border-color: var(--red-border);
+  background: var(--red-bg);
 }
 
 .green {
-    border-color: var(--green-border);
-    background: var(--green-bg);
+  border-color: var(--green-border);
+  background: var(--green-bg);
 }
 
 .dotMini {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.8);
-    margin-top: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  margin-top: 1px;
 }
 
 .composer button:hover {
-    background: #333;
+  background: #333;
 }
 
 .composer button:active {
-    transform: translateY(1px);
+  transform: translateY(1px);
 }
 
 .mine {
-    background: #171a22;
-    border-color: #243247;
-    color: #bcd;
-    margin-left: auto;
-    border-top-right-radius: 2px;
-
+  background: #171a22;
+  border-color: #243247;
+  color: #bcd;
+  margin-left: auto;
+  border-top-right-radius: 2px;
 }
 
 .theirs {
-    background: #1c1c1c;
-    color: #f0f0f0;
-    border-color: #2a2a2a;
-    margin-right: auto;
-    border-top-left-radius: 2px;
+  background: #1c1c1c;
+  color: #f0f0f0;
+  border-color: #2a2a2a;
+  margin-right: auto;
+  border-top-left-radius: 2px;
 }
 
 .bubble * {
-    margin: 0px;
+  margin: 0px;
 }
 
 .closeThreadChatBtn {
-    background: none;
-    border: none;
-    color: #888;
-    font-size: 18px;
-    cursor: pointer;
-    transition: color 0.2s ease;
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 18px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
 }
 
 .closeThreadChatBtn:hover {
-    color: #FF0040;
-    background-color: rgba(255, 0, 64, 0.1);
+  color: #ff0040;
+  background-color: rgba(255, 0, 64, 0.1);
 }
 
 /* ===== Divisor genérico (día y demás) */
 .unreadDivider {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    /* separación líneas ↔ texto */
-    margin: 10px 0;
-    /* altura similar a la captura */
-    opacity: 0.95;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* separación líneas ↔ texto */
+  margin: 10px 0;
+  /* altura similar a la captura */
+  opacity: 0.95;
 }
 
 .unreadDividerLine {
-    flex: 1;
-    height: 1px;
-    /* línea muy fina */
-    background: var(--border-1, #2a2a2a);
-    /* gris sutil en dark */
+  flex: 1;
+  height: 1px;
+  /* línea muy fina */
+  background: var(--border-1, #2a2a2a);
+  /* gris sutil en dark */
 }
 
 .unreadDividerLabel {
-    font-size: 16px;
-    /* texto pequeño */
-    font-weight: 500;
-    /* semibold */
-    letter-spacing: 0.15px;
-    /* ligero tracking */
-    color: var(--muted-1, #bdbdbd);
-    /* gris claro por defecto */
+  font-size: 16px;
+  /* texto pequeño */
+  font-weight: 500;
+  /* semibold */
+  letter-spacing: 0.15px;
+  /* ligero tracking */
+  color: var(--muted-1, #bdbdbd);
+  /* gris claro por defecto */
 }
 
 .unreadDivider {
-    scroll-margin-top: 16px
+  scroll-margin-top: 16px;
 }
 
 /* en ThreadChat.module.css */
 .ticks.justDelivered {
-    animation: pulseDelivered 450ms ease-out;
+  animation: pulseDelivered 450ms ease-out;
 }
 
 .ticks.justRead {
-    animation: pulseRead 450ms ease-out;
+  animation: pulseRead 450ms ease-out;
 }
 
 @keyframes pulseDelivered {
-    0% {
-        transform: scale(0.9);
-        opacity: 0.6;
-    }
+  0% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
 
-    100% {
-        transform: scale(1);
-        opacity: 1;
-    }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 @keyframes pulseRead {
-    0% {
-        transform: scale(0.9);
-        opacity: 0.6;
-    }
+  0% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
 
-    100% {
-        transform: scale(1);
-        opacity: 1;
-    }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }

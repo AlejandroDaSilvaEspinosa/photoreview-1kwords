@@ -7,11 +7,10 @@ import s from "./Toaster.module.css";
 import ReactMarkdown from "react-markdown";
 import Image from "next/image";
 
-
 export default function Toaster() {
- const { toasts, dismiss, pausedAll, pauseAll, resumeAll } = useToast();
+  const { toasts, dismiss, pausedAll, pauseAll, resumeAll } = useToast();
   const L = toasts.length; // ← total para calcular el z-index
-  
+
   return (
     <div
       className={`${s.wrap} ${pausedAll ? s.expanded : ""}`}
@@ -29,36 +28,56 @@ export default function Toaster() {
             style={{ zIndex: 1000 + (L - idx) } as React.CSSProperties}
           >
             {t.thumbUrl ? (
-              <Image width={56} height={56} className={s.thumb} src={t.thumbUrl} alt="" aria-hidden />
+              <Image
+                width={56}
+                height={56}
+                className={s.thumb}
+                src={t.thumbUrl}
+                alt=""
+                aria-hidden
+              />
             ) : null}
 
             <div className={s.body}>
-              {t.title && (
-                <div className={s.title}>{t.title}</div>
-              )}
+              {t.title && <div className={s.title}>{t.title}</div>}
               {t.description && (
                 <div className={s.desc}>
                   <ReactMarkdown>{t.description}</ReactMarkdown>
                 </div>
               )}
-                <div className={s.bottomRow}>
-                  {t.actionLabel && (
-                    <button
+              <div className={s.bottomRow}>
+                {t.actionLabel && (
+                  <button
                     className={s.action}
-                    onClick={() => { t.onAction?.(); dismiss(t.id); }}
-                    >
-                      {t.actionLabel}
-                    </button>
-                    )}
-                    {t.timeAgo ? <div className={s.bottomRight}>{t.timeAgo}</div> : null}
-                </div>
+                    onClick={() => {
+                      t.onAction?.();
+                      dismiss(t.id);
+                    }}
+                  >
+                    {t.actionLabel}
+                  </button>
+                )}
+                {t.timeAgo ? (
+                  <div className={s.bottomRight}>{t.timeAgo}</div>
+                ) : null}
               </div>
-            <button aria-label="Cerrar" className={s.close} onClick={() => dismiss(t.id)}>×</button>
-            <div className={s.progress}
-                style={{ animationDuration: `${t.durationMs}ms`, animationPlayState: pausedAll ? "paused" : "running" }}
+            </div>
+            <button
+              aria-label="Cerrar"
+              className={s.close}
+              onClick={() => dismiss(t.id)}
+            >
+              ×
+            </button>
+            <div
+              className={s.progress}
+              style={{
+                animationDuration: `${t.durationMs}ms`,
+                animationPlayState: pausedAll ? "paused" : "running",
+              }}
             />
           </div>
-        )        
+        );
       })}
     </div>
   );

@@ -1,6 +1,9 @@
 "use client";
 
-import { enqueueSendMessage, enqueueMessageRequest } from "@/lib/net/messagesOutbox";
+import {
+  enqueueSendMessage,
+  enqueueMessageRequest,
+} from "@/lib/net/messagesOutbox";
 
 /**
  * Envío estándar: POST /api/messages { threadId, text }
@@ -30,7 +33,7 @@ export function sendMessageCustom(
     body?: any;
     headers?: Record<string, string>;
     method?: "POST" | "PUT" | "PATCH";
-  }
+  },
 ): number {
   const { url, body, headers, method = "POST" } = opts;
 
@@ -44,6 +47,6 @@ export function sendMessageCustom(
         body: JSON.stringify(body ?? { threadId, text }),
       },
     }),
-    { text } // ← texto visible del optimista
+    { text }, // ← texto visible del optimista
   );
 }

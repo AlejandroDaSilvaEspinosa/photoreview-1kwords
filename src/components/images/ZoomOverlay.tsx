@@ -1,7 +1,13 @@
 // src/components/images/ZoomOverlay.tsx
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { Dispatch, SetStateAction } from "react";
 import styles from "./ZoomOverlay.module.css";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
@@ -17,7 +23,13 @@ type Props = {
   src: string;
   threads: Thread[];
   activeThreadId: number | null;
-  initial?: { xPct: number; yPct: number; zoom?: number; ax?: number; ay?: number };
+  initial?: {
+    xPct: number;
+    yPct: number;
+    zoom?: number;
+    ax?: number;
+    ay?: number;
+  };
   currentUsername?: string;
   hideThreads?: boolean;
   setHideThreads: Dispatch<SetStateAction<boolean>>;
@@ -31,9 +43,14 @@ type Props = {
 
 type ToolMode = "pan" | "pin";
 
-const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
-const dist = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax - bx, ay - by);
-const mid = (ax: number, ay: number, bx: number, by: number) => ({ x: (ax + bx) / 2, y: (ay + by) / 2 });
+const clamp = (n: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, n));
+const dist = (ax: number, ay: number, bx: number, by: number) =>
+  Math.hypot(ax - bx, ay - by);
+const mid = (ax: number, ay: number, bx: number, by: number) => ({
+  x: (ax + bx) / 2,
+  y: (ay + by) / 2,
+});
 
 export default function ZoomOverlay({
   src,
@@ -64,11 +81,20 @@ export default function ZoomOverlay({
   const [isDragging, setIsDragging] = useState(false);
 
   const wrapRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ x: number; y: number; cxPx: number; cyPx: number } | null>(null);
+  const dragRef = useRef<{
+    x: number;
+    y: number;
+    cxPx: number;
+    cyPx: number;
+  } | null>(null);
   const movedRef = useRef(false);
 
   // Doble-tap & pinch control
-  const tapRef = useRef<{ t: number; x: number; y: number }>({ t: 0, x: 0, y: 0 });
+  const tapRef = useRef<{ t: number; x: number; y: number }>({
+    t: 0,
+    x: 0,
+    y: 0,
+  });
   const gestureRef = useRef<{
     mode: "none" | "pan" | "pinch";
     startX: number;
@@ -104,7 +130,14 @@ export default function ZoomOverlay({
 
   // minimapa
   const miniRef = useRef<HTMLDivElement>(null);
-  const [miniDims, setMiniDims] = useState({ mw: 1, mh: 1, dW: 1, dH: 1, offX: 0, offY: 0 });
+  const [miniDims, setMiniDims] = useState({
+    mw: 1,
+    mh: 1,
+    dW: 1,
+    dH: 1,
+    offX: 0,
+    offY: 0,
+  });
 
   // re-render en resize
   const [, force] = useState(0);
@@ -178,7 +211,7 @@ export default function ZoomOverlay({
 
       return { cx: (cxPxClamped / imgW) * 100, cy: (cyPxClamped / imgH) * 100 };
     },
-    [imgW, imgH, view.vw, view.vh]
+    [imgW, imgH, view.vw, view.vh],
   );
 
   // centrar con ancla y “pegar a bordes” si es esquina
@@ -204,7 +237,7 @@ export default function ZoomOverlay({
       cyNew = clamp(cyNew, halfH, 100 - halfH);
       return { cx: cxNew, cy: cyNew };
     },
-    [imgW, imgH, view.vw, view.vh]
+    [imgW, imgH, view.vw, view.vh],
   );
 
   // ====== inicialización ======
@@ -226,13 +259,28 @@ export default function ZoomOverlay({
     const fx = initial?.xPct ?? 50;
     const fy = initial?.yPct ?? 50;
 
-    const { cx, cy } = centerEdgeAware(fx, fy, z0, initial?.ax ?? 0.5, initial?.ay ?? 0.5);
+    const { cx, cy } = centerEdgeAware(
+      fx,
+      fy,
+      z0,
+      initial?.ax ?? 0.5,
+      initial?.ay ?? 0.5,
+    );
 
     setZoom(z0);
     setCx(cx);
     setCy(cy);
     setHasInitialized(true);
-  }, [hasInitialized, imgReady, view.vw, view.vh, initial, getFitZoom, getPanEnabledZoom, centerEdgeAware]);
+  }, [
+    hasInitialized,
+    imgReady,
+    view.vw,
+    view.vh,
+    initial,
+    getFitZoom,
+    getPanEnabledZoom,
+    centerEdgeAware,
+  ]);
 
   useEffect(() => {
     initializeView();
@@ -275,7 +323,20 @@ export default function ZoomOverlay({
         setCy(cy2);
       }
     },
-    [wrapRef, imgW, imgH, view.vw, view.vh, tx, ty, zoom, cx, cy, getMinZoom, clampCenterPxFor]
+    [
+      wrapRef,
+      imgW,
+      imgH,
+      view.vw,
+      view.vh,
+      tx,
+      ty,
+      zoom,
+      cx,
+      cy,
+      getMinZoom,
+      clampCenterPxFor,
+    ],
   );
 
   // ====== mouse drag (pan) ======
@@ -291,7 +352,7 @@ export default function ZoomOverlay({
       setCx(newCx);
       setCy(newCy);
     },
-    [imgW, imgH, visWpx, visHpx]
+    [imgW, imgH, visWpx, visHpx],
   );
 
   const onMouseDown = (e: React.MouseEvent) => {
@@ -365,14 +426,14 @@ export default function ZoomOverlay({
       setCx(clamp(nx, halfW, 100 - halfW));
       setCy(clamp(ny, halfH, 100 - halfH));
     },
-    [miniDims, view.vw, view.vh, imgW, imgH, zoom]
+    [miniDims, view.vw, view.vh, imgW, imgH, zoom],
   );
 
   const onMiniClickOrDrag = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       moveViewportToMiniPos(e.clientX, e.clientY);
     },
-    [moveViewportToMiniPos]
+    [moveViewportToMiniPos],
   );
 
   // ✅ minimapa táctil (1 dedo)
@@ -383,7 +444,7 @@ export default function ZoomOverlay({
       if (!t) return;
       moveViewportToMiniPos(t.clientX, t.clientY);
     },
-    [moveViewportToMiniPos]
+    [moveViewportToMiniPos],
   );
 
   const onMiniTouchMove = useCallback(
@@ -393,7 +454,7 @@ export default function ZoomOverlay({
       if (!t) return;
       moveViewportToMiniPos(t.clientX, t.clientY);
     },
-    [moveViewportToMiniPos]
+    [moveViewportToMiniPos],
   );
 
   const vpStyle = useMemo(() => {
@@ -405,18 +466,26 @@ export default function ZoomOverlay({
     let top = miniDims.offY + ((cy - effH / 2) / 100) * miniDims.dH;
     left = clamp(left, miniDims.offX, miniDims.offX + miniDims.dW - vpWpx);
     top = clamp(top, miniDims.offY, miniDims.offY + miniDims.dH - vpHpx);
-    return { width: `${vpWpx}px`, height: `${vpHpx}px`, left: `${left}px`, top: `${top}px` };
+    return {
+      width: `${vpWpx}px`,
+      height: `${vpHpx}px`,
+      left: `${left}px`,
+      top: `${top}px`,
+    };
   }, [miniDims, viewWPercent, viewHPercent, cx, cy]);
 
   // ====== chat ======
   const activeThread = useMemo(
     () => threads.find((t) => t.id === activeThreadId) || null,
-    [threads, activeThreadId]
+    [threads, activeThreadId],
   );
 
   const threadIndex = useMemo(
-    () => (activeThreadId ? threads.findIndex((t) => t.id === activeThreadId) + 1 : 0),
-    [threads, activeThreadId]
+    () =>
+      activeThreadId
+        ? threads.findIndex((t) => t.id === activeThreadId) + 1
+        : 0,
+    [threads, activeThreadId],
   );
 
   const fitToView = useCallback(() => {
@@ -465,7 +534,7 @@ export default function ZoomOverlay({
         gestureRef.current.didPinch = true;
       }
     },
-    [wrapRef, imgW, imgH, cx, cy, zoom, tx, ty]
+    [wrapRef, imgW, imgH, cx, cy, zoom, tx, ty],
   );
 
   const onTouchMove = useCallback(
@@ -484,11 +553,18 @@ export default function ZoomOverlay({
 
         const cxPxNew = gestureRef.current.startCxPx - dx;
         const cyPxNew = gestureRef.current.startCyPx - dy;
-        const { cx: cxPct, cy: cyPct } = clampCenterPxFor(cxPxNew, cyPxNew, zoom);
+        const { cx: cxPct, cy: cyPct } = clampCenterPxFor(
+          cxPxNew,
+          cyPxNew,
+          zoom,
+        );
         setCx(cxPct);
         setCy(cyPct);
 
-        if (Math.abs(x - gestureRef.current.startX) > 4 || Math.abs(y - gestureRef.current.startY) > 4) {
+        if (
+          Math.abs(x - gestureRef.current.startX) > 4 ||
+          Math.abs(y - gestureRef.current.startY) > 4
+        ) {
           gestureRef.current.moved = true;
         }
       } else if (gestureRef.current.mode === "pinch" && e.touches.length >= 2) {
@@ -509,14 +585,24 @@ export default function ZoomOverlay({
 
           const minZ = getMinZoom();
           const maxZ = 10;
-          const nextZ = clamp(gestureRef.current.startZoom * factor, minZ, maxZ);
+          const nextZ = clamp(
+            gestureRef.current.startZoom * factor,
+            minZ,
+            maxZ,
+          );
 
           const mx = (x0 + x1) / 2;
           const my = (y0 + y1) / 2;
 
-          const cxPxNext = view.vw / (2 * nextZ) + gestureRef.current.xImg0 - mx / nextZ;
-          const cyPxNext = view.vh / (2 * nextZ) + gestureRef.current.yImg0 - my / nextZ;
-          const { cx: cxPct, cy: cyPct } = clampCenterPxFor(cxPxNext, cyPxNext, nextZ);
+          const cxPxNext =
+            view.vw / (2 * nextZ) + gestureRef.current.xImg0 - mx / nextZ;
+          const cyPxNext =
+            view.vh / (2 * nextZ) + gestureRef.current.yImg0 - my / nextZ;
+          const { cx: cxPct, cy: cyPct } = clampCenterPxFor(
+            cxPxNext,
+            cyPxNext,
+            nextZ,
+          );
 
           setZoom(nextZ);
           setCx(cxPct);
@@ -524,7 +610,7 @@ export default function ZoomOverlay({
         });
       }
     },
-    [wrapRef, imgW, imgH, zoom, view.vw, view.vh, getMinZoom, clampCenterPxFor]
+    [wrapRef, imgW, imgH, zoom, view.vw, view.vh, getMinZoom, clampCenterPxFor],
   );
 
   const onTouchEnd = useCallback(
@@ -538,7 +624,8 @@ export default function ZoomOverlay({
       const x = gestureRef.current.tapX;
       const y = gestureRef.current.tapY;
       const isQuick = now - last.t < 300 && dist(x, y, last.x, last.y) < 30;
-      const canDoubleTap = !gestureRef.current.moved && !gestureRef.current.didPinch;
+      const canDoubleTap =
+        !gestureRef.current.moved && !gestureRef.current.didPinch;
 
       if (isQuick && canDoubleTap) {
         const rect = wrapRef.current?.getBoundingClientRect();
@@ -552,7 +639,11 @@ export default function ZoomOverlay({
             const nextZ = panZoom;
             const cxPxNow = (cx / 100) * imgW;
             const cyPxNow = (cy / 100) * imgH;
-            const { cx: cx2, cy: cy2 } = clampCenterPxFor(cxPxNow, cyPxNow, nextZ);
+            const { cx: cx2, cy: cy2 } = clampCenterPxFor(
+              cxPxNow,
+              cyPxNow,
+              nextZ,
+            );
             setZoom(nextZ);
             setCx(cx2);
             setCy(cy2);
@@ -562,10 +653,18 @@ export default function ZoomOverlay({
             const localY = y;
             const xImg = (localX - tx) / zoom;
             const yImg = (localY - ty) / zoom;
-            const nextZ = clamp(Math.max(zoom * 2, fit * 2.4), getMinZoom(), 10);
+            const nextZ = clamp(
+              Math.max(zoom * 2, fit * 2.4),
+              getMinZoom(),
+              10,
+            );
             const cxPxNext = view.vw / (2 * nextZ) + xImg - localX / nextZ;
             const cyPxNext = view.vh / (2 * nextZ) + yImg - localY / nextZ;
-            const { cx: cxPct, cy: cyPct } = clampCenterPxFor(cxPxNext, cyPxNext, nextZ);
+            const { cx: cxPct, cy: cyPct } = clampCenterPxFor(
+              cxPxNext,
+              cyPxNext,
+              nextZ,
+            );
             setZoom(nextZ);
             setCx(cxPct);
             setCy(cyPct);
@@ -574,7 +673,11 @@ export default function ZoomOverlay({
       }
 
       // actualizar memoria de tap y resetear estado de gesto
-      tapRef.current = { t: now, x: gestureRef.current.tapX, y: gestureRef.current.tapY };
+      tapRef.current = {
+        t: now,
+        x: gestureRef.current.tapX,
+        y: gestureRef.current.tapY,
+      };
       gestureRef.current.mode = "none";
       gestureRef.current.didPinch = false; // permite doble-tap en el siguiente gesto
       if (pinchRAF.current) {
@@ -582,7 +685,22 @@ export default function ZoomOverlay({
         pinchRAF.current = null;
       }
     },
-    [wrapRef, zoom, tx, ty, view.vw, view.vh, cx, cy, imgW, imgH, getFitZoom, getPanEnabledZoom, getMinZoom, clampCenterPxFor]
+    [
+      wrapRef,
+      zoom,
+      tx,
+      ty,
+      view.vw,
+      view.vh,
+      cx,
+      cy,
+      imgW,
+      imgH,
+      getFitZoom,
+      getPanEnabledZoom,
+      getMinZoom,
+      clampCenterPxFor,
+    ],
   );
 
   // ====== dots ======
@@ -595,7 +713,7 @@ export default function ZoomOverlay({
         status: t.status,
         num: 1 + threads.findIndex((x) => x.id === t.id),
       })),
-    [threads]
+    [threads],
   );
 
   const centerToThread = (t: Thread) => {
@@ -607,11 +725,18 @@ export default function ZoomOverlay({
 
   const [cursor, setCursor] = useState("");
   useEffect(() => {
-    setCursor(tool === "pin" ? "crosshair" : dragRef.current ? "grabbing" : "grab");
+    setCursor(
+      tool === "pin" ? "crosshair" : dragRef.current ? "grabbing" : "grab",
+    );
   }, [isDragging, tool]);
 
   return (
-    <div className={styles.overlay} role="dialog" aria-label="Zoom" style={{ touchAction: "none" }}>
+    <div
+      className={styles.overlay}
+      role="dialog"
+      aria-label="Zoom"
+      style={{ touchAction: "none" }}
+    >
       <button className={styles.close} onClick={onClose} aria-label="Cerrar">
         ×
       </button>
@@ -667,7 +792,9 @@ export default function ZoomOverlay({
           style={{
             width: imgW || "100%",
             height: imgH || "100%",
-            transform: imgReady ? `translate(${tx}px, ${ty}px) scale(${zoom})` : "none",
+            transform: imgReady
+              ? `translate(${tx}px, ${ty}px) scale(${zoom})`
+              : "none",
             cursor,
             ["--zoom" as any]: zoom, // variable CSS para compensar dots
           }}
@@ -698,7 +825,11 @@ export default function ZoomOverlay({
               <button
                 key={d.id}
                 className={`${styles.dot} ${activeThreadId === d.id ? styles.dotActive : ""}`}
-                style={{ left: d.left, top: d.top, background: colorByThreadStatus(d.status) }}
+                style={{
+                  left: d.left,
+                  top: d.top,
+                  background: colorByThreadStatus(d.status),
+                }}
                 title={`Hilo #${d.num}`}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -740,15 +871,24 @@ export default function ZoomOverlay({
 
         <div className={styles.controls}>
           <div className={styles.row}>
-            <button onClick={() => setZoom((z) => clamp(z * 0.9, getMinZoom(), 10))}>−</button>
+            <button
+              onClick={() => setZoom((z) => clamp(z * 0.9, getMinZoom(), 10))}
+            >
+              −
+            </button>
             <span className={styles.zoomLabel}>{zoom.toFixed(2)}×</span>
-            <button onClick={() => setZoom((z) => clamp(z * 1.1, getMinZoom(), 10))}>+</button>
+            <button
+              onClick={() => setZoom((z) => clamp(z * 1.1, getMinZoom(), 10))}
+            >
+              +
+            </button>
             <button onClick={fitToView} title="Ajustar a ventana">
               🔍
             </button>
           </div>
           <div className={styles.hint}>
-            🖐️ mover · 📍 anotar ·🧵 mostrar/ocultar hilos · rueda/gestos para zoom · doble-tap (móvil) · Esc para cerrar
+            🖐️ mover · 📍 anotar ·🧵 mostrar/ocultar hilos · rueda/gestos para
+            zoom · doble-tap (móvil) · Esc para cerrar
           </div>
 
           {activeThread ? (
@@ -769,13 +909,21 @@ export default function ZoomOverlay({
                     key={t.id}
                     className={`${styles.threadRow} ${activeThreadId === t.id ? styles.threadRowActive : ""}`}
                   >
-                    <button className={styles.threadRowMain} onClick={() => centerToThread(t)}>
-                      <span className={styles.dotMini} style={{ background: colorByThreadStatus(t.status) }} />
+                    <button
+                      className={styles.threadRowMain}
+                      onClick={() => centerToThread(t)}
+                    >
+                      <span
+                        className={styles.dotMini}
+                        style={{ background: colorByThreadStatus(t.status) }}
+                      />
                       <span className={styles.threadName}>Hilo #{i + 1}</span>
                     </button>
                     <button
                       className={styles.stateBtn}
-                      onClick={() => onToggleThreadStatus(t.id, nextThreadStatus(t.status))}
+                      onClick={() =>
+                        onToggleThreadStatus(t.id, nextThreadStatus(t.status))
+                      }
                       title={toggleThreadStatusLabel(t.status)}
                     >
                       {toggleThreadStatusLabel(t.status)}

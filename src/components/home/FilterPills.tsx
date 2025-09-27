@@ -11,7 +11,13 @@ type Props = {
   onToggle: (s: SkuStatus) => void;
 };
 
-export default function FilterPills({ all, labels, totals, active, onToggle }: Props) {
+export default function FilterPills({
+  all,
+  labels,
+  totals,
+  active,
+  onToggle,
+}: Props) {
   return (
     <div
       className={styles.filters}

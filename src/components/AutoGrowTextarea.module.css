@@ -1,32 +1,35 @@
 .chatInput {
-    width: 100%;
-    box-sizing: border-box;
-    resize: none;
-    /* no drag manual */
-    background: #242526;
-    /* oscuro */
-    color: #e7e7e7;
-    border: 1px solid #3a3a3a;
-    border-radius: 10px;
-    padding: 10px 12px;
-    font-size: 14px;
-    line-height: 1.35;
-    outline: none;
-    transition: border-color .15s ease, box-shadow .15s ease, height .06s ease;
-    overflow-y: hidden;
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  /* no drag manual */
+  background: #242526;
+  /* oscuro */
+  color: #e7e7e7;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.35;
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    height 0.06s ease;
+  overflow-y: hidden;
 }
 
 /* anclar la “base” del textarea para que crezca hacia arriba */
 .growUp {
-    align-self: flex-end;
-    /* importante dentro de un contenedor flex */
+  align-self: flex-end;
+  /* importante dentro de un contenedor flex */
 }
 
 .chatInput::placeholder {
-    color: #9aa0a6;
+  color: #9aa0a6;
 }
 
 .chatInput:focus {
-    border-color: #5a5a5a;
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, .04) inset;
+  border-color: #5a5a5a;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.04) inset;
 }

@@ -7,8 +7,11 @@ export async function POST(req: NextRequest) {
 
   const { client: sb, res } = supabaseFromRequest(req);
 
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // Usa SIEMPRE el auth.user.id como created_by (== app_users.id)
   const createdBy = user.id;

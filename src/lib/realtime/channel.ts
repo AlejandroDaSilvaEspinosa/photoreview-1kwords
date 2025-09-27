@@ -3,15 +3,23 @@
 import { emitToast, toastError } from "@/hooks/useToast";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 
-type RealtimeChannel = ReturnType<ReturnType<typeof supabaseBrowser>["channel"]>;
+type RealtimeChannel = ReturnType<
+  ReturnType<typeof supabaseBrowser>["channel"]
+>;
 
 type ConnectArgs = {
   channelName: string;
-  onSetup: (ch: RealtimeChannel) => void;  // SIEMPRE que se cree un canal nuevo
-  onCatchUp?: () => Promise<void> | void;  // se ejecuta en cada SUBSCRIBED
+  onSetup: (ch: RealtimeChannel) => void; // SIEMPRE que se cree un canal nuevo
+  onCatchUp?: () => Promise<void> | void; // se ejecuta en cada SUBSCRIBED
 };
 
-type StatusUX = "idle" | "connecting" | "reconnecting" | "subscribed" | "disconnected" | "error";
+type StatusUX =
+  | "idle"
+  | "connecting"
+  | "reconnecting"
+  | "subscribed"
+  | "disconnected"
+  | "error";
 
 type GlobalRT = {
   topics: Map<
@@ -49,7 +57,11 @@ const humanDelay = (ms: number) => {
   return `${Math.round(ms / 1000)} s`;
 };
 
-export function connectWithBackoff({ channelName, onSetup, onCatchUp }: ConnectArgs) {
+export function connectWithBackoff({
+  channelName,
+  onSetup,
+  onCatchUp,
+}: ConnectArgs) {
   const sb = supabaseBrowser();
   const g = getGlobal();
 
@@ -104,7 +116,8 @@ export function connectWithBackoff({ channelName, onSetup, onCatchUp }: ConnectA
     if (!rec) return;
     const now = Date.now();
     const key = `${input.variant ?? "info"}|${input.title}|${input.description ?? ""}`;
-    const shouldEmit = key !== rec.lastToastKey || now - rec.lastToastAt > rec.toastCooldownMs;
+    const shouldEmit =
+      key !== rec.lastToastKey || now - rec.lastToastAt > rec.toastCooldownMs;
     if (!shouldEmit) return;
 
     try {
@@ -310,7 +323,9 @@ export function connectWithBackoff({ channelName, onSetup, onCatchUp }: ConnectA
       try {
         fn();
       } catch (e) {
-        toastError(e, { title: `No se pudo limpiar listeners de “${channelName}”` });
+        toastError(e, {
+          title: `No se pudo limpiar listeners de “${channelName}”`,
+        });
       }
     });
     current.cleanupFns = [];

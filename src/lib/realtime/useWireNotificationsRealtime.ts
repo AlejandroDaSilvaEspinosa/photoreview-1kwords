@@ -18,7 +18,7 @@ export function useWireNotificationsRealtime(opts?: {
   prefetchFromApi?: boolean;
 }) {
   const hydrate = useNotificationsStore((s) => s.hydrate);
-  const upsert  = useNotificationsStore((s) => s.upsert);
+  const upsert = useNotificationsStore((s) => s.upsert);
   const setSelfAuthId = useNotificationsStore((s) => s.setSelfAuthId);
   const { push } = useToast();
 
@@ -37,28 +37,35 @@ export function useWireNotificationsRealtime(opts?: {
       if (cached) {
         hydrate(cached.rows, cached.unseen);
         cached.rows.forEach((r) => {
-          if (r.type === "new_message") deliveryAck.enqueueFromNotification(r.message_id as any);
+          if (r.type === "new_message")
+            deliveryAck.enqueueFromNotification(r.message_id as any);
         });
       }
 
       if (opts?.initial) {
         hydrate(opts.initial.items || [], opts.initial.unseen ?? undefined);
         (opts.initial.items || []).forEach((r) => {
-          if (r.type === "new_message") deliveryAck.enqueueFromNotification(r.message_id as any);
+          if (r.type === "new_message")
+            deliveryAck.enqueueFromNotification(r.message_id as any);
         });
       } else if (opts?.prefetchFromApi !== false) {
         try {
-          const res = await fetch(`/api/notifications?limit=${opts?.limit ?? 30}`, { cache: "no-store" });
+          const res = await fetch(
+            `/api/notifications?limit=${opts?.limit ?? 30}`,
+            { cache: "no-store" },
+          );
           if (!cancelled && res.ok) {
             const json = await res.json();
             const rows: NotificationRow[] = json.items || [];
             hydrate(rows, json.unseen ?? undefined);
             rows.forEach((r) => {
-              if (r.type === "new_message") deliveryAck.enqueueFromNotification(r.message_id as any);
+              if (r.type === "new_message")
+                deliveryAck.enqueueFromNotification(r.message_id as any);
             });
           }
         } catch (e) {
-          if (!cancelled) toastError(e, { title: "Fallo cargando notificaciones" });
+          if (!cancelled)
+            toastError(e, { title: "Fallo cargando notificaciones" });
         }
       }
       deliveryAck.flush();
@@ -74,16 +81,23 @@ export function useWireNotificationsRealtime(opts?: {
         url.searchParams.set("after", latest);
         url.searchParams.set("limit", String(opts?.limit ?? 30));
         const res = await fetch(url.toString(), { cache: "no-store" });
-        if (!res.ok) throw new Error("Respuesta no válida del servidor de notificaciones.");
+        if (!res.ok)
+          throw new Error(
+            "Respuesta no válida del servidor de notificaciones.",
+          );
         const json = await res.json();
         const rows: NotificationRow[] = json.items ?? [];
         for (const r of rows) {
           upsert(r);
-          if (r.type === "new_message") deliveryAck.enqueueFromNotification(r.message_id as any);
+          if (r.type === "new_message")
+            deliveryAck.enqueueFromNotification(r.message_id as any);
         }
         deliveryAck.flush();
       } catch (e) {
-        toastError(e, { title: "No se pudieron sincronizar notificaciones", fallback: "Reintentaremos automáticamente." });
+        toastError(e, {
+          title: "No se pudieron sincronizar notificaciones",
+          fallback: "Reintentaremos automáticamente.",
+        });
       }
     };
 
@@ -110,7 +124,9 @@ export function useWireNotificationsRealtime(opts?: {
                 deliveryAck.flush();
               }
               const pres = presentNotification(row);
-              const createdAt = row.created_at ? new Date(row.created_at) : new Date();
+              const createdAt = row.created_at
+                ? new Date(row.created_at)
+                : new Date();
               push({
                 title: pres.title,
                 timeAgo: format(createdAt, "es"),
@@ -125,12 +141,15 @@ export function useWireNotificationsRealtime(opts?: {
                     const [base] = url.href.split("?");
                     window.history.pushState({}, "", `${base}${pres.deeplink}`);
                   } catch (e) {
-                    toastError(e, { title: "No se pudo abrir el enlace", fallback: "Copia/pega el enlace manualmente." });
+                    toastError(e, {
+                      title: "No se pudo abrir el enlace",
+                      fallback: "Copia/pega el enlace manualmente.",
+                    });
                   }
                 },
               });
             }
-          }
+          },
         );
       },
       onCatchUp: catchUp,
@@ -150,6 +169,13 @@ export function useWireNotificationsRealtime(opts?: {
       dispose();
       deliveryAck.reset();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts?.initial, opts?.limit, opts?.prefetchFromApi, hydrate, upsert, setSelfAuthId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    opts?.initial,
+    opts?.limit,
+    opts?.prefetchFromApi,
+    hydrate,
+    upsert,
+    setSelfAuthId,
+  ]);
 }

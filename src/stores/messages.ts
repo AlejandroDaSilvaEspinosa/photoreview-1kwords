@@ -10,7 +10,7 @@ import { makeSessionFlag } from "@/lib/session/flags";
 import { preferByRank } from "@/lib/common/rank";
 
 /* =========================
-   Tipos y utilidades base
+   Types and Base Utilities
    ========================= */
 
 type LocalDelivery = "sending" | "sent" | "delivered" | "read";
@@ -19,17 +19,13 @@ export type Msg = MessageRow & {
   meta?: {
     localDelivery?: LocalDelivery;
     isMine?: boolean;
-
-    /** Orden visual inmutable por hilo. */
+    /** Immutable visual order per thread. */
     displaySeq?: number;
-
-    /** Desempate ultrafino, asignado una vez al crear (anti-colisiones raras). */
+    /** Ultra-fine tiebreaker, assigned once on creation (anti-collision). */
     displayNano?: number;
-
-    /** Correlación cliente-servidor para reconciliar optimistas. */
+    /** Client-server correlation for optimistic reconciliation. */
     clientNonce?: string;
-
-    /** Timestamp decorativo (no afecta al orden). */
+    /** Decorative timestamp (does not affect order). */
     displayAt?: string;
   };
 };
@@ -43,80 +39,111 @@ const DELIVERY_RANK: Record<LocalDelivery, number> = {
 
 const preferHigher = preferByRank<LocalDelivery>(DELIVERY_RANK);
 
-/** Secuenciadores por hilo para displaySeq (en memoria). */
+/** Thread sequencers for displaySeq (in memory). */
 const seqPerThread = new Map<number, number>();
 
-/** Asegura que el contador interno esté sincronizado con el máximo visible. */
-function ensureSeqBase(threadId: number, currentList: Msg[]) {
-  const maxVisible = currentList.reduce((mx, m) => Math.max(mx, m.meta?.displaySeq ?? 0), 0);
-  const curr = seqPerThread.get(threadId) ?? 0;
-  if (curr < maxVisible) seqPerThread.set(threadId, maxVisible);
+/** Ensures internal counter is synced with the visible maximum. */
+function ensureSeqBase(threadId: number, currentList: Msg[]): void {
+  const maxVisible = currentList.reduce(
+    (max, m) => Math.max(max, m.meta?.displaySeq ?? 0),
+    0,
+  );
+  const current = seqPerThread.get(threadId) ?? 0;
+  if (current < maxVisible) {
+    seqPerThread.set(threadId, maxVisible);
+  }
 }
 
-const nextSeq = (threadId: number) => {
+const nextSeq = (threadId: number): number => {
   const n = (seqPerThread.get(threadId) ?? 0) + 1;
   seqPerThread.set(threadId, n);
   return n;
 };
 
-const nextNano = () =>
+const nextNano = (): number =>
   typeof performance !== "undefined" && typeof performance.now === "function"
     ? (performance.now() % 1) / 1e6
     : Math.random() / 1e6;
 
-/** Asegura display* inmutables preservando si existía. */
-function sealDisplayMeta(threadId: number, incoming: Msg, preserved?: Msg["meta"]) {
+/** Ensures immutable display* metadata preserving existing values. */
+function sealDisplayMeta(
+  threadId: number,
+  incoming: Msg,
+  preserved?: Msg["meta"],
+): Msg["meta"] {
   const meta = { ...(incoming.meta || {}) };
 
-  // IMPORTANTE: displaySeq NO se recalcula si ya existía.
+  // IMPORTANT: displaySeq is NOT recalculated if it already existed.
   if (typeof meta.displaySeq !== "number") {
     meta.displaySeq =
-      typeof preserved?.displaySeq === "number" ? preserved!.displaySeq : nextSeq(threadId);
+      typeof preserved?.displaySeq === "number"
+        ? preserved.displaySeq
+        : nextSeq(threadId);
   }
 
   if (typeof meta.displayNano !== "number") {
     meta.displayNano =
-      typeof preserved?.displayNano === "number" ? preserved!.displayNano : nextNano();
+      typeof preserved?.displayNano === "number"
+        ? preserved.displayNano
+        : nextNano();
   }
 
   if (!meta.displayAt) {
     meta.displayAt =
       preserved?.displayAt ??
-      incoming.created_at ??
+      (incoming as any).meta?.displayAt ??
+      (incoming as any).created_at ??
       (incoming as any).createdAt ??
       new Date().toISOString();
   }
 
-  if (preserved?.clientNonce && !meta.clientNonce) meta.clientNonce = preserved.clientNonce;
-  if (typeof preserved?.isMine === "boolean" && typeof meta.isMine !== "boolean") {
+  if (preserved?.clientNonce && !meta.clientNonce) {
+    meta.clientNonce = preserved.clientNonce;
+  }
+
+  if (
+    typeof preserved?.isMine === "boolean" &&
+    typeof meta.isMine !== "boolean"
+  ) {
     meta.isMine = preserved.isMine;
   }
+
   return meta;
 }
 
-/** Comparador ultraestable: 1º displaySeq, 2º displayNano, 3º id. (created_at NO afecta) */
-const sortByDisplayStable = (a: Msg, b: Msg) => {
+/** Ultra-stable comparator: 1st displaySeq, 2nd displayNano, 3rd id. (created_at does NOT affect) */
+const sortByDisplayStable = (a: Msg, b: Msg): number => {
   const ds = (a.meta?.displaySeq ?? 0) - (b.meta?.displaySeq ?? 0);
   if (ds) return ds;
+
   const dn = (a.meta?.displayNano ?? 0) - (b.meta?.displayNano ?? 0);
   if (dn) return dn;
+
   return (a.id ?? 0) - (b.id ?? 0);
 };
 
 /* =========================
-   Cache SWR (localStorage) por thread
+   SWR Cache (localStorage) per thread
    ========================= */
 
-const MSGS_CACHE_VER = 6; // bump: sort solo por seq + nano
-const msgsCache = createVersionedCacheNS<{ rows: Msg[] }>("rev_msgs", MSGS_CACHE_VER);
+const MSGS_CACHE_VER = 6;
+const msgsCache = createVersionedCacheNS<{ rows: Msg[] }>(
+  "rev_msgs",
+  MSGS_CACHE_VER,
+);
 
 const loadMessagesCache = (threadId: number): Msg[] | null => {
   if (typeof window === "undefined") return null;
-  const payload = msgsCache.load(String(threadId));
-  return payload?.rows ?? null;
+  try {
+    const payload = msgsCache.load(String(threadId));
+    return payload?.rows ?? null;
+  } catch (error) {
+    console.warn(`Failed to load cache for thread ${threadId}:`, error);
+    return null;
+  }
 };
 
-// Guardado idle/debounced para evitar jank
+// Idle/debounced save to prevent jank
 const saveMessagesCacheIdle = (() => {
   const pending = new Map<number, Msg[]>();
   let scheduled = false;
@@ -124,10 +151,12 @@ const saveMessagesCacheIdle = (() => {
   const run = () => {
     scheduled = false;
     for (const [tid, rows] of pending) {
-      const rowsStable = rows.filter((m) => (m.id ?? -1) >= 0);
+      const stableRows = rows.filter((m) => (m.id ?? -1) >= 0);
       try {
-        msgsCache.save(String(tid), { rows: rowsStable });
-      } catch {}
+        msgsCache.save(String(tid), { rows: stableRows });
+      } catch (error) {
+        console.warn(`Failed to save cache for thread ${tid}:`, error);
+      }
     }
     pending.clear();
   };
@@ -135,11 +164,15 @@ const saveMessagesCacheIdle = (() => {
   const schedule = () => {
     if (scheduled) return;
     scheduled = true;
+
     const ric = (window as any).requestIdleCallback as
       | ((cb: () => void) => number)
       | undefined;
-    if (ric) ric(run);
-    else setTimeout(run, 50);
+    if (ric) {
+      ric(run);
+    } else {
+      setTimeout(run, 50);
+    }
   };
 
   return (threadId: number, rows: Msg[]) => {
@@ -148,21 +181,117 @@ const saveMessagesCacheIdle = (() => {
   };
 })();
 
-const saveMessagesCache = (threadId: number, rows: Msg[]) =>
+const saveMessagesCache = (threadId: number, rows: Msg[]): void => {
   saveMessagesCacheIdle(threadId, rows);
-
-const clearMessagesCache = (threadId: number) => {
-  if (typeof window === "undefined") return;
-  msgsCache.clear(String(threadId));
 };
 
-export const messagesCache = { load: loadMessagesCache, save: saveMessagesCache, clear: clearMessagesCache };
+const clearMessagesCache = (threadId: number): void => {
+  if (typeof window === "undefined") return;
+  try {
+    msgsCache.clear(String(threadId));
+  } catch (error) {
+    console.warn(`Failed to clear cache for thread ${threadId}:`, error);
+  }
+};
+
+export const messagesCache = {
+  load: loadMessagesCache,
+  save: saveMessagesCache,
+  clear: clearMessagesCache,
+};
 
 /* =========================
-   Estado + acciones
+   Helpers (nuevos) para eliminar duplicación
    ========================= */
 
-type PendingReceipt = { status: Exclude<LocalDelivery, "sending" | "sent">; fromSelf: boolean };
+type PendingReceipt = {
+  status: Exclude<LocalDelivery, "sending" | "sent">;
+  fromSelf: boolean;
+};
+
+const mergeLocalDelivery = (
+  prev?: LocalDelivery,
+  incoming?: LocalDelivery,
+): LocalDelivery => preferHigher(prev ?? "sent", incoming ?? "sent");
+
+const normalizeText = (text?: string | null): string =>
+  (text ?? "").replace(/\s+/g, " ").trim();
+
+const getDisplayIso = (row: any): string =>
+  row?.meta?.displayAt ??
+  row?.created_at ??
+  row?.createdAt ??
+  new Date().toISOString();
+
+const buildPrevById = (list: Msg[]): Map<number, Msg> => {
+  const map = new Map<number, Msg>();
+  for (const m of list) if (m.id != null) map.set(m.id, m);
+  return map;
+};
+
+const indexMessagesInThread = (
+  baseMap: Map<number, number>,
+  threadId: number,
+  msgs: Msg[],
+): Map<number, number> => {
+  const map = new Map(baseMap);
+  for (const m of msgs) if (m.id != null) map.set(m.id, threadId);
+  return map;
+};
+
+function mergePendingReceipt(
+  existing: PendingReceipt | undefined,
+  wanted: PendingReceipt,
+): PendingReceipt {
+  if (!existing) return wanted;
+  const higher =
+    DELIVERY_RANK[existing.status] >= DELIVERY_RANK[wanted.status]
+      ? existing.status
+      : wanted.status;
+  // Si cambia el “fromSelf” a true en algún momento, lo preservamos (es la condición más restrictiva).
+  return { status: higher, fromSelf: existing.fromSelf || wanted.fromSelf };
+}
+
+function applyAndConsumeReceipt(
+  msg: Msg,
+  pendingReceipts: Map<number, PendingReceipt>,
+  selfId: string | null,
+): Msg {
+  const id = msg.id;
+  if (id == null || !selfId) return msg;
+  const receipt = pendingReceipts.get(id);
+  if (!receipt) return msg;
+
+  const isMine = (msg as any).created_by === selfId;
+  const applicable = isMine ? !receipt.fromSelf : receipt.fromSelf;
+
+  if (!applicable) {
+    // Consumimos igualmente para evitar reciclar un recibo ya inválido para esta dirección.
+    pendingReceipts.delete(id);
+    return msg;
+  }
+
+  const current = (msg.meta?.localDelivery ?? "sent") as LocalDelivery;
+  const next = preferHigher(current, receipt.status);
+  pendingReceipts.delete(id);
+
+  if (next === current) return msg;
+  return { ...msg, meta: { ...msg.meta, localDelivery: next } };
+}
+
+const createMessage = (
+  incoming: Partial<Msg>,
+  threadId: number,
+  preservedMeta?: Msg["meta"],
+): Msg => ({
+  ...(incoming as Msg),
+  thread_id: threadId,
+  meta: sealDisplayMeta(threadId, incoming as Msg, preservedMeta),
+});
+
+/* =========================
+   State + Actions
+   ========================= */
 
 export type MessagesStoreState = {
   byThread: Record<number, Msg[]>;
@@ -177,17 +306,21 @@ type Actions = {
   addOptimistic: (
     threadId: number,
     tempId: number,
-    partial: Omit<Msg, "id" | "thread_id"> & Partial<Pick<Msg, "id">>
+    partial: Omit<Msg, "id" | "thread_id"> & Partial<Pick<Msg, "id">>,
   ) => void;
   confirmMessage: (threadId: number, tempId: number, real: Msg) => void;
   markThreadRead: (threadId: number) => Promise<void>;
-  upsertFromRealtime: (row: MessageRow & { client_nonce?: string | null }) => void;
+  upsertFromRealtime: (
+    row: MessageRow & { client_nonce?: string | null },
+  ) => void;
   removeFromRealtime: (row: MessageRow) => void;
-  upsertReceipt: (messageId: number, userId: string, readAt?: string | null) => void;
+  upsertReceipt: (
+    messageId: number,
+    userId: string,
+    readAt?: string | null,
+  ) => void;
   moveThreadMessages: (fromThreadId: number, toThreadId: number) => void;
-
   markDeliveredLocalIfSent: (messageIds: number[]) => void;
-
   quickStateByMessageId: (id: number) => QuickState;
 };
 
@@ -203,254 +336,182 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
     setSelfAuthId: (id) => set({ selfAuthId: id }),
 
     setForThread: (threadId, rows) =>
-      set((s) => {
-        const prevList = s.byThread[threadId] || [];
+      set((state) => {
+        const prevList = state.byThread[threadId] || [];
         ensureSeqBase(threadId, prevList);
 
-        const prevById = new Map<number, Msg>();
-        for (const m of prevList) if (m.id != null) prevById.set(m.id, m);
+        const prevById = buildPrevById(prevList);
+        const pendingReceipts = new Map(state.pendingReceipts);
+        const { selfAuthId } = state;
 
-        const pend = new Map(s.pendingReceipts);
-        const selfId = s.selfAuthId;
-
-        // Asignamos displaySeq a los nuevos según el orden recibido (preservando los existentes)
         const mapped = rows.map((incoming) => {
-          const prev = incoming.id != null ? prevById.get(incoming.id) : null;
+          const prev =
+            incoming.id != null ? prevById.get(incoming.id) : undefined;
+          const mergedDelivery = mergeLocalDelivery(
+            prev?.meta?.localDelivery as LocalDelivery | undefined,
+            incoming.meta?.localDelivery as LocalDelivery | undefined,
+          );
 
-          const incomingLD = (incoming.meta?.localDelivery ?? "sent") as LocalDelivery;
-          const prevLD = (prev?.meta?.localDelivery ?? "sent") as LocalDelivery;
-          const mergedLD = preferHigher(prevLD, incomingLD);
-
-          const base: Msg = {
-            ...incoming,
-            thread_id: threadId,
-            meta: {
-              ...sealDisplayMeta(threadId, incoming as Msg, prev?.meta),
-              localDelivery: mergedLD,
-              isMine: prev?.meta?.isMine ?? incoming.meta?.isMine ?? undefined,
+          let msg = createMessage(
+            {
+              ...incoming,
+              meta: {
+                ...incoming.meta,
+                localDelivery: mergedDelivery,
+                isMine: prev?.meta?.isMine ?? incoming.meta?.isMine,
+              },
             },
-          };
+            threadId,
+            prev?.meta,
+          );
 
-          if (incoming.id != null) {
-            const pr = pend.get(incoming.id);
-            if (pr && selfId) {
-              const isMine = (incoming as any).created_by === selfId;
-              const applicable = isMine ? !pr.fromSelf : pr.fromSelf;
-              if (applicable) {
-                base.meta!.localDelivery = preferHigher(
-                  (base.meta!.localDelivery ?? "sent") as LocalDelivery,
-                  pr.status
-                );
-                pend.delete(incoming.id);
-              }
-            }
-          }
-          return base;
+          // Aplicar recibo pendiente si lo hay
+          msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
+
+          return msg;
         });
 
-        const list = mapped.sort(sortByDisplayStable);
+        const sorted = mapped.sort(sortByDisplayStable);
+        const newByThread = { ...state.byThread, [threadId]: sorted };
+        const newMessageToThread = indexMessagesInThread(
+          state.messageToThread,
+          threadId,
+          sorted,
+        );
 
-        const next = { ...s.byThread, [threadId]: list };
-        const map = new Map(s.messageToThread);
-        for (const m of list) if (m.id != null) map.set(m.id, threadId);
+        saveMessagesCache(threadId, sorted);
 
-        saveMessagesCache(threadId, list);
-        return { byThread: next, messageToThread: map, pendingReceipts: pend };
+        return {
+          byThread: newByThread,
+          messageToThread: newMessageToThread,
+          pendingReceipts,
+        };
       }),
 
     addOptimistic: (threadId, tempId, partial) =>
-      set((s) => {
-        const prevList = s.byThread[threadId] || [];
+      set((state) => {
+        const prevList = state.byThread[threadId] || [];
         ensureSeqBase(threadId, prevList);
 
         const nowIso = new Date().toISOString();
-        const list = prevList.slice();
-
         const clientNonce =
           partial.meta?.clientNonce ||
           (typeof crypto !== "undefined" && "randomUUID" in crypto
             ? (crypto as any).randomUUID()
             : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
 
-        const base: Msg = {
-          ...(partial as any),
-          id: tempId,
-          thread_id: threadId,
-          meta: {
-            ...(partial.meta || {}),
-            clientNonce,
-            localDelivery: "sending",
-            isMine: true,
-            displayAt: partial.created_at ?? nowIso,
-            displaySeq: nextSeq(threadId),
-            displayNano: nextNano(),
+        const optimistic = createMessage(
+          {
+            ...(partial as any),
+            id: tempId,
+            meta: {
+              ...(partial.meta || {}),
+              clientNonce,
+              localDelivery: "sending",
+              isMine: true,
+              displayAt: (partial as any).created_at ?? nowIso,
+              displaySeq: nextSeq(threadId),
+              displayNano: nextNano(),
+            },
           },
-        };
-        list.push(base);
+          threadId,
+        );
 
-        // Ordenar por si la lista previa no estaba perfectamente ordenada.
-        list.sort(sortByDisplayStable);
+        const updated = [...prevList, optimistic].sort(sortByDisplayStable);
+        const newByThread = { ...state.byThread, [threadId]: updated };
+        const newMessageToThread = new Map(state.messageToThread);
+        newMessageToThread.set(tempId, threadId);
 
-        const next = { ...s.byThread, [threadId]: list };
-        const map = new Map(s.messageToThread);
-        map.set(tempId, threadId);
-        return { byThread: next, messageToThread: map };
+        return { byThread: newByThread, messageToThread: newMessageToThread };
       }),
 
     confirmMessage: (threadId, tempId, real) =>
-      set((s) => {
-        const pend = new Map(s.pendingReceipts);
-        const curr = s.byThread[threadId] || [];
-        const selfId = s.selfAuthId;
-        ensureSeqBase(threadId, curr);
+      set((state) => {
+        const pendingReceipts = new Map(state.pendingReceipts);
+        const list = state.byThread[threadId] || [];
+        const { selfAuthId } = state;
 
-        // Si ya existe real (p.ej. por realtime antes): sustituye y preserva display*
-        if (curr.some((m) => m.id === real.id)) {
-          const filtered = curr.filter((m) => m.id !== tempId);
-          const idxReal = filtered.findIndex((m) => m.id === real.id);
-          if (idxReal >= 0) {
-            const prevItem = filtered[idxReal];
-            const prevSeq = prevItem.meta?.displaySeq;
-            const replaced: Msg = {
-              ...prevItem,
-              ...(real as any),
+        ensureSeqBase(threadId, list);
+
+        const idx = list.findIndex((m) => m.id === tempId);
+        if (idx >= 0) {
+          const preserved = { ...list[idx].meta };
+          const updated = [...list];
+
+          let msg = createMessage(
+            {
+              ...real,
               meta: {
-                ...(sealDisplayMeta(threadId, real as any, prevItem.meta)),
-                localDelivery: preferHigher(prevItem.meta?.localDelivery as LocalDelivery, "sent"),
-                isMine: (prevItem.meta as any)?.isMine ?? true,
+                ...real.meta,
+                localDelivery: mergeLocalDelivery(
+                  "sent",
+                  preserved.localDelivery as LocalDelivery,
+                ),
+                isMine: preserved.isMine ?? true,
               },
-            };
-            const arr = filtered.slice();
-            arr[idxReal] = replaced;
-
-            // Solo resort si cambiara el seq (no debería)
-            const needSort = replaced.meta?.displaySeq !== prevSeq;
-            if (needSort) arr.sort(sortByDisplayStable);
-
-            const pr = real.id ? pend.get(real.id) : undefined;
-            if (pr && selfId) {
-              const isMine = (real as any).created_by === selfId;
-              const applicable = isMine ? !pr.fromSelf : pr.fromSelf;
-              if (applicable) {
-                const prevLD = (arr[idxReal].meta?.localDelivery ?? "sent") as LocalDelivery;
-                arr[idxReal] = {
-                  ...arr[idxReal],
-                  meta: {
-                    ...(arr[idxReal].meta || {}),
-                    localDelivery: preferHigher(prevLD, pr.status),
-                  },
-                };
-                pend.delete(real.id!);
-              }
-            }
-
-            const map = new Map(s.messageToThread);
-            map.delete(tempId);
-            if (real.id != null) map.set(real.id!, threadId);
-            saveMessagesCache(threadId, arr);
-
-            return {
-              byThread: { ...s.byThread, [threadId]: arr },
-              messageToThread: map,
-              pendingReceipts: pend,
-            };
-          }
-        }
-
-        // Si no existe real y tampoco está el tempId → insertar real (asignando display* preservado si había por nonce)
-        const idxTemp = curr.findIndex((m) => m.id === tempId);
-        if (idxTemp < 0) {
-          const item: Msg = {
-            ...real,
-            thread_id: threadId,
-            meta: {
-              ...(sealDisplayMeta(threadId, real as any)),
-              localDelivery: "sent",
-              isMine: true,
             },
+            threadId,
+            preserved,
+          );
+
+          // Aplicar recibo pendiente y consumirlo si corresponde
+          msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
+
+          updated[idx] = msg;
+
+          const newMessageToThread = new Map(state.messageToThread);
+          newMessageToThread.delete(tempId);
+          if (real.id != null) newMessageToThread.set(real.id, threadId);
+
+          saveMessagesCache(threadId, updated);
+
+          return {
+            byThread: { ...state.byThread, [threadId]: updated },
+            messageToThread: newMessageToThread,
+            pendingReceipts,
           };
-          const list = [...curr, item];
-          list.sort(sortByDisplayStable);
-
-          const pr = real.id ? pend.get(real.id) : undefined;
-          if (pr && selfId) {
-            const j = list.findIndex((x) => x.id === real.id);
-            if (j >= 0) {
-              const prevLD = (list[j].meta?.localDelivery ?? "sent") as LocalDelivery;
-              list[j] = {
-                ...list[j],
-                meta: {
-                  ...(list[j].meta || {}),
-                  localDelivery: preferHigher(prevLD, pr.status),
-                },
-              };
-              if (real.id != null) pend.delete(real.id!);
-            }
-          }
-
-          const map = new Map(s.messageToThread);
-          if (real.id != null) map.set(real.id!, threadId);
-          map.delete(tempId);
-          saveMessagesCache(threadId, list);
-          return { byThread: { ...s.byThread, [threadId]: list }, messageToThread: map, pendingReceipts: pend };
         }
 
-        // Reemplazar tempId in-place: preservar display*
-        const preservedMeta = { ...(curr[idxTemp].meta || {}) };
-        const prevSeq = preservedMeta.displaySeq;
-        const copy = curr.slice();
-        copy[idxTemp] = {
-          ...copy[idxTemp],
-          ...real,
-          id: real.id,
-          meta: {
-            ...(sealDisplayMeta(threadId, real as any, preservedMeta)),
-            localDelivery: preferHigher("sent", preservedMeta.localDelivery as LocalDelivery),
-            isMine: preservedMeta.isMine ?? true,
+        // No estaba el optimista → añadimos “real”
+        let msg = createMessage(
+          {
+            ...real,
+            meta: { ...real.meta, localDelivery: "sent", isMine: true },
           },
+          threadId,
+        );
+        msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
+
+        const updated = [...list, msg].sort(sortByDisplayStable);
+        const newMessageToThread =
+          real.id != null
+            ? indexMessagesInThread(state.messageToThread, threadId, [msg])
+            : new Map(state.messageToThread);
+
+        saveMessagesCache(threadId, updated);
+
+        return {
+          byThread: { ...state.byThread, [threadId]: updated },
+          messageToThread: newMessageToThread,
+          pendingReceipts,
         };
-
-        if (copy[idxTemp].meta?.displaySeq !== prevSeq) {
-          copy.sort(sortByDisplayStable);
-        }
-
-        const pr = real.id ? pend.get(real.id) : undefined;
-        if (pr && selfId) {
-          const isMine = (real as any).created_by === selfId;
-          const applicable = isMine ? !pr.fromSelf : pr.fromSelf;
-          if (applicable) {
-            const prevLD = (copy[idxTemp].meta?.localDelivery ?? "sent") as LocalDelivery;
-            copy[idxTemp] = {
-              ...copy[idxTemp],
-              meta: { ...(copy[idxTemp].meta || {}), localDelivery: preferHigher(prevLD, pr.status) },
-            };
-            if (real.id != null) pend.delete(real.id!);
-          }
-        }
-
-        const map = new Map(s.messageToThread);
-        map.delete(tempId);
-        if (real.id != null) map.set(real.id!, threadId);
-        saveMessagesCache(threadId, copy);
-        return { byThread: { ...s.byThread, [threadId]: copy }, messageToThread: map, pendingReceipts: pend };
       }),
 
     markThreadRead: async (threadId) => {
       const { byThread, selfAuthId } = get();
       if (!selfAuthId) return;
 
-      const list = byThread[threadId] || [];
-      if (!list.length) return;
+      const messages = byThread[threadId] || [];
+      if (!messages.length) return;
 
-      const toMark = list
+      const toMark = messages
         .filter((m) => {
           const isSystem = (m as any).is_system;
-          if (isSystem) return false;
-          if (m.id == null) return false;
-          if ((m as any).created_by === selfAuthId) return false;
-          const ld = (m.meta?.localDelivery ?? "sent") as LocalDelivery;
-          if (ld === "sending") return false;
-          return !readFlag.has(m.id as number);
+          if (isSystem || m.id == null || (m as any).created_by === selfAuthId)
+            return false;
+
+          const delivery = (m.meta?.localDelivery ?? "sent") as LocalDelivery;
+          return delivery !== "sending" && !readFlag.has(m.id as number);
         })
         .map((m) => m.id as number);
 
@@ -461,300 +522,352 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ messageIds: toMark, mark: "read" }),
-        }).catch((e) => {
-          toastError(e, { title: "No se pudo confirmar lectura", fallback: "Seguiremos intentando más tarde." });
         });
-      } finally {
         for (const id of toMark) readFlag.mark(id);
+      } catch (error) {
+        toastError(error, {
+          title: "No se pudo confirmar lectura",
+          fallback: "Seguiremos intentando más tarde.",
+        });
       }
     },
 
     upsertFromRealtime: (row) =>
-      set((s) => {
+      set((state) => {
         const threadId = row.thread_id;
-        const curr = s.byThread[threadId] || [];
-        ensureSeqBase(threadId, curr);
+        const list = state.byThread[threadId] || [];
+        ensureSeqBase(threadId, list);
 
-        const normTxt = (x?: string | null) => (x ?? "").replace(/\s+/g, " ").trim();
         const isSystem = !!(row as any).is_system;
+        const clientNonce =
+          (row as any).client_nonce ?? (row as any).clientNonce ?? null;
 
-        // Dedupe optimista por clientNonce (preferente)
-        let preservedMeta: any = null;
-        let cleaned = curr;
-        const clientNonce = (row as any).client_nonce ?? (row as any).clientNonce ?? null;
+        let preservedMeta: Msg["meta"] | null = null;
+        let working = list;
 
+        // Dedupe preferente por clientNonce
         if (clientNonce) {
-          const idxByNonce = curr.findIndex(
-            (m: any) => (m.id ?? 0) < 0 && m.meta?.clientNonce && m.meta.clientNonce === clientNonce
+          const idx = working.findIndex(
+            (m) => (m.id ?? 0) < 0 && m.meta?.clientNonce === clientNonce,
           );
-          if (idxByNonce >= 0) {
-            preservedMeta = { ...(curr[idxByNonce].meta || {}) };
-            cleaned = [...curr.slice(0, idxByNonce), ...curr.slice(idxByNonce + 1)];
+          if (idx >= 0) {
+            preservedMeta = { ...working[idx].meta };
+            working = [...working.slice(0, idx), ...working.slice(idx + 1)];
           }
         }
 
-        // Fallback: dedupe por texto eliminando SOLO un optimista equivalente
+        // Fallback: dedupe por texto (una sola vez)
         if (!preservedMeta) {
           let removed = false;
-          cleaned = curr.filter((m: any) => {
-            if ((m.id ?? 0) >= 0) return true;
-            if (removed) return true;
-            const mIsSystem = !!m.is_system;
-            const isSystemMatch = mIsSystem === isSystem;
-            const textMatch = normTxt(m.text) === normTxt((row as any).text);
+          const targetText = normalizeText((row as any).text);
+          working = working.filter((m: any) => {
+            if ((m.id ?? 0) >= 0 || removed) return true;
+            const isSys = !!m.is_system;
+            const isSystemMatch = isSys === isSystem;
+            const textMatch = normalizeText(m.text) === targetText;
             if (isSystemMatch && textMatch) {
-              preservedMeta = { ...(m.meta || {}) };
-              removed = true; // ✅ solo uno
+              preservedMeta = { ...m.meta };
+              removed = true;
               return false;
             }
             return true;
           });
         }
 
-        const idx = cleaned.findIndex((m: any) => m.id === (row as any).id);
-        const pend = new Map(s.pendingReceipts);
-        const selfId = s.selfAuthId;
+        const pendingReceipts = new Map(state.pendingReceipts);
+        const { selfAuthId } = state;
 
-        if (idx >= 0) {
-          // Update in-place (no degradar LD)
-          const copy = cleaned.slice();
-          const prevItem = copy[idx];
-          const prevSeq = prevItem.meta?.displaySeq;
-          copy[idx] = {
-            ...prevItem,
+        const existingIdx = working.findIndex((m) => m.id === (row as any).id);
+        if (existingIdx >= 0) {
+          // Update
+          const prev = working[existingIdx];
+          const updated = [...working];
+
+          let msg = createMessage(
+            {
+              ...(row as any),
+              meta: {
+                ...((row as any).meta || {}),
+                localDelivery:
+                  prev.meta?.localDelivery === "sending"
+                    ? "sent"
+                    : (prev.meta?.localDelivery ?? "sent"),
+                isMine:
+                  prev.meta?.isMine ??
+                  preservedMeta?.isMine ??
+                  (!!selfAuthId && (row as any).created_by === selfAuthId),
+              },
+            },
+            threadId,
+            { ...prev.meta, ...preservedMeta },
+          );
+
+          msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
+
+          updated[existingIdx] = msg;
+
+          const newMessageToThread = (row as any).id
+            ? indexMessagesInThread(state.messageToThread, threadId, [msg])
+            : new Map(state.messageToThread);
+
+          saveMessagesCache(threadId, updated);
+
+          return {
+            byThread: { ...state.byThread, [threadId]: updated },
+            messageToThread: newMessageToThread,
+            pendingReceipts,
+          };
+        }
+
+        // Insert
+        let msg = createMessage(
+          {
             ...(row as any),
             meta: {
-              ...(sealDisplayMeta(threadId, row as any, { ...prevItem.meta, ...preservedMeta })),
-              localDelivery:
-                (prevItem.meta?.localDelivery ?? "sent") === "sending"
-                  ? "sent"
-                  : (prevItem.meta?.localDelivery ?? "sent"),
+              ...((row as any).meta || {}),
+              localDelivery: "sent",
               isMine:
-                (prevItem.meta as any)?.isMine ??
-                (preservedMeta?.isMine ??
-                  (!!selfId && ((row as any).created_by === selfId ? true : false))),
+                preservedMeta?.isMine ??
+                (!!selfAuthId && (row as any).created_by === selfAuthId),
+              clientNonce: clientNonce ?? preservedMeta?.clientNonce,
+              displayAt: getDisplayIso(row),
             },
-          };
-
-          if (copy[idx].meta?.displaySeq !== prevSeq) {
-            copy.sort(sortByDisplayStable);
-          }
-
-          const pr = (row as any).id ? pend.get((row as any).id) : undefined;
-          if (pr && selfId) {
-            const isMine = (row as any).created_by === selfId;
-            const applicable = isMine ? !pr.fromSelf : pr.fromSelf;
-            if (applicable) {
-              const prev = (copy[idx].meta?.localDelivery ?? "sent") as LocalDelivery;
-              copy[idx].meta!.localDelivery = preferHigher(prev, pr.status);
-              pend.delete((row as any).id!);
-            }
-          }
-
-          const map = new Map(s.messageToThread);
-          if ((row as any).id != null) map.set((row as any).id!, threadId);
-          saveMessagesCache(threadId, copy);
-          return { byThread: { ...s.byThread, [threadId]: copy }, messageToThread: map, pendingReceipts: pend };
-        }
-
-        // Nuevo entrante (preserva si había meta de optimista)
-        const inserted: Msg = {
-          ...(row as any),
-          meta: {
-            ...(sealDisplayMeta(threadId, row as any, preservedMeta)),
-            localDelivery: "sent",
-            isMine:
-              preservedMeta?.isMine ??
-              (!!selfId && ((row as any).created_by === selfId ? true : false)),
-            clientNonce: clientNonce ?? preservedMeta?.clientNonce,
           },
+          threadId,
+          preservedMeta || undefined,
+        );
+
+        msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
+
+        const updated = [...working, msg].sort(sortByDisplayStable);
+        const newMessageToThread =
+          (row as any).id != null
+            ? indexMessagesInThread(state.messageToThread, threadId, [msg])
+            : new Map(state.messageToThread);
+
+        saveMessagesCache(threadId, updated);
+
+        return {
+          byThread: { ...state.byThread, [threadId]: updated },
+          messageToThread: newMessageToThread,
+          pendingReceipts,
         };
-
-        const added = [...cleaned, inserted];
-        // Resort para asegurar orden por seq (aunque inserte al final)
-        added.sort(sortByDisplayStable);
-
-        const pr = (row as any).id ? pend.get((row as any).id) : undefined;
-        if (pr && selfId) {
-          const i = added.findIndex((m: any) => m.id === (row as any).id);
-          if (i >= 0) {
-            const isMine = (row as any).created_by === selfId;
-            const applicable = isMine ? !pr.fromSelf : pr.fromSelf;
-            if (applicable) {
-              const prev = (added[i].meta?.localDelivery ?? "sent") as LocalDelivery;
-              added[i].meta!.localDelivery = preferHigher(prev, pr.status);
-              pend.delete((row as any).id!);
-            }
-          }
-        }
-
-        const map = new Map(s.messageToThread);
-        if ((row as any).id != null) map.set((row as any).id!, threadId);
-        saveMessagesCache(threadId, added);
-        return { byThread: { ...s.byThread, [threadId]: added }, messageToThread: map, pendingReceipts: pend };
       }),
 
     removeFromRealtime: (row) =>
-      set((s) => {
+      set((state) => {
         const threadId = row.thread_id;
-        const curr = s.byThread[threadId] || [];
-        const filtered = curr.filter((m) => m.id !== (row as any).id);
-        const map = new Map(s.messageToThread);
-        if ((row as any).id != null) map.delete((row as any).id!);
+        const list = state.byThread[threadId] || [];
+        const filtered = list.filter((m) => m.id !== (row as any).id);
+
+        const newMessageToThread = new Map(state.messageToThread);
+        if ((row as any).id != null) newMessageToThread.delete((row as any).id);
+
         if (filtered.length) saveMessagesCache(threadId, filtered);
         else clearMessagesCache(threadId);
-        return { byThread: { ...s.byThread, [threadId]: filtered }, messageToThread: map };
+
+        return {
+          byThread: { ...state.byThread, [threadId]: filtered },
+          messageToThread: newMessageToThread,
+        };
       }),
 
     upsertReceipt: (messageId, userId, readAt) =>
-      set((s) => {
-        const selfId = s.selfAuthId;
-        const want: Exclude<LocalDelivery, "sending" | "sent"> = readAt ? "read" : "delivered";
-        const fromSelf = !!selfId && userId === selfId;
+      set((state) => {
+        const { selfAuthId } = state;
+        const wantedStatus: Exclude<LocalDelivery, "sending" | "sent"> = readAt
+          ? "read"
+          : "delivered";
+        const fromSelf = !!selfAuthId && userId === selfAuthId;
 
-        let threadId = s.messageToThread.get(messageId);
+        // Resolver threadId (índice o búsqueda)
+        let threadId = state.messageToThread.get(messageId);
         if (!threadId) {
-          for (const [tidStr, list] of Object.entries(s.byThread)) {
-            if (list.some((m) => m.id === messageId)) {
+          for (const [tidStr, messages] of Object.entries(state.byThread)) {
+            if (messages.some((m) => m.id === messageId)) {
               threadId = Number(tidStr);
-              s.messageToThread.set(messageId, threadId);
               break;
             }
           }
         }
+
+        // Si seguimos sin thread, guardar como pendiente
         if (!threadId) {
-          const pend = new Map(s.pendingReceipts);
-          const prev = pend.get(messageId);
-          const nextStatus =
-            !prev ? want : DELIVERY_RANK[prev.status] >= DELIVERY_RANK[want] ? prev.status : want;
-          pend.set(messageId, { status: nextStatus, fromSelf });
-          return { pendingReceipts: pend };
+          const pendingReceipts = new Map(state.pendingReceipts);
+          const merged = mergePendingReceipt(pendingReceipts.get(messageId), {
+            status: wantedStatus,
+            fromSelf,
+          });
+          pendingReceipts.set(messageId, merged);
+          return { pendingReceipts };
         }
 
-        const curr = s.byThread[threadId] || [];
-        const idx = curr.findIndex((m) => m.id === messageId);
+        const list = state.byThread[threadId] || [];
+        const idx = list.findIndex((m) => m.id === messageId);
+
+        // No está aún el mensaje → guardar pendiente
         if (idx < 0) {
-          const pend = new Map(s.pendingReceipts);
-          const prev = pend.get(messageId);
-          const nextStatus =
-            !prev ? want : DELIVERY_RANK[prev.status] >= DELIVERY_RANK[want] ? prev.status : want;
-          pend.set(messageId, { status: nextStatus, fromSelf });
-          return { pendingReceipts: pend };
+          const pendingReceipts = new Map(state.pendingReceipts);
+          const merged = mergePendingReceipt(pendingReceipts.get(messageId), {
+            status: wantedStatus,
+            fromSelf,
+          });
+          pendingReceipts.set(messageId, merged);
+          return { pendingReceipts };
         }
 
-        const copy = curr.slice();
-        const msg = copy[idx];
-        const isMine = !!selfId && (msg as any).created_by === selfId;
+        const msg = list[idx];
+        const isMine = !!selfAuthId && (msg as any).created_by === selfAuthId;
 
-        if ((isMine && fromSelf) || (!isMine && !fromSelf)) return {};
+        // Solo aplicamos si tiene sentido (mis mensajes: recibo de otros; sus mensajes: recibo mío)
+        if ((isMine && fromSelf) || (!isMine && !fromSelf)) {
+          return {};
+        }
 
-        const prevLD = (msg.meta?.localDelivery ?? "sent") as LocalDelivery;
-        const nextLD = preferHigher(prevLD, want);
-        if (nextLD === prevLD) return {};
+        const current = (msg.meta?.localDelivery ?? "sent") as LocalDelivery;
+        const next = preferHigher(current, wantedStatus);
+        if (next === current) return {};
 
-        copy[idx] = { ...msg, meta: { ...(msg.meta || {}), localDelivery: nextLD } };
-        saveMessagesCache(threadId, copy);
-        const pend = new Map(s.pendingReceipts);
-        pend.delete(messageId);
-        return { byThread: { ...s.byThread, [threadId]: copy }, pendingReceipts: pend };
+        const updated = [...list];
+        updated[idx] = { ...msg, meta: { ...msg.meta, localDelivery: next } };
+
+        saveMessagesCache(threadId, updated);
+
+        const pendingReceipts = new Map(state.pendingReceipts);
+        pendingReceipts.delete(messageId);
+
+        return {
+          byThread: { ...state.byThread, [threadId]: updated },
+          pendingReceipts,
+        };
       }),
 
     moveThreadMessages: (fromThreadId, toThreadId) =>
-      set((s) => {
+      set((state) => {
         if (fromThreadId === toThreadId) return {};
-        const from = s.byThread[fromThreadId] || [];
-        if (!from.length) {
-          if (s.byThread[fromThreadId]) {
-            const byThread = { ...s.byThread };
-            delete byThread[fromThreadId];
+
+        const fromMessages = state.byThread[fromThreadId] || [];
+        if (!fromMessages.length) {
+          if (state.byThread[fromThreadId]) {
+            const newByThread = { ...state.byThread };
+            delete newByThread[fromThreadId];
             clearMessagesCache(fromThreadId);
-            return { byThread };
+            return { byThread: newByThread };
           }
           return {};
         }
-        const dest = s.byThread[toThreadId] || [];
 
-        // Inicializa secuencia destino con el máximo actual
-        ensureSeqBase(toThreadId, dest);
+        const toMessages = state.byThread[toThreadId] || [];
+        ensureSeqBase(toThreadId, toMessages);
 
-        // Migra preservando display*
-        const migrated = from.map((m) => ({
+        // Preservamos meta/orden; no “re-asignamos” displaySeq.
+        const migrated = fromMessages.map((m) => ({
           ...m,
           thread_id: toThreadId,
-          meta: {
-            ...(m.meta || {}),
-          },
         }));
 
-        const mapById = new Map<number, Msg>();
-        for (const m of dest) if (m.id != null) mapById.set(m.id!, m);
-        for (const m of migrated) if (m.id != null) mapById.set(m.id!, m);
-        const merged = Array.from(mapById.values()).sort(sortByDisplayStable);
+        // Merge: para ids >=0 dedupe por id; para negativos (optimistas) los preservamos.
+        const byId = new Map<number, Msg>();
+        for (const m of toMessages)
+          if (m.id != null && m.id >= 0) byId.set(m.id, m);
+        for (const m of migrated)
+          if (m.id != null && m.id >= 0) byId.set(m.id, m);
 
-        const byThread = { ...s.byThread };
-        delete byThread[fromThreadId];
-        byThread[toThreadId] = merged;
+        const positives = Array.from(byId.values());
+        const negatives = [...toMessages, ...migrated].filter(
+          (m) => (m.id ?? 0) < 0,
+        );
 
-        const messageToThread = new Map(s.messageToThread);
-        for (const m of migrated) if (m.id != null) messageToThread.set(m.id!, toThreadId);
+        const merged = [...positives, ...negatives].sort(sortByDisplayStable);
+
+        const newByThread = { ...state.byThread };
+        delete newByThread[fromThreadId];
+        newByThread[toThreadId] = merged;
+
+        const newMessageToThread = new Map(state.messageToThread);
+        for (const m of migrated)
+          if (m.id != null && m.id >= 0)
+            newMessageToThread.set(m.id, toThreadId);
 
         clearMessagesCache(fromThreadId);
         saveMessagesCache(toThreadId, merged);
-        return { byThread, messageToThread };
+
+        return { byThread: newByThread, messageToThread: newMessageToThread };
       }),
 
     markDeliveredLocalIfSent: (messageIds: number[]) =>
-      set((s) => {
-        if (!messageIds?.length) return {};
-        const { selfAuthId } = s;
-        if (!selfAuthId) return {};
+      set((state) => {
+        if (!messageIds?.length || !state.selfAuthId) return {};
 
         const changedThreads = new Set<number>();
-        for (const mid of messageIds) {
-          const tid = s.messageToThread.get(mid);
-          if (!tid) continue;
-          const list = s.byThread[tid] || [];
-          const idx = list.findIndex((m) => m.id === mid);
+        const newByThread = { ...state.byThread };
+
+        for (const messageId of messageIds) {
+          const threadId = state.messageToThread.get(messageId);
+          if (!threadId) continue;
+
+          const messages = newByThread[threadId] || [];
+          const idx = messages.findIndex((m) => m.id === messageId);
           if (idx < 0) continue;
 
-          const msg = list[idx];
+          const msg = messages[idx];
           const isSystem = (msg as any).is_system;
-          const isMine = (msg as any).created_by === selfAuthId;
-          const currLD = (msg.meta?.localDelivery ?? "sent") as LocalDelivery;
+          const isMine = (msg as any).created_by === state.selfAuthId;
+          const current = (msg.meta?.localDelivery ?? "sent") as LocalDelivery;
 
-          if (!isSystem && !isMine && currLD === "sent") {
-            const next = list.slice();
-            next[idx] = { ...msg, meta: { ...(msg.meta || {}), localDelivery: "delivered" } };
-            s.byThread[tid] = next;
-            changedThreads.add(tid);
+          if (!isSystem && !isMine && current === "sent") {
+            const updated = [...messages];
+            updated[idx] = {
+              ...msg,
+              meta: { ...msg.meta, localDelivery: "delivered" },
+            };
+            newByThread[threadId] = updated;
+            changedThreads.add(threadId);
           }
         }
 
         if (!changedThreads.size) return {};
-        for (const tid of changedThreads) saveMessagesCache(tid, s.byThread[tid]);
-        return { byThread: { ...s.byThread } };
+
+        for (const threadId of changedThreads)
+          saveMessagesCache(threadId, newByThread[threadId]);
+        return { byThread: newByThread };
       }),
 
     quickStateByMessageId: (id: number) => internalQuickState(get(), id),
-  }))
+  })),
 );
 
 /* ===================================================
-   Utilidades de estado rápido
+   Quick State Utilities
    =================================================== */
 
-export type QuickState = "unknown" | "system" | "mine" | "read" | "delivered" | "sent";
+export type QuickState =
+  | "unknown"
+  | "system"
+  | "mine"
+  | "read"
+  | "delivered"
+  | "sent";
 
-function internalQuickState(s: MessagesStoreState, id: number): QuickState {
-  const tid = s.messageToThread.get(id);
-  if (!tid) return "unknown";
-  const list = s.byThread[tid] || [];
-  const msg = list.find((m) => m.id === id);
-  if (!msg) return "unknown";
-  if ((msg as any).is_system) return "system";
-  if (s.selfAuthId && (msg as any).created_by === s.selfAuthId) return "mine";
-  const ld = (msg.meta?.localDelivery ?? "sent") as LocalDelivery;
-  if (ld === "read") return "read";
-  if (ld === "delivered") return "delivered";
-  return "sent";
+function internalQuickState(state: MessagesStoreState, id: number): QuickState {
+  const threadId = state.messageToThread.get(id);
+  if (!threadId) return "unknown";
+
+  const messages = state.byThread[threadId] || [];
+  const message = messages.find((m) => m.id === id);
+
+  if (!message) return "unknown";
+  if ((message as any).is_system) return "system";
+  if (state.selfAuthId && (message as any).created_by === state.selfAuthId)
+    return "mine";
+
+  const delivery = (message.meta?.localDelivery ?? "sent") as LocalDelivery;
+  switch (delivery) {
+    case "read":
+      return "read";
+    case "delivered":
+      return "delivered";
+    default:
+      return "sent";
+  }
 }

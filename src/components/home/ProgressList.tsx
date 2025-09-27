@@ -3,7 +3,12 @@
 
 import styles from "./ProgressList.module.css";
 
-export type ImageStats = { pending: number; corrected: number; reopened: number; total: number };
+export type ImageStats = {
+  pending: number;
+  corrected: number;
+  reopened: number;
+  total: number;
+};
 type Props = { statsByImage: Record<string, ImageStats> };
 
 export default function ProgressList({ statsByImage }: Props) {
@@ -11,7 +16,7 @@ export default function ProgressList({ statsByImage }: Props) {
     <div className={styles.list} aria-label="Progreso por imagen">
       {Object.entries(statsByImage).map(([img, st]) => {
         if (!st || st.total === 0) return null;
-        const show = (st.pending + st.reopened) > 0;
+        const show = st.pending + st.reopened > 0;
         if (!show) return null;
 
         const tot = Math.max(1, st.pending + st.corrected + st.reopened);
@@ -27,7 +32,8 @@ export default function ProgressList({ statsByImage }: Props) {
               <span className={styles.reopened} style={{ width: `${wr}%` }} />
             </div>
             <span className={styles.legend}>
-              {img} · {st.pending} pend. · {st.reopened} reab. · {st.corrected} ok
+              {img} · {st.pending} pend. · {st.reopened} reab. · {st.corrected}{" "}
+              ok
             </span>
           </div>
         );

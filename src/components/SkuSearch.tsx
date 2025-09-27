@@ -104,7 +104,9 @@ export default function SkuSearch({
   // scroll item activo
   useEffect(() => {
     if (hi < 0 || !listRef.current) return;
-    const el = listRef.current.querySelectorAll("li")[hi] as HTMLLIElement | undefined;
+    const el = listRef.current.querySelectorAll("li")[hi] as
+      | HTMLLIElement
+      | undefined;
     el?.scrollIntoView({ block: "nearest" });
   }, [hi]);
 
@@ -120,7 +122,9 @@ export default function SkuSearch({
       aria-owns="sku-search-listbox"
     >
       <div className={styles.inputWrap}>
-        <span className={styles.icon} aria-hidden>🔎</span>
+        <span className={styles.icon} aria-hidden>
+          🔎
+        </span>
         <input
           ref={inputRef}
           className={styles.input}
@@ -160,7 +164,12 @@ export default function SkuSearch({
       {open && (
         <>
           {filtered.length > 0 ? (
-            <ul ref={listRef} id="sku-search-listbox" role="listbox" className={styles.menu}>
+            <ul
+              ref={listRef}
+              id="sku-search-listbox"
+              role="listbox"
+              className={styles.menu}
+            >
               {filtered.map((item, idx) => {
                 const active = idx === hi;
                 return (
@@ -192,7 +201,9 @@ export default function SkuSearch({
             </ul>
           ) : (
             <div className={styles.empty}>
-              {meetsMin ? "Sin resultados" : `Escribe al menos ${minChars} carácter(es)…`}
+              {meetsMin
+                ? "Sin resultados"
+                : `Escribe al menos ${minChars} carácter(es)…`}
             </div>
           )}
         </>

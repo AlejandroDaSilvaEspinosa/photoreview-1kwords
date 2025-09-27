@@ -40,7 +40,8 @@ const toastFlushOnce = () => {
   emitToast({
     variant: "warning",
     title: "Problema al confirmar entregas",
-    description: "No se pudieron marcar algunas entregas. Reintentaremos automáticamente.",
+    description:
+      "No se pudieron marcar algunas entregas. Reintentaremos automáticamente.",
     durationMs: 6000,
   });
 };
@@ -96,7 +97,10 @@ class DeliveryAck {
     const isMine =
       typeof st?.isMineByMessageId === "function"
         ? !!st.isMineByMessageId(id)
-        : !!(st?.messagesById?.get?.(id)?.isMine ?? st?.messagesById?.[id]?.isMine);
+        : !!(
+            st?.messagesById?.get?.(id)?.isMine ??
+            st?.messagesById?.[id]?.isMine
+          );
 
     return { ld, isMine };
   }
@@ -105,7 +109,10 @@ class DeliveryAck {
   private persistSent() {
     try {
       const arr = Array.from(this.sent);
-      const slice = arr.length > MAX_SENT_MEMORY ? arr.slice(arr.length - MAX_SENT_MEMORY) : arr;
+      const slice =
+        arr.length > MAX_SENT_MEMORY
+          ? arr.slice(arr.length - MAX_SENT_MEMORY)
+          : arr;
       sessionStorage.setItem(SENT_KEY, JSON.stringify(slice));
     } catch {
       toastStorageOnce("guardar la memoria de entregas");
@@ -146,7 +153,10 @@ class DeliveryAck {
   /** Debounce corto para agrupar IDs en un solo POST */
   private schedule() {
     if (this.flushTimer != null) return;
-    this.flushTimer = window.setTimeout(() => this.flush(), DEBOUNCE_MS) as unknown as number;
+    this.flushTimer = window.setTimeout(
+      () => this.flush(),
+      DEBOUNCE_MS,
+    ) as unknown as number;
   }
 
   /** Intento de envío batched (con filtrado final) */
@@ -155,7 +165,10 @@ class DeliveryAck {
     if (!this.uid || !this.queue.size) return;
 
     // No trabajamos si la pestaña no es visible: reprogramamos
-    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+    if (
+      typeof document !== "undefined" &&
+      document.visibilityState !== "visible"
+    ) {
       this.schedule();
       return;
     }
@@ -215,7 +228,10 @@ class DeliveryAck {
 
   /** Úsalo en listeners de 'visibilitychange' y 'online' */
   onVisibilityOrOnline() {
-    if (typeof document !== "undefined" && document.visibilityState === "visible") {
+    if (
+      typeof document !== "undefined" &&
+      document.visibilityState === "visible"
+    ) {
       this.schedule();
     }
   }

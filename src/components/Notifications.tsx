@@ -1,18 +1,18 @@
 // src/components/Notifications.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { format } from "timeago.js";
-import "@/lib/timeago";
-import styles from "./Notifications.module.css";
+import { presentNotification } from "@/lib/notifications/presenter";
 import { useWireNotificationsRealtime } from "@/lib/realtime/useWireNotificationsRealtime";
+import "@/lib/timeago";
 import {
   useNotificationsStore,
   type NotificationRow,
 } from "@/stores/notifications";
-import { presentNotification } from "@/lib/notifications/presenter";
-import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { format } from "timeago.js";
+import styles from "./Notifications.module.css";
 
 const PAGE_SIZE = 30;
 
@@ -23,7 +23,11 @@ export default function Notifications({
   onOpenSku: (sku: string) => void;
   initial?: { items: NotificationRow[]; unseen?: number } | null;
 }) {
-  useWireNotificationsRealtime({ initial, prefetchFromApi: !initial, limit: PAGE_SIZE });
+  useWireNotificationsRealtime({
+    initial,
+    prefetchFromApi: !initial,
+    limit: PAGE_SIZE,
+  });
 
   const [open, setOpen] = useState(false);
   const items = useNotificationsStore((s) => s.items);
@@ -34,7 +38,7 @@ export default function Notifications({
   const hasBadge = unseen > 0;
   const currentCursor = useMemo(
     () => (items.length ? items[items.length - 1].created_at : null),
-    [items]
+    [items],
   );
 
   const [loadingMore, setLoadingMore] = useState(false);
@@ -80,7 +84,7 @@ export default function Notifications({
     if (!container || !sentinel) return;
     const io = new IntersectionObserver(
       (entries) => entries.forEach((e) => e.isIntersecting && loadMore()),
-      { root: container, rootMargin: "100px", threshold: 0 }
+      { root: container, rootMargin: "100px", threshold: 0 },
     );
     io.observe(sentinel);
     return () => io.disconnect();
@@ -118,10 +122,7 @@ export default function Notifications({
         >
           <div className={styles.panelHeader}>
             <strong>Notificaciones</strong>
-            <button
-              className={styles.closeBtn}
-              onClick={() => setOpen(false)}
-            >
+            <button className={styles.closeBtn} onClick={() => setOpen(false)}>
               ×
             </button>
           </div>

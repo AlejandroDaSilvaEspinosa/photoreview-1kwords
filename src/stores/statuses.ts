@@ -35,10 +35,10 @@ type Actions = {
   hydrateFromCacheIfEmpty: () => void;
 };
 
-const cache = createVersionedCache<{ bySku: Record<string, SkuStatusRow>; byImage: Record<string, ImageStatusRow> }>(
-  "rev_statuses",
-  1
-);
+const cache = createVersionedCache<{
+  bySku: Record<string, SkuStatusRow>;
+  byImage: Record<string, ImageStatusRow>;
+}>("rev_statuses", 1);
 
 export const useStatusesStore = create<State & Actions>()(
   subscribeWithSelector((set, get) => ({
@@ -110,10 +110,11 @@ export const useStatusesStore = create<State & Actions>()(
 
     hydrateFromCacheIfEmpty: () => {
       const sNow = get();
-      if (Object.keys(sNow.bySku).length || Object.keys(sNow.byImage).length) return;
+      if (Object.keys(sNow.bySku).length || Object.keys(sNow.byImage).length)
+        return;
       const payload = cache.load();
       if (!payload) return;
       set({ bySku: payload.bySku, byImage: payload.byImage });
     },
-  }))
+  })),
 );

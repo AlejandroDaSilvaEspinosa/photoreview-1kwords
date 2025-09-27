@@ -1,7 +1,7 @@
 // Lanza notificación nativa si hay permiso; si no, pide permiso y cae a toast cb.
 export async function notifyNative(
   title: string,
-  options?: NotificationOptions & { serviceWorkerPath?: string }
+  options?: NotificationOptions & { serviceWorkerPath?: string },
 ) {
   try {
     if (!("Notification" in window)) return false;

@@ -15,12 +15,23 @@ type Props = {
 
 export default function SkuCard({ sku, unread, perImageStats, onOpen }: Props) {
   const needFix = sku.counts.needs_correction ?? 0;
-  const hasStatusRow = Number.isFinite(sku.counts.total) && sku.counts.total >= 0;
+  const hasStatusRow =
+    Number.isFinite(sku.counts.total) && sku.counts.total >= 0;
 
   return (
-    <button type="button" className={styles.card} onClick={onOpen} role="listitem" title={`Abrir SKU ${sku.sku}`}>
+    <button
+      type="button"
+      className={styles.card}
+      onClick={onOpen}
+      role="listitem"
+      title={`Abrir SKU ${sku.sku}`}
+    >
       <div className={styles.thumbWrap}>
-        {unread && <span className={styles.unread} title="Mensajes sin leer">💬</span>}
+        {unread && (
+          <span className={styles.unread} title="Mensajes sin leer">
+            💬
+          </span>
+        )}
 
         <ImageWithSkeleton
           src={sku.images[0]?.listingImageUrl}
@@ -36,7 +47,9 @@ export default function SkuCard({ sku, unread, perImageStats, onOpen }: Props) {
 
         <span className={styles.badge}>
           {hasStatusRow
-            ? (needFix > 0 ? `${needFix} img necesitan corrección` : `0 img por corregir`)
+            ? needFix > 0
+              ? `${needFix} img necesitan corrección`
+              : `0 img por corregir`
             : "(pendiente de validación)"}
         </span>
       </div>
