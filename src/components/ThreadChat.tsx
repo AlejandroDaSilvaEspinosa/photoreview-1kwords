@@ -79,7 +79,7 @@ const UnreadDividerAlign = React.memo(
   (prev, next) =>
     prev.threadId === next.threadId &&
     prev.cutoffId === next.cutoffId &&
-    prev.label === next.label,
+    prev.label === next.label
 );
 
 /* ================================ Props ================================ */
@@ -118,11 +118,11 @@ function ThreadChatInner({
             : value,
       }));
     },
-    [],
+    []
   );
   const getDraft = useCallback(
     (threadId: number) => drafts[threadId] ?? "",
-    [drafts],
+    [drafts]
   );
   const clearDraft = useCallback((threadId: number) => {
     setDrafts((prev) => {
@@ -138,7 +138,7 @@ function ThreadChatInner({
   const nextStatus = useCallback(
     (s: ThreadStatus): ThreadStatus =>
       s === "corrected" ? "reopened" : "corrected",
-    [],
+    []
   );
 
   const colorByStatus = useCallback(
@@ -146,11 +146,11 @@ function ThreadChatInner({
       s === "corrected"
         ? "#0FA958"
         : s === "reopened"
-          ? "#FFB000"
-          : s === "deleted"
-            ? "#666"
-            : "#FF0040",
-    [],
+        ? "#FFB000"
+        : s === "deleted"
+        ? "#666"
+        : "#FF0040",
+    []
   );
   const colorByNextStatus = (s: ThreadStatus) =>
     s === "corrected" ? "orange" : "green";
@@ -168,7 +168,7 @@ function ThreadChatInner({
         !!selfAuthId && !!createdByAuthId && createdByAuthId === selfAuthId
       );
     },
-    [selfAuthId],
+    [selfAuthId]
   );
 
   const handleSend = useCallback(async () => {
@@ -262,7 +262,7 @@ function ThreadChatInner({
         !m.isSystem &&
         !isMine(m) &&
         ((m.meta?.localDelivery as DeliveryState | undefined) ?? "sent") !==
-          "read",
+          "read"
     );
     if (firstUnread) {
       const frozenCount = list.reduce((acc, m) => {
@@ -343,7 +343,7 @@ function ThreadChatInner({
             !m.isSystem &&
             !isMine(m) &&
             ((m.meta?.localDelivery as DeliveryState | undefined) ?? "sent") !==
-              "read",
+              "read"
         );
         if (firstNewUnread) {
           const frozenCount = Math.max(newSnap?.count ?? 1, 1);
@@ -374,14 +374,12 @@ function ThreadChatInner({
 
     const locked = stickyLockedRef.current;
     const sticky = stickyRef.current;
-    const cutId = locked
-      ? (sticky?.cutoffId ?? null)
-      : (snap?.cutoffId ?? null);
+    const cutId = locked ? sticky?.cutoffId ?? null : snap?.cutoffId ?? null;
     const unreadLabel = locked
-      ? (sticky?.label ?? "Mensajes no leídos")
+      ? sticky?.label ?? "Mensajes no leídos"
       : snap && snap.count > 0
-        ? `Mensajes no leídos (${snap.count})`
-        : "Mensajes no leídos";
+      ? `Mensajes no leídos (${snap.count})`
+      : "Mensajes no leídos";
 
     for (const m of list) {
       const dt = new Date(m.createdAt);
@@ -491,7 +489,7 @@ function ThreadChatInner({
   const toggleLabel = useCallback(
     (s: ThreadStatus) =>
       s === "corrected" ? "Reabrir hilo" : "Validar correcciones",
-    [],
+    []
   );
 
   return (
@@ -522,7 +520,7 @@ function ThreadChatInner({
         </button>
       </div>
 
-      <div ref={listRef} className={styles.chatList}>
+      <div ref={listRef} className={styles.chatList} data-chat-list>
         {rows.map((row, i) => {
           if (row.kind === "divider") {
             return (
@@ -567,10 +565,10 @@ function ThreadChatInner({
             delivery === "sending"
               ? "⏳"
               : delivery === "read"
-                ? "✓✓"
-                : delivery === "delivered"
-                  ? "✓✓"
-                  : "✓";
+              ? "✓✓"
+              : delivery === "delivered"
+              ? "✓✓"
+              : "✓";
 
           const prev = prevDeliveryRef.current.get(m.id as number);
           const justDelivered =
@@ -584,7 +582,7 @@ function ThreadChatInner({
 
           return (
             <div
-              key={m.id}
+              key={String(m.meta?.clientNonce ?? m.id ?? `ghost-${i}`)}
               className={
                 sys
                   ? `${styles.bubble} ${styles.system}`
@@ -599,8 +597,8 @@ function ThreadChatInner({
                   {sys
                     ? "Sistema"
                     : mine
-                      ? "Tú"
-                      : m.createdByName || "Desconocido"}
+                    ? "Tú"
+                    : m.createdByName || "Desconocido"}
                 </span>
                 <span className={styles.messageMeta}>
                   <span className={styles.time}>{hhmm}</span>
@@ -616,10 +614,10 @@ function ThreadChatInner({
                         delivery === "read"
                           ? "Leído"
                           : delivery === "delivered"
-                            ? "Entregado"
-                            : delivery === "sent"
-                              ? "Enviado"
-                              : "Enviando"
+                          ? "Entregado"
+                          : delivery === "sent"
+                          ? "Enviado"
+                          : "Enviando"
                       }
                     >
                       {ticks}
@@ -675,7 +673,7 @@ function ThreadChatInner({
           onClick={() =>
             onToggleThreadStatus(
               activeThread.id,
-              nextStatus(activeThread.status),
+              nextStatus(activeThread.status)
             )
           }
           title={toggleLabel(activeThread.status)}

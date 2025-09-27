@@ -6,6 +6,7 @@
  * - Usa roundTo/pointKey de lib/common/coords.
  * - Usa threadsCacheApi/messagesCache exportados por los stores.
  * - Mantiene UI/acciones como estaban y la selección reactiva por URL.
+ * - Envío de mensajes refactorizado para usar outbox con debounce + batch.
  */
 
 import React, {
@@ -40,6 +41,10 @@ import { useWireSkuRealtime } from "@/lib/realtime/useWireSkuRealtime";
 import { useShallow } from "zustand/react/shallow";
 import { emitToast, toastError } from "@/hooks/useToast";
 import { roundTo, pointKey } from "@/lib/common/coords";
+import {
+  enqueueSendMessage,
+  enqueueSendSystemMessage,
+} from "@/lib/net/messagesOutbox";
 
 const colorByStatus = (s: ThreadStatus) =>
   s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : "#FF0040";
@@ -158,8 +163,6 @@ export default function ImageViewer({
   const threadToImageStable = useThreadsStore((s) => s.threadToImage);
 
   const setMsgsForThread = useMessagesStore((s) => s.setForThread);
-  const addOptimisticMsg = useMessagesStore((s) => s.addOptimistic);
-  const confirmMessage = useMessagesStore((s) => s.confirmMessage);
   const moveThreadMessages = useMessagesStore((s) => s.moveThreadMessages);
   const setSelfAuthId = useMessagesStore((s) => s.setSelfAuthId);
   const msgsByThread = useMessagesStore((s) => s.byThread);
@@ -172,6 +175,7 @@ export default function ImageViewer({
   const confirmCreate = useThreadsStore((s) => s.confirmCreate);
   const rollbackCreate = useThreadsStore((s) => s.rollbackCreate);
   const pendingStatusMap = useThreadsStore((s) => s.pendingStatus);
+
   // ========================== HIDRATACIÓN (cache + fresh) — sin epoch
   useEffect(() => {
     let cancelled = false;
@@ -437,18 +441,6 @@ export default function ImageViewer({
       const sysText = `**@${
         username ?? "desconocido"
       }** ha creado un nuevo hilo de revisión.`;
-      const tempMsgId = -Date.now() - Math.floor(Math.random() * 1000);
-
-      addOptimisticMsg(tempId, tempMsgId, {
-        text: sysText,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        created_by: "system",
-        created_by_username: "system",
-        created_by_display_name: "system",
-        is_system: true,
-        meta: { localDelivery: "sent" } as MessageMeta,
-      });
 
       try {
         const created = await fetch("/api/threads", {
@@ -490,42 +482,12 @@ export default function ImageViewer({
           if (selectedThreadId !== realId) onSelectThread?.(realId);
         });
 
+        // Envia mensaje de sistema via OUTBOX (optimista + confirmación batch)
         try {
-          const sysCreated = await fetch("/api/messages", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              threadId: realId,
-              text: sysText,
-              isSystem: true,
-            }),
-          }).then((r) => (r.ok ? r.json() : null));
-
-          if (sysCreated?.id) {
-            confirmMessage(realId, tempMsgId, {
-              id: sysCreated.id,
-              thread_id: realId,
-              text: sysText,
-              created_at:
-                sysCreated.created_at ||
-                sysCreated.createdAt ||
-                new Date().toISOString(),
-              updated_at:
-                sysCreated.updated_at ||
-                sysCreated.updatedAt ||
-                sysCreated.createdAt ||
-                new Date().toISOString(),
-              created_by: sysCreated.created_by ?? "system",
-              created_by_username: sysCreated.created_by_username ?? "system",
-              created_by_display_name:
-                sysCreated.created_by_display_name ?? "system",
-              is_system: !!sysCreated.is_system,
-              meta: { localDelivery: "sent" } as any,
-            });
-          }
+          enqueueSendSystemMessage(realId, sysText);
         } catch (e) {
           toastError(e, {
-            title: "No se pudo registrar el mensaje del sistema",
+            title: "No se pudo encolar el mensaje del sistema",
           });
         }
       } catch (e) {
@@ -540,8 +502,6 @@ export default function ImageViewer({
       username,
       confirmCreate,
       rollbackCreate,
-      addOptimisticMsg,
-      confirmMessage,
       moveThreadMessages,
       setActiveThreadId,
       onSelectThread,
@@ -554,50 +514,22 @@ export default function ImageViewer({
     async (threadId: number, text: string) => {
       if (creatingThreadId != null && threadId === creatingThreadId) return;
 
-      const tempId = -Date.now();
-      const now = new Date().toISOString();
-
-      addOptimisticMsg(threadId, tempId, {
-        text,
-        created_at: now,
-        updated_at: now,
-        created_by: "me",
-        created_by_username: username || "Tú",
-        created_by_display_name: username || "Tú",
-        is_system: false,
-        meta: { localDelivery: "sending", isMine: true } as any,
-      });
-
       try {
-        const created = await fetch("/api/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ threadId, text }),
-        }).then((r) => (r.ok ? r.json() : null));
+        // Outbox: crea optimista (sending) y lo enviará en batch/debounced
+        enqueueSendMessage(threadId, text);
 
-        if (!created?.id)
-          throw new Error("El servidor no devolvió un ID de mensaje.");
-
-        confirmMessage(threadId, tempId, {
-          id: created.id,
-          thread_id: threadId,
-          text,
-          created_at: created.created_at || created.createdAt || now,
-          updated_at:
-            created.updated_at || created.updatedAt || created.createdAt || now,
-          created_by: created.created_by,
-          created_by_username:
-            created.created_by_username ?? username ?? "Usuario",
-          created_by_display_name:
-            created.created_by_display_name ?? username ?? "Usuario",
-          is_system: !!created.is_system,
-          meta: { localDelivery: "sent", isMine: true } as any,
-        } as Msg);
+        // Auto-scroll al final tras render del optimista (doble RAF)
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const el = document.querySelector<HTMLElement>("[data-chat-list]");
+            if (el) el.scrollTop = el.scrollHeight;
+          });
+        });
       } catch (e) {
-        toastError(e, { title: "No se pudo enviar el mensaje" });
+        toastError(e, { title: "No se pudo encolar el mensaje" });
       }
     },
-    [addOptimisticMsg, confirmMessage, username, creatingThreadId]
+    [creatingThreadId]
   );
 
   const toggleThreadStatus = useCallback(
@@ -615,21 +547,15 @@ export default function ImageViewer({
       beginStatusOptimistic(threadId, prev, next);
       setThreadStatus(threadId, next);
 
-      const tempId = -Math.floor(Math.random() * 1e9) - 1;
-      const sysText = `**@${
+      const tempText = `**@${
         username ?? "usuario"
       }** cambió el estado del hilo a "**${STATUS_LABEL[next]}**".`;
-
-      addOptimisticMsg(threadId, tempId, {
-        text: sysText,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        created_by: "system",
-        created_by_username: "system",
-        created_by_display_name: "Sistema",
-        is_system: true,
-        meta: { localDelivery: "sending" } as MessageMeta,
-      });
+      // Nota: podríamos encolar este mensaje de sistema también si así lo deseas:
+      try {
+        enqueueSendSystemMessage(threadId, tempText);
+      } catch {
+        // Si no quieres registrar cada cambio como mensaje de sistema, elimina lo anterior.
+      }
 
       try {
         const ok = await fetch("/api/threads/status", {
@@ -645,7 +571,7 @@ export default function ImageViewer({
         toastError(e, { title: "No se pudo cambiar el estado" });
       }
     },
-    [setThreadStatus, addOptimisticMsg, username]
+    [setThreadStatus, username]
   );
 
   const removeThread = useCallback(

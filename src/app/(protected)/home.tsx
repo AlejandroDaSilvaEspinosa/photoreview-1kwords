@@ -22,6 +22,7 @@ import SkuCard from "@/components/home/SkuCard";
 import { useImagesCatalogStore } from "@/stores/imagesCatalog";
 import { emitToast, toastError } from "@/hooks/useToast";
 import { localGetJSON, localSetJSON } from "@/lib/storage";
+import { initMessagesOutbox } from "@/lib/net/messagesOutbox";
 
 /**
  * DEV NOTES
@@ -80,6 +81,11 @@ export default function Home({ username, skus, clientInfo }: Props) {
       };
     });
   }, [skus, liveBySku]);
+
+  useEffect(() => {
+    const dispose = initMessagesOutbox();
+    return () => dispose?.();
+  }, []);
 
   // Hidrata catálogo de imágenes (para thumbnails/toasts)
   const hydrateImages = useImagesCatalogStore((s) => s.hydrateFromSkus);

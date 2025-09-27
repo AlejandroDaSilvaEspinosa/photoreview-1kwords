@@ -46,7 +46,7 @@ const seqPerThread = new Map<number, number>();
 function ensureSeqBase(threadId: number, currentList: Msg[]): void {
   const maxVisible = currentList.reduce(
     (max, m) => Math.max(max, m.meta?.displaySeq ?? 0),
-    0,
+    0
   );
   const current = seqPerThread.get(threadId) ?? 0;
   if (current < maxVisible) {
@@ -69,7 +69,7 @@ const nextNano = (): number =>
 function sealDisplayMeta(
   threadId: number,
   incoming: Msg,
-  preserved?: Msg["meta"],
+  preserved?: Msg["meta"]
 ): Msg["meta"] {
   const meta = { ...(incoming.meta || {}) };
 
@@ -129,7 +129,7 @@ const sortByDisplayStable = (a: Msg, b: Msg): number => {
 const MSGS_CACHE_VER = 6;
 const msgsCache = createVersionedCacheNS<{ rows: Msg[] }>(
   "rev_msgs",
-  MSGS_CACHE_VER,
+  MSGS_CACHE_VER
 );
 
 const loadMessagesCache = (threadId: number): Msg[] | null => {
@@ -211,7 +211,7 @@ type PendingReceipt = {
 
 const mergeLocalDelivery = (
   prev?: LocalDelivery,
-  incoming?: LocalDelivery,
+  incoming?: LocalDelivery
 ): LocalDelivery => preferHigher(prev ?? "sent", incoming ?? "sent");
 
 const normalizeText = (text?: string | null): string =>
@@ -232,7 +232,7 @@ const buildPrevById = (list: Msg[]): Map<number, Msg> => {
 const indexMessagesInThread = (
   baseMap: Map<number, number>,
   threadId: number,
-  msgs: Msg[],
+  msgs: Msg[]
 ): Map<number, number> => {
   const map = new Map(baseMap);
   for (const m of msgs) if (m.id != null) map.set(m.id, threadId);
@@ -241,7 +241,7 @@ const indexMessagesInThread = (
 
 function mergePendingReceipt(
   existing: PendingReceipt | undefined,
-  wanted: PendingReceipt,
+  wanted: PendingReceipt
 ): PendingReceipt {
   if (!existing) return wanted;
   const higher =
@@ -255,7 +255,7 @@ function mergePendingReceipt(
 function applyAndConsumeReceipt(
   msg: Msg,
   pendingReceipts: Map<number, PendingReceipt>,
-  selfId: string | null,
+  selfId: string | null
 ): Msg {
   const id = msg.id;
   if (id == null || !selfId) return msg;
@@ -282,7 +282,7 @@ function applyAndConsumeReceipt(
 const createMessage = (
   incoming: Partial<Msg>,
   threadId: number,
-  preservedMeta?: Msg["meta"],
+  preservedMeta?: Msg["meta"]
 ): Msg => ({
   ...(incoming as Msg),
   thread_id: threadId,
@@ -306,18 +306,18 @@ type Actions = {
   addOptimistic: (
     threadId: number,
     tempId: number,
-    partial: Omit<Msg, "id" | "thread_id"> & Partial<Pick<Msg, "id">>,
+    partial: Omit<Msg, "id" | "thread_id"> & Partial<Pick<Msg, "id">>
   ) => void;
   confirmMessage: (threadId: number, tempId: number, real: Msg) => void;
   markThreadRead: (threadId: number) => Promise<void>;
   upsertFromRealtime: (
-    row: MessageRow & { client_nonce?: string | null },
+    row: MessageRow & { client_nonce?: string | null }
   ) => void;
   removeFromRealtime: (row: MessageRow) => void;
   upsertReceipt: (
     messageId: number,
     userId: string,
-    readAt?: string | null,
+    readAt?: string | null
   ) => void;
   moveThreadMessages: (fromThreadId: number, toThreadId: number) => void;
   markDeliveredLocalIfSent: (messageIds: number[]) => void;
@@ -349,7 +349,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
             incoming.id != null ? prevById.get(incoming.id) : undefined;
           const mergedDelivery = mergeLocalDelivery(
             prev?.meta?.localDelivery as LocalDelivery | undefined,
-            incoming.meta?.localDelivery as LocalDelivery | undefined,
+            incoming.meta?.localDelivery as LocalDelivery | undefined
           );
 
           let msg = createMessage(
@@ -362,7 +362,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
               },
             },
             threadId,
-            prev?.meta,
+            prev?.meta
           );
 
           // Aplicar recibo pendiente si lo hay
@@ -376,7 +376,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
         const newMessageToThread = indexMessagesInThread(
           state.messageToThread,
           threadId,
-          sorted,
+          sorted
         );
 
         saveMessagesCache(threadId, sorted);
@@ -414,7 +414,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
               displayNano: nextNano(),
             },
           },
-          threadId,
+          threadId
         );
 
         const updated = [...prevList, optimistic].sort(sortByDisplayStable);
@@ -433,9 +433,12 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
 
         ensureSeqBase(threadId, list);
 
-        const idx = list.findIndex((m) => m.id === tempId);
-        if (idx >= 0) {
-          const preserved = { ...list[idx].meta };
+        const idxOptimistic = list.findIndex((m) => m.id === tempId);
+        const idxByRealId = list.findIndex((m) => m.id === (real as any).id);
+
+        if (idxOptimistic >= 0) {
+          // Caso 1: sustituimos el optimista por el real (preservando meta/orden)
+          const preserved = { ...list[idxOptimistic].meta };
           const updated = [...list];
 
           let msg = createMessage(
@@ -445,23 +448,22 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
                 ...real.meta,
                 localDelivery: mergeLocalDelivery(
                   "sent",
-                  preserved.localDelivery as LocalDelivery,
+                  preserved.localDelivery as LocalDelivery
                 ),
                 isMine: preserved.isMine ?? true,
               },
             },
             threadId,
-            preserved,
+            preserved
           );
 
-          // Aplicar recibo pendiente y consumirlo si corresponde
           msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
-
-          updated[idx] = msg;
+          updated[idxOptimistic] = msg;
 
           const newMessageToThread = new Map(state.messageToThread);
           newMessageToThread.delete(tempId);
-          if (real.id != null) newMessageToThread.set(real.id, threadId);
+          if ((real as any).id != null)
+            newMessageToThread.set((real as any).id, threadId);
 
           saveMessagesCache(threadId, updated);
 
@@ -472,19 +474,58 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
           };
         }
 
-        // No estaba el optimista → añadimos “real”
+        // Caso 2: no está el optimista (probablemente ya entró por realtime).
+        // Si YA existe un mensaje con el id real, actualizamos su meta y NO insertamos otro.
+        if (idxByRealId >= 0) {
+          const prev = list[idxByRealId];
+          const updated = [...list];
+
+          let msg = createMessage(
+            {
+              ...prev, // base existente (texto/fechas si ya vinieron por realtime)
+              ...real, // pero preferimos los campos "reales" del servidor si difieren
+              meta: {
+                ...prev.meta,
+                ...real.meta,
+                // fusiona la entrega más alta entre lo que tenía y lo que trae "real"
+                localDelivery: mergeLocalDelivery(
+                  prev.meta?.localDelivery as LocalDelivery | undefined,
+                  real.meta?.localDelivery as LocalDelivery | undefined
+                ),
+                // si sabíamos que era mío, mantenlo
+                isMine:
+                  (prev.meta?.isMine ?? false) ||
+                  (!!selfAuthId && (real as any).created_by === selfAuthId),
+              },
+            },
+            threadId,
+            { ...prev.meta }
+          );
+
+          msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
+          updated[idxByRealId] = msg;
+
+          saveMessagesCache(threadId, updated);
+
+          return {
+            byThread: { ...state.byThread, [threadId]: updated },
+            pendingReceipts,
+          };
+        }
+
+        // Caso 3: ni optimista ni entrada previa → insertamos el real (caso normal)
         let msg = createMessage(
           {
             ...real,
             meta: { ...real.meta, localDelivery: "sent", isMine: true },
           },
-          threadId,
+          threadId
         );
         msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
 
         const updated = [...list, msg].sort(sortByDisplayStable);
         const newMessageToThread =
-          real.id != null
+          (real as any).id != null
             ? indexMessagesInThread(state.messageToThread, threadId, [msg])
             : new Map(state.messageToThread);
 
@@ -548,7 +589,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
         // Dedupe preferente por clientNonce
         if (clientNonce) {
           const idx = working.findIndex(
-            (m) => (m.id ?? 0) < 0 && m.meta?.clientNonce === clientNonce,
+            (m) => (m.id ?? 0) < 0 && m.meta?.clientNonce === clientNonce
           );
           if (idx >= 0) {
             preservedMeta = { ...working[idx].meta };
@@ -591,7 +632,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
                 localDelivery:
                   prev.meta?.localDelivery === "sending"
                     ? "sent"
-                    : (prev.meta?.localDelivery ?? "sent"),
+                    : prev.meta?.localDelivery ?? "sent",
                 isMine:
                   prev.meta?.isMine ??
                   preservedMeta?.isMine ??
@@ -599,7 +640,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
               },
             },
             threadId,
-            { ...prev.meta, ...preservedMeta },
+            { ...prev.meta, ...preservedMeta }
           );
 
           msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
@@ -634,7 +675,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
             },
           },
           threadId,
-          preservedMeta || undefined,
+          preservedMeta || undefined
         );
 
         msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
@@ -775,7 +816,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
 
         const positives = Array.from(byId.values());
         const negatives = [...toMessages, ...migrated].filter(
-          (m) => (m.id ?? 0) < 0,
+          (m) => (m.id ?? 0) < 0
         );
 
         const merged = [...positives, ...negatives].sort(sortByDisplayStable);
@@ -834,7 +875,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
       }),
 
     quickStateByMessageId: (id: number) => internalQuickState(get(), id),
-  })),
+  }))
 );
 
 /* ===================================================

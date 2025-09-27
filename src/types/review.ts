@@ -67,7 +67,8 @@ export type DeliveryState = "sending" | "sent" | "delivered" | "read";
 
 export type MessageMeta = {
   localDelivery?: DeliveryState;
-  readBy?: Set<string>; // usuarios (id/username) que lo leyeron
+  readBy?: Set<string>; // usuarios (id/username) que lo leyeron3
+  clientNonce?: string;
 };
 
 export type ThreadRow = Tables<"review_threads">;
