@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseFromRequest } from "@/lib/supabase/route";
 // Ajusta la ruta del tipo generado:
-import type { Database } from "@/lib/supabase/types";
+import type { Database } from "@/types/supabase";
 
 // Alias de ayuda para el tipo de insert de la tabla
 type ReviewMessageInsert =
