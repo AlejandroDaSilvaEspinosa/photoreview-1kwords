@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseFromRequest } from "@/lib/supabase/route";
-// Ajusta la ruta del tipo generado:
 import type { Database } from "@/types/supabase";
 
-// Alias de ayuda para el tipo de insert de la tabla
 type ReviewMessageInsert =
   Database["public"]["Tables"]["review_messages"]["Insert"];
 
@@ -12,42 +10,31 @@ type InMsg = {
   threadId: number;
   text: string;
   isSystem?: boolean;
-  createdAt?: string; // opcional (lo mandas desde outbox)
+  createdAt?: string;
 };
-
-type BatchBody = { messages: InMsg[] } | InMsg; // soporte “single” por compatibilidad
 
 export async function POST(req: NextRequest) {
   const { client: sb, res } = supabaseFromRequest(req);
-
-  // ---- Auth
   const {
     data: { user },
-    error: authError,
   } = await sb.auth.getUser();
-  if (authError || !user) {
+  if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
 
-  // ---- Parse
-  const body = (await req.json().catch(() => ({}))) as BatchBody;
-  const batch: InMsg[] = Array.isArray((body as any).messages)
-    ? (body as any).messages
-    : [body as InMsg];
+  const body = await req.json().catch(() => ({} as any));
+  const batch: InMsg[] = Array.isArray(body?.messages) ? body.messages : [body];
 
   if (!batch.length) {
     return NextResponse.json({ error: "Empty payload" }, { status: 400 });
   }
 
-  // ---- Resolver autor “normal” (app_users.id)
-  //   Usamos display_name (o email) como username de negocio, igual que hacías antes.
   const username =
     (user.user_metadata?.display_name as string | undefined) ??
     user.email ??
     "";
   const { data: appUser, error: mapErr } = await sb
     .from("app_users")
-    .select("id, display_name, username")
+    .select("id, username, display_name")
     .eq("username", username)
     .single();
 
@@ -58,7 +45,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ---- Si hay algún mensaje de sistema en el batch, obtenemos el user system una sola vez
   let sysUserId: string | null = null;
   if (batch.some((m) => !!m.isSystem)) {
     const { data: sysUser, error: sysErr } = await sb.rpc("ensure_system_user");
@@ -71,9 +57,8 @@ export async function POST(req: NextRequest) {
     sysUserId = String(sysUser.id);
   }
 
-  // ---- Validación básica + construcción de payloads tipados
   const inserts: ReviewMessageInsert[] = [];
-  const nonceOrder: string[] = []; // Para reconstruir el orden en la respuesta
+  const clientNonces: string[] = [];
 
   for (const m of batch) {
     if (
@@ -94,78 +79,68 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // created_by SIEMPRE como string (tus tipos lo piden así)
     const createdBy: string =
       m.isSystem && sysUserId ? sysUserId : String(appUser.id);
 
-    // Construimos el payload con el tipo Insert generado por Supabase
-    const row: ReviewMessageInsert = {
+    inserts.push({
       thread_id: m.threadId,
       text: m.text,
       created_by: createdBy,
       is_system: !!m.isSystem,
-      client_nonce: m.clientNonce, // string | null en tipos → ya es string
-      // si quieres respetar una fecha llegada del cliente:
+      client_nonce: m.clientNonce,
       ...(m.createdAt ? { created_at: m.createdAt } : null),
-    };
+    });
 
-    inserts.push(row);
-    nonceOrder.push(m.clientNonce);
+    clientNonces.push(m.clientNonce);
   }
 
-  // ------------------------------------------------------------------
-  // NOTA IMPORTANTE si tus tipos generados están desactualizados:
-  // Si aquí TypeScript te dice que `thread_id` “no existe” en Insert,
-  // regenera los tipos (supabase gen types …).
-  // Mientras, puedes desactivar SOLO esta inserción con `as any`:
-  //
-  // const { data, error } = await sb
-  //   .from("review_messages")
-  //   .insert(inserts as any)
-  //   .select("id, thread_id, text, created_at, created_by, is_system")
-  //   .returns<{
-  //     id: number;
-  //     thread_id: number;
-  //     text: string;
-  //     created_at: string;
-  //     created_by: string;
-  //     is_system: boolean;
-  //   }[]>();
-  //
-  // ------------------------------------------------------------------
-
-  const { data, error } = await sb
+  // Idempotencia por client_nonce (requiere UNIQUE (client_nonce))
+  const upsertRes = await sb
     .from("review_messages")
-    .insert(inserts)
-    .select(
-      `
-      id,
-      thread_id,
-      text,
-      created_at,
-      created_by,
-      is_system,
-      created_by_username,
-      created_by_display_name
-    `
-    );
+    .upsert(inserts, { onConflict: "client_nonce", ignoreDuplicates: false })
+    .select(`
+      id, thread_id, text, created_at, created_by, is_system,
+      created_by_username, created_by_display_name, client_nonce
+    `);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (upsertRes.error) {
+    return NextResponse.json(
+      { error: upsertRes.error.message },
+      { status: 500 }
+    );
   }
 
-  // Mapear por clientNonce en el MISMO orden que envió el cliente
-  // Usamos una búsqueda sencilla: cada insert corresponde al mismo índice.
-  // (Si tu DB reordena por triggers, podrías necesitar una correlación más sólida.)
-  const results = nonceOrder.map((nonce, i) => {
-    const row = data?.[i];
-    if (!row) {
-      return { clientNonce: nonce, error: "Falta confirmación del servidor" };
+  const gotNonces = new Set(
+    (upsertRes.data ?? []).map((r: any) => r.client_nonce as string)
+  );
+  const missing = clientNonces.filter((n) => !gotNonces.has(n));
+
+  let recovered: any[] = [];
+  if (missing.length) {
+    const rec = await sb
+      .from("review_messages")
+      .select(
+        `
+        id, thread_id, text, created_at, created_by, is_system,
+        created_by_username, created_by_display_name, client_nonce
+      `
+      )
+      .in("client_nonce", missing);
+    if (rec.error) {
+      return NextResponse.json({ error: rec.error.message }, { status: 500 });
     }
-    return {
-      clientNonce: nonce,
-      row,
-    };
+    recovered = rec.data ?? [];
+  }
+
+  const rows = [...(upsertRes.data ?? []), ...recovered];
+  const byNonce = new Map<string, any>();
+  for (const r of rows) byNonce.set(r.client_nonce, r);
+
+  const results = clientNonces.map((nonce) => {
+    const row = byNonce.get(nonce);
+    return row
+      ? { clientNonce: nonce, row }
+      : { clientNonce: nonce, error: "No confirmado" };
   });
 
   return NextResponse.json({ results }, { headers: res.headers });

@@ -405,6 +405,9 @@ export default function ImageViewer({
           meta: {
             localDelivery: m.meta?.localDelivery ?? "sent",
             isMine: m.meta?.isMine ?? false,
+            clientNonce: m.meta?.clientNonce, // 👈 clave para key estable
+            displaySeq: m.meta?.displaySeq, // 👈 refuerzo de orden
+            displayNano: m.meta?.displayNano, // 👈 refuerzo de orden
           } as MessageMeta,
         }));
         return { id: t.id, x: t.x, y: t.y, status: t.status, messages: list };

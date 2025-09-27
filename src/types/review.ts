@@ -69,6 +69,8 @@ export type MessageMeta = {
   localDelivery?: DeliveryState;
   readBy?: Set<string>; // usuarios (id/username) que lo leyeron3
   clientNonce?: string;
+  displaySeq?: number;
+  displayNano?: number;
 };
 
 export type ThreadRow = Tables<"review_threads">;

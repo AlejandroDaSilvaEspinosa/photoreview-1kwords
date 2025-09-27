@@ -53,6 +53,47 @@ function ensureSeqBase(threadId: number, currentList: Msg[]): void {
     seqPerThread.set(threadId, maxVisible);
   }
 }
+// === Dedupe fuerte por clientNonce (prefiere real vs optimista, mejor delivery, fecha más nueva)
+function dedupeByClientNonce(list: Msg[]): Msg[] {
+  const byNonce = new Map<string, Msg>();
+  const noNonce: Msg[] = [];
+
+  const rank = (x?: LocalDelivery) =>
+    DELIVERY_RANK[(x ?? "sent") as LocalDelivery];
+
+  for (const m of list) {
+    const nonce = m.meta?.clientNonce;
+    if (!nonce) {
+      noNonce.push(m);
+      continue;
+    }
+
+    const prev = byNonce.get(nonce);
+    if (!prev) {
+      byNonce.set(nonce, m);
+      continue;
+    }
+
+    const prevId = prev.id ?? -Infinity;
+    const curId = m.id ?? -Infinity;
+
+    // preferencias: real (id>=0) > optimista; luego delivery más alta; luego fecha más nueva
+    const winner =
+      curId >= 0 && prevId < 0
+        ? m
+        : curId < 0 && prevId >= 0
+        ? prev
+        : rank(m.meta?.localDelivery) > rank(prev.meta?.localDelivery)
+        ? m
+        : new Date((m as any).created_at ?? 0).getTime() >=
+          new Date((prev as any).created_at ?? 0).getTime()
+        ? m
+        : prev;
+
+    byNonce.set(nonce, winner);
+  }
+  return [...noNonce, ...byNonce.values()];
+}
 
 const nextSeq = (threadId: number): number => {
   const n = (seqPerThread.get(threadId) ?? 0) + 1;
@@ -365,13 +406,13 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
             prev?.meta
           );
 
-          // Aplicar recibo pendiente si lo hay
           msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
-
           return msg;
         });
 
-        const sorted = mapped.sort(sortByDisplayStable);
+        const deDuped = dedupeByClientNonce(mapped);
+        const sorted = deDuped.sort(sortByDisplayStable);
+
         const newByThread = { ...state.byThread, [threadId]: sorted };
         const newMessageToThread = indexMessagesInThread(
           state.messageToThread,
@@ -437,7 +478,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
         const idxByRealId = list.findIndex((m) => m.id === (real as any).id);
 
         if (idxOptimistic >= 0) {
-          // Caso 1: sustituimos el optimista por el real (preservando meta/orden)
+          // Sustituir optimista por real (preservando meta display*)
           const preserved = { ...list[idxOptimistic].meta };
           const updated = [...list];
 
@@ -465,34 +506,32 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
           if ((real as any).id != null)
             newMessageToThread.set((real as any).id, threadId);
 
-          saveMessagesCache(threadId, updated);
+          const cleaned = dedupeByClientNonce(updated);
+          saveMessagesCache(threadId, cleaned);
 
           return {
-            byThread: { ...state.byThread, [threadId]: updated },
+            byThread: { ...state.byThread, [threadId]: cleaned },
             messageToThread: newMessageToThread,
             pendingReceipts,
           };
         }
 
-        // Caso 2: no está el optimista (probablemente ya entró por realtime).
-        // Si YA existe un mensaje con el id real, actualizamos su meta y NO insertamos otro.
+        // Ya entró por realtime: si existe por id real → actualizar, NO insertar
         if (idxByRealId >= 0) {
           const prev = list[idxByRealId];
           const updated = [...list];
 
           let msg = createMessage(
             {
-              ...prev, // base existente (texto/fechas si ya vinieron por realtime)
-              ...real, // pero preferimos los campos "reales" del servidor si difieren
+              ...prev,
+              ...real,
               meta: {
                 ...prev.meta,
                 ...real.meta,
-                // fusiona la entrega más alta entre lo que tenía y lo que trae "real"
                 localDelivery: mergeLocalDelivery(
                   prev.meta?.localDelivery as LocalDelivery | undefined,
                   real.meta?.localDelivery as LocalDelivery | undefined
                 ),
-                // si sabíamos que era mío, mantenlo
                 isMine:
                   (prev.meta?.isMine ?? false) ||
                   (!!selfAuthId && (real as any).created_by === selfAuthId),
@@ -505,15 +544,16 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
           msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
           updated[idxByRealId] = msg;
 
-          saveMessagesCache(threadId, updated);
+          const cleaned = dedupeByClientNonce(updated);
+          saveMessagesCache(threadId, cleaned);
 
           return {
-            byThread: { ...state.byThread, [threadId]: updated },
+            byThread: { ...state.byThread, [threadId]: cleaned },
             pendingReceipts,
           };
         }
 
-        // Caso 3: ni optimista ni entrada previa → insertamos el real (caso normal)
+        // Caso normal: insertar real
         let msg = createMessage(
           {
             ...real,
@@ -523,16 +563,18 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
         );
         msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
 
-        const updated = [...list, msg].sort(sortByDisplayStable);
+        const updated = [...list, msg];
+        const cleaned = dedupeByClientNonce(updated).sort(sortByDisplayStable);
+
         const newMessageToThread =
           (real as any).id != null
             ? indexMessagesInThread(state.messageToThread, threadId, [msg])
             : new Map(state.messageToThread);
 
-        saveMessagesCache(threadId, updated);
+        saveMessagesCache(threadId, cleaned);
 
         return {
-          byThread: { ...state.byThread, [threadId]: updated },
+          byThread: { ...state.byThread, [threadId]: cleaned },
           messageToThread: newMessageToThread,
           pendingReceipts,
         };
@@ -586,7 +628,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
         let preservedMeta: Msg["meta"] | null = null;
         let working = list;
 
-        // Dedupe preferente por clientNonce
+        // Dedupe preferente por clientNonce (optimistas)
         if (clientNonce) {
           const idx = working.findIndex(
             (m) => (m.id ?? 0) < 0 && m.meta?.clientNonce === clientNonce
@@ -620,7 +662,7 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
 
         const existingIdx = working.findIndex((m) => m.id === (row as any).id);
         if (existingIdx >= 0) {
-          // Update
+          // Update existente
           const prev = working[existingIdx];
           const updated = [...working];
 
@@ -637,6 +679,10 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
                   prev.meta?.isMine ??
                   preservedMeta?.isMine ??
                   (!!selfAuthId && (row as any).created_by === selfAuthId),
+                clientNonce:
+                  clientNonce ??
+                  preservedMeta?.clientNonce ??
+                  prev.meta?.clientNonce,
               },
             },
             threadId,
@@ -644,23 +690,23 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
           );
 
           msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
-
           updated[existingIdx] = msg;
 
+          const cleaned = dedupeByClientNonce(updated);
           const newMessageToThread = (row as any).id
             ? indexMessagesInThread(state.messageToThread, threadId, [msg])
             : new Map(state.messageToThread);
 
-          saveMessagesCache(threadId, updated);
+          saveMessagesCache(threadId, cleaned);
 
           return {
-            byThread: { ...state.byThread, [threadId]: updated },
+            byThread: { ...state.byThread, [threadId]: cleaned },
             messageToThread: newMessageToThread,
             pendingReceipts,
           };
         }
 
-        // Insert
+        // Insert nuevo
         let msg = createMessage(
           {
             ...(row as any),
@@ -680,16 +726,17 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
 
         msg = applyAndConsumeReceipt(msg, pendingReceipts, selfAuthId);
 
-        const updated = [...working, msg].sort(sortByDisplayStable);
+        const updated = [...working, msg];
+        const cleaned = dedupeByClientNonce(updated).sort(sortByDisplayStable);
         const newMessageToThread =
           (row as any).id != null
             ? indexMessagesInThread(state.messageToThread, threadId, [msg])
             : new Map(state.messageToThread);
 
-        saveMessagesCache(threadId, updated);
+        saveMessagesCache(threadId, cleaned);
 
         return {
-          byThread: { ...state.byThread, [threadId]: updated },
+          byThread: { ...state.byThread, [threadId]: cleaned },
           messageToThread: newMessageToThread,
           pendingReceipts,
         };

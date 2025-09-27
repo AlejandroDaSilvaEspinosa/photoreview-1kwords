@@ -1,4 +1,3 @@
-// src/components/images/ThreadChat.tsx
 "use client";
 
 import React, {
@@ -17,15 +16,13 @@ import { toastError } from "@/hooks/useToast";
 
 type DeliveryState = "sending" | "sent" | "delivered" | "read";
 
-/* ========= Utilidades scroll ========= */
-const NEAR_BOTTOM_PX = 130; // margen para decidir autoscroll con mensaje entrante
+const NEAR_BOTTOM_PX = 130;
 function isNearBottom(el: HTMLDivElement | null, slackPx = NEAR_BOTTOM_PX) {
   if (!el) return true;
   const dist = el.scrollHeight - (el.scrollTop + el.clientHeight);
   return dist <= slackPx;
 }
 
-/* ========= UnreadDividerAlign (alinear una vez por hilo/cutoff) ========= */
 const UnreadDividerAlign = React.memo(
   function UnreadDividerAlign({
     containerRef,
@@ -47,13 +44,12 @@ const UnreadDividerAlign = React.memo(
 
     useEffect(() => {
       const key = `${threadId}:${cutoffId ?? "none"}`;
-      if (doneKeyRef.current === key) return; // nunca re-alinear si ya lo hicimos para este cutoff
+      if (doneKeyRef.current === key) return;
       doneKeyRef.current = key;
 
       const cont = containerRef.current;
       const el = sepRef.current;
       if (!cont || !el) return;
-      console.log("test");
       el.scrollIntoView({
         behavior: "auto",
         block: "start",
@@ -82,12 +78,10 @@ const UnreadDividerAlign = React.memo(
     prev.label === next.label
 );
 
-/* ================================ Props ================================ */
 type Props = {
   activeThread: Thread;
   composeLocked?: boolean;
   statusLocked?: boolean;
-  /** Calculado en el padre para no pasar `threads` completos */
   threadIndex: number;
   onAddThreadMessage: (threadId: number, text: string) => Promise<void> | void;
   onFocusThread: (threadId: number | null) => void;
@@ -95,7 +89,6 @@ type Props = {
   onDeleteThread: (id: number) => void;
 };
 
-/* ============================ Componente ============================ */
 function ThreadChatInner({
   activeThread,
   threadIndex,
@@ -106,7 +99,6 @@ function ThreadChatInner({
   composeLocked,
   statusLocked,
 }: Props) {
-  // Drafts por hilo
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const setDraft = useCallback(
     (threadId: number, value: string | ((prev: string) => string)) => {
@@ -134,13 +126,11 @@ function ThreadChatInner({
   const listRef = useRef<HTMLDivElement | null>(null);
   const selfAuthId = useSupabaseUserId();
 
-  // Helpers estado hilo
   const nextStatus = useCallback(
     (s: ThreadStatus): ThreadStatus =>
       s === "corrected" ? "reopened" : "corrected",
     []
   );
-
   const colorByStatus = useCallback(
     (s: ThreadStatus) =>
       s === "corrected"
@@ -152,8 +142,7 @@ function ThreadChatInner({
         : "#FF0040",
     []
   );
-  const colorByNextStatus = (s: ThreadStatus) =>
-    s === "corrected" ? "orange" : "green";
+
   const isMine = useCallback(
     (m: ThreadMessage) => {
       const meta = (m.meta || {}) as any;
@@ -179,7 +168,6 @@ function ThreadChatInner({
     clearDraft(id);
     try {
       await onAddThreadMessage(id, draft);
-      // baja si el mensaje es mío
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const el = listRef.current;
@@ -194,7 +182,6 @@ function ThreadChatInner({
     }
   }, [activeThread?.id, getDraft, clearDraft, onAddThreadMessage]);
 
-  // Fechas/formatos
   const dateKey = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -223,40 +210,49 @@ function ThreadChatInner({
       hour12: false,
     });
 
-  // =================== Modelo sticky/unread ===================
+  // ===== Orden cronológico estable en el render =====
+  const messagesChrono = useMemo(() => {
+    const list = activeThread?.messages ?? [];
+    return [...list].sort((a, b) => {
+      const ta = new Date(a.createdAt).getTime() || 0;
+      const tb = new Date(b.createdAt).getTime() || 0;
+      if (ta !== tb) return ta - tb;
+      const sa = (a as any)?.meta?.displaySeq ?? 0;
+      const sb = (b as any)?.meta?.displaySeq ?? 0;
+      if (sa !== sb) return sa - sb;
+      const na = (a as any)?.meta?.displayNano ?? 0;
+      const nb = (b as any)?.meta?.displayNano ?? 0;
+      if (na !== nb) return na - nb;
+      return (a.id ?? 0) - (b.id ?? 0);
+    });
+  }, [activeThread?.messages]);
+
+  // ===== Modelo de no-leídos (idéntico al tuyo, omitido por brevedad) =====
   type UnreadSnap = {
     tid: number;
-    cutoffId: number | null; // primer no leído
-    count: number; // total no leídos actuales
-    idsToRead: number[]; // ids a marcar leído (se envían recibos)
+    cutoffId: number | null;
+    count: number;
+    idsToRead: number[];
   };
-
-  // Snapshot “vivo” (recalculado por lista)
   const [snap, setSnap] = useState<UnreadSnap | null>(null);
-  // Sticky congelado por hilo (posición + contador y etiqueta)
   const stickyRef = useRef<{
     cutoffId: number | null;
     count: number;
     label: string;
   } | null>(null);
   const stickyLockedRef = useRef<boolean>(false);
-  // “Hasta aquí visto” en el momento de crear el sticky o al entrar
   const lastSeenMessageIdRef = useRef<number | null>(null);
 
-  // reset al cambiar de hilo
   useEffect(() => {
     setSnap(null);
-    prevDeliveryRef.current.clear();
     stickyRef.current = null;
     stickyLockedRef.current = false;
 
-    const list = activeThread?.messages ?? [];
+    const list = messagesChrono;
     if (!list.length) {
       lastSeenMessageIdRef.current = null;
       return;
     }
-
-    // 1) Si ya hay no-leídos al entrar → congela ahí
     const firstUnread = list.find(
       (m) =>
         !m.isSystem &&
@@ -270,13 +266,11 @@ function ThreadChatInner({
           !!m.isSystem ||
           (m.createdByName || "").toLowerCase() === "system" ||
           (m.createdByName || "").toLowerCase() === "sistema";
-        if (sys) return acc;
-        if (isMine(m)) return acc;
+        if (sys || isMine(m)) return acc;
         const d =
           (m.meta?.localDelivery as DeliveryState | undefined) ?? "sent";
         return d !== "read" ? acc + 1 : acc;
       }, 0);
-
       stickyRef.current = {
         cutoffId: (firstUnread.id as number) ?? null,
         count: frozenCount,
@@ -286,22 +280,18 @@ function ThreadChatInner({
             : "Mensajes no leídos",
       };
       stickyLockedRef.current = true;
-
-      // Último visto = mensaje anterior al cutoff (si existe)
       const idx = list.findIndex((mm) => mm.id === firstUnread.id);
       lastSeenMessageIdRef.current =
         idx > 0 ? (list[idx - 1].id as number) : null;
     } else {
-      // 2) No hay no-leídos → recordamos el último id para anclar cuando lleguen nuevos
       const last = list[list.length - 1];
       lastSeenMessageIdRef.current = (last?.id as number) ?? null;
     }
-  }, [activeThread?.id, isMine]);
+  }, [activeThread?.id, isMine, messagesChrono]);
 
-  // Recalcular snapshot vivo en cada cambio de mensajes
   const computeSnap = useCallback((): UnreadSnap | null => {
     const tid = activeThread?.id;
-    const list = activeThread?.messages ?? [];
+    const list = messagesChrono;
     if (!tid || !list.length) return null;
 
     let count = 0;
@@ -313,8 +303,7 @@ function ThreadChatInner({
         !!m.isSystem ||
         (m.createdByName || "").toLowerCase() === "system" ||
         (m.createdByName || "").toLowerCase() === "sistema";
-      if (sys) continue;
-      if (isMine(m)) continue;
+      if (sys || isMine(m)) continue;
       const delivery = (m.meta?.localDelivery ?? "sent") as DeliveryState;
       if (delivery !== "read") {
         count++;
@@ -324,17 +313,15 @@ function ThreadChatInner({
       }
     }
     return { tid, cutoffId, count, idsToRead };
-  }, [activeThread?.id, activeThread?.messages, isMine]);
+  }, [activeThread?.id, messagesChrono, isMine]);
 
   useEffect(() => {
     const newSnap = computeSnap();
     setSnap(newSnap ?? null);
 
-    // Si NO estaba bloqueado, podemos fijar sticky cuando aparezcan no-leídos tras lastSeen
     if (!stickyLockedRef.current) {
-      const list = activeThread?.messages ?? [];
+      const list = messagesChrono;
       const lastSeen = lastSeenMessageIdRef.current;
-
       if (list.length && lastSeen != null) {
         const startIdx = list.findIndex((m) => m.id === lastSeen);
         const slice = startIdx >= 0 ? list.slice(startIdx + 1) : list;
@@ -359,9 +346,8 @@ function ThreadChatInner({
         }
       }
     }
-  }, [computeSnap, activeThread?.messages, isMine]);
+  }, [computeSnap, messagesChrono, isMine]);
 
-  // ---- Filas de render
   type Row =
     | { kind: "divider"; key: string; label: string }
     | { kind: "unread"; key: string; label: string; cutoffId: number | null }
@@ -370,7 +356,7 @@ function ThreadChatInner({
   const rows: Row[] = useMemo(() => {
     const out: Row[] = [];
     let lastKey: string | null = null;
-    const list = activeThread?.messages ?? [];
+    const list = messagesChrono;
 
     const locked = stickyLockedRef.current;
     const sticky = stickyRef.current;
@@ -399,9 +385,8 @@ function ThreadChatInner({
       out.push({ kind: "msg", msg: m });
     }
     return out;
-  }, [activeThread?.id, activeThread?.messages, snap]);
+  }, [activeThread?.id, messagesChrono, snap]);
 
-  // ---- Scroll inicial: solo si NO hay divisor
   const didInitialBottomRef = useRef<Set<number>>(new Set());
   useEffect(() => {
     const container = listRef.current;
@@ -432,25 +417,18 @@ function ThreadChatInner({
     }
   }, [activeThread?.id, snap]);
 
-  // ---- Autoscroll en mensaje nuevo (respetando sticky y con margen 130px)
   const lastMsgKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    const list = activeThread?.messages ?? [];
+    const list = messagesChrono;
     const last = list[list.length - 1];
     const currentKey = last
       ? `${last.id}|${last.createdAt}|${list.length}`
       : null;
     const prevKey = lastMsgKeyRef.current;
     lastMsgKeyRef.current = currentKey;
-
     if (!prevKey || !currentKey || prevKey === currentKey) return;
-
     const mine = last ? isMine(last) : false;
-    const locked = stickyLockedRef.current;
 
-    // Requisito 2: si entra mensaje (mío o de realtime) y el usuario está cerca del fondo,
-    // bajamos al final. Si hay sticky, NO movemos (requisito 1).
-    console.log("??");
     if (mine || isNearBottom(listRef.current, NEAR_BOTTOM_PX)) {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -459,9 +437,8 @@ function ThreadChatInner({
         });
       });
     }
-  }, [activeThread?.messages, isMine]);
+  }, [messagesChrono, isMine]);
 
-  // ---- Enviar "read receipts" (manteniendo sticky congelado visualmente)
   useEffect(() => {
     const tid = activeThread?.id;
     if (!tid || !snap) return;
@@ -483,9 +460,7 @@ function ThreadChatInner({
     })();
   }, [activeThread?.id, snap]);
 
-  // Render
   const prevDeliveryRef = useRef<Map<number, DeliveryState>>(new Map());
-
   const toggleLabel = useCallback(
     (s: ThreadStatus) =>
       s === "corrected" ? "Reabrir hilo" : "Validar correcciones",
@@ -534,7 +509,6 @@ function ThreadChatInner({
               </div>
             );
           }
-
           if (row.kind === "unread") {
             return (
               <UnreadDividerAlign
@@ -580,9 +554,23 @@ function ThreadChatInner({
           const dt = new Date(m.createdAt);
           const hhmm = timeHHmm(dt);
 
+          // 🔑 Key realmente estable y sin colisiones
+          const idNum = typeof m.id === "number" ? m.id : NaN;
+          const isTemp = Number.isFinite(idNum) && idNum < 0;
+          const nonce = (m as any)?.meta?.clientNonce;
+          const seq = (m as any)?.meta?.displaySeq;
+          const nano = (m as any)?.meta?.displayNano;
+          const stableKey = nonce
+            ? `nonce:${nonce}${isTemp ? ":temp" : ""}`
+            : seq != null && nano != null
+            ? `seq:${seq}/${nano}`
+            : m.id != null
+            ? `id:${m.id}`
+            : `idx:${i}`;
+
           return (
             <div
-              key={String(m.meta?.clientNonce ?? m.id ?? `ghost-${i}`)}
+              key={stableKey}
               className={
                 sys
                   ? `${styles.bubble} ${styles.system}`
@@ -666,17 +654,22 @@ function ThreadChatInner({
 
       <div className={styles.changeStatusBtnWrapper}>
         <button
-          className={`${styles.changeStatusBtn} 
-          ${styles[`${colorByNextStatus(activeThread.status)}`]} ${
-            statusLocked ? styles.buttonLoading : ""
-          }`}
+          className={`${styles.changeStatusBtn} ${
+            styles[
+              `${activeThread.status === "corrected" ? "orange" : "green"}`
+            ]
+          } ${statusLocked ? styles.buttonLoading : ""}`}
           onClick={() =>
             onToggleThreadStatus(
               activeThread.id,
               nextStatus(activeThread.status)
             )
           }
-          title={toggleLabel(activeThread.status)}
+          title={
+            activeThread.status === "corrected"
+              ? "Reabrir hilo"
+              : "Validar correcciones"
+          }
           disabled={statusLocked}
           aria-busy={statusLocked}
         >
@@ -684,8 +677,10 @@ function ThreadChatInner({
             <>
               <span className={styles.spinner} aria-hidden /> Actualizando…
             </>
+          ) : activeThread.status === "corrected" ? (
+            "Reabrir hilo"
           ) : (
-            toggleLabel(activeThread.status)
+            "Validar correcciones"
           )}
         </button>
 
@@ -710,7 +705,6 @@ function ThreadChatInner({
   );
 }
 
-/* ============================ Memo fuerte del chat ============================ */
 function messagesSignature(list: ThreadMessage[] = []): string {
   const L = list.length;
   const start = Math.max(0, L - 20);
@@ -722,7 +716,6 @@ function messagesSignature(list: ThreadMessage[] = []): string {
   }
   return parts.join("|");
 }
-
 function areEqual(prev: any, next: any) {
   if (prev.activeThread.id !== next.activeThread.id) return false;
   if (prev.activeThread.status !== next.activeThread.status) return false;
