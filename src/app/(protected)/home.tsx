@@ -117,13 +117,17 @@ export default function Home({ username, skus, clientInfo }: Props) {
   // ==================== URL <-> selección helpers ====================
   const replaceParams = useCallback(
     (next: URLSearchParams) => {
-      const current = `${pathname}${searchParams.size ? `?${searchParams}` : ""}`;
-      const target = `${pathname}${next.toString() ? `?${next.toString()}` : ""}`;
+      const current = `${pathname}${
+        searchParams.size ? `?${searchParams}` : ""
+      }`;
+      const target = `${pathname}${
+        next.toString() ? `?${next.toString()}` : ""
+      }`;
       if (current !== target) {
         startTransition(() => router.replace(target, { scroll: false }));
       }
     },
-    [pathname, router, searchParams],
+    [pathname, router, searchParams]
   );
 
   const selectSku = useCallback(
@@ -141,7 +145,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
       next.delete("thread");
       replaceParams(next);
     },
-    [searchParams, replaceParams],
+    [searchParams, replaceParams]
   );
 
   const selectImage = useCallback(
@@ -152,7 +156,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
       next.delete("thread");
       replaceParams(next);
     },
-    [searchParams, replaceParams],
+    [searchParams, replaceParams]
   );
 
   const selectThread = useCallback(
@@ -162,27 +166,13 @@ export default function Home({ username, skus, clientInfo }: Props) {
       else next.delete("thread");
       replaceParams(next);
     },
-    [searchParams, replaceParams],
+    [searchParams, replaceParams]
   );
 
   const onOpenSku = useCallback(
     (sku: string) =>
       selectSku(effectiveSkus.find((s) => s.sku === sku) ?? null),
-    [selectSku, effectiveSkus],
-  );
-
-  const onOpenImage = useCallback(
-    (sku: string, img: string) => {
-      const s = effectiveSkus.find((x) => x.sku === sku);
-      if (!s) return;
-      const next = new URLSearchParams(searchParams.toString());
-      next.set("sku", s.sku);
-      if (s.images.some((i) => i.name === img)) next.set("image", img);
-      else next.delete("image");
-      next.delete("thread");
-      replaceParams(next);
-    },
-    [effectiveSkus, replaceParams, searchParams],
+    [selectSku, effectiveSkus]
   );
 
   // URL params → selección actual
@@ -192,10 +182,10 @@ export default function Home({ username, skus, clientInfo }: Props) {
 
   const bySku = useMemo(
     () => new Map(effectiveSkus.map((s) => [s.sku, s])),
-    [effectiveSkus],
+    [effectiveSkus]
   );
   const selectedSku: SkuWithImagesAndStatus | null = skuParam
-    ? (bySku.get(skuParam) ?? null)
+    ? bySku.get(skuParam) ?? null
     : null;
 
   const selectedImageName: string | null = useMemo(() => {
@@ -208,7 +198,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
   const selectedThreadId: number | null = useMemo(
     () =>
       threadParam && /^-?\d+$/.test(threadParam) ? Number(threadParam) : null,
-    [threadParam],
+    [threadParam]
   );
 
   // Evita incoherencias imagen/thread si la imagen no pertenece al SKU
@@ -254,7 +244,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
   // ==================== Derivados ====================
   const filtered = useMemo(
     () => effectiveSkus.filter((s) => active.has(s.status)),
-    [effectiveSkus, active],
+    [effectiveSkus, active]
   );
 
   const grouped = useMemo(() => {
@@ -302,7 +292,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
                     ALL.map((s) => [
                       s,
                       effectiveSkus.filter((x) => x.status === s).length,
-                    ]),
+                    ])
                   ) as Record<SkuStatus, number>
                 }
                 active={active}

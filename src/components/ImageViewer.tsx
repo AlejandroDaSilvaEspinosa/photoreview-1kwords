@@ -77,7 +77,7 @@ export default function ImageViewer({
 
   // ===== Navegación / imagen seleccionada
   const [currentImageName, setCurrentImageName] = useState<string | null>(
-    selectedImageName ?? images[0]?.name ?? null,
+    selectedImageName ?? images[0]?.name ?? null
   );
   const pendingUrlImageRef = useRef<string | null>(null);
   const suppressFollowThreadOnceRef = useRef<boolean>(false);
@@ -134,8 +134,8 @@ export default function ImageViewer({
   const selectedImageKey = selectedImage?.name ?? "";
   const threadsRaw = useThreadsStore(
     useShallow((s) =>
-      selectedImageKey ? (s.byImage[selectedImageKey] ?? EMPTY_ARR) : EMPTY_ARR,
-    ),
+      selectedImageKey ? s.byImage[selectedImageKey] ?? EMPTY_ARR : EMPTY_ARR
+    )
   );
 
   // ✅ Reactivo: mapa threadId → imageName
@@ -151,7 +151,7 @@ export default function ImageViewer({
       for (const img of images)
         out[img.name] = s.byImage[img.name] ?? EMPTY_ARR;
       return out;
-    }),
+    })
   );
 
   const threadToImageMapSize = threadToImage.size; // para deps baratas
@@ -200,7 +200,7 @@ export default function ImageViewer({
                 tid,
                 cachedMsgs
                   .map((m) => m.id as number)
-                  .filter((x) => Number.isFinite(x)),
+                  .filter((x) => Number.isFinite(x))
               );
             }
           }
@@ -259,7 +259,7 @@ export default function ImageViewer({
               `
               id,thread_id,text,created_at,updated_at,created_by,created_by_username,created_by_display_name,is_system,
               meta:review_message_receipts!review_message_receipts_message_fkey ( user_id, read_at, delivered_at )
-            `,
+            `
             )
             .in("thread_id", allThreadIds)
             .order("created_at", { ascending: true });
@@ -298,7 +298,7 @@ export default function ImageViewer({
             setMsgsForThread(tid, grouped[tid]);
             setThreadMsgIds(
               tid,
-              grouped[tid].map((x) => x.id),
+              grouped[tid].map((x) => x.id)
             );
           }
         }
@@ -312,7 +312,7 @@ export default function ImageViewer({
           setLoadError(
             servedFromCache
               ? "No se pudo actualizar (modo sin conexión)"
-              : e?.message || "Error de carga",
+              : e?.message || "Error de carga"
           );
           setLoading(false);
           toastError(e, { title: "Fallo cargando anotaciones" });
@@ -414,7 +414,7 @@ export default function ImageViewer({
     if (activeKey) {
       const th = threadsRaw.find(
         (t) =>
-          pointKey(selectedImage.name!, Number(t.x), Number(t.y)) === activeKey,
+          pointKey(selectedImage.name!, Number(t.x), Number(t.y)) === activeKey
       );
       if (th) return th.id;
     }
@@ -434,7 +434,9 @@ export default function ImageViewer({
       setActiveThreadId(tempId);
       setActiveKey(pointKey(imgName, rx, ry));
 
-      const sysText = `**@${username ?? "desconocido"}** ha creado un nuevo hilo de revisión.`;
+      const sysText = `**@${
+        username ?? "desconocido"
+      }** ha creado un nuevo hilo de revisión.`;
       const tempMsgId = -Date.now() - Math.floor(Math.random() * 1000);
 
       addOptimisticMsg(tempId, tempMsgId, {
@@ -545,7 +547,7 @@ export default function ImageViewer({
       onSelectThread,
       selectedThreadId,
       createThreadOptimistic,
-    ],
+    ]
   );
 
   const addMessage = useCallback(
@@ -595,7 +597,7 @@ export default function ImageViewer({
         toastError(e, { title: "No se pudo enviar el mensaje" });
       }
     },
-    [addOptimisticMsg, confirmMessage, username, creatingThreadId],
+    [addOptimisticMsg, confirmMessage, username, creatingThreadId]
   );
 
   const toggleThreadStatus = useCallback(
@@ -614,9 +616,9 @@ export default function ImageViewer({
       setThreadStatus(threadId, next);
 
       const tempId = -Math.floor(Math.random() * 1e9) - 1;
-      const sysText = `**@${username ?? "usuario"}** cambió el estado del hilo a "**${
-        STATUS_LABEL[next]
-      }**".`;
+      const sysText = `**@${
+        username ?? "usuario"
+      }** cambió el estado del hilo a "**${STATUS_LABEL[next]}**".`;
 
       addOptimisticMsg(threadId, tempId, {
         text: sysText,
@@ -643,7 +645,7 @@ export default function ImageViewer({
         toastError(e, { title: "No se pudo cambiar el estado" });
       }
     },
-    [setThreadStatus, addOptimisticMsg, username],
+    [setThreadStatus, addOptimisticMsg, username]
   );
 
   const removeThread = useCallback(
@@ -664,7 +666,7 @@ export default function ImageViewer({
       if (resolvedActiveThreadId === id)
         startTransition(() => onSelectThread?.(null));
     },
-    [setThreadStatus, resolvedActiveThreadId, onSelectThread],
+    [setThreadStatus, resolvedActiveThreadId, onSelectThread]
   );
 
   // ===== UI helpers
@@ -723,9 +725,9 @@ export default function ImageViewer({
             ...t,
             messages: [],
           })),
-        ]),
+        ])
       ),
-    [images, threadsByNeededImages],
+    [images, threadsByNeededImages]
   );
   const onFocusThread = (id: number | null) => {
     try {
@@ -739,16 +741,6 @@ export default function ImageViewer({
       toastError(e, { title: "No se pudo enfocar el hilo" });
     }
   };
-  // ✅ Al desmontar, limpiar el foco del hilo
-  useEffect(() => {
-    return () => {
-      try {
-        onFocusThread(null);
-      } catch {
-        // noop
-      }
-    };
-  }, []);
 
   const rehydrateThreadMessages = useCallback(
     async (tid: number) => {
@@ -763,7 +755,7 @@ export default function ImageViewer({
             `
             id,thread_id,text,created_at,updated_at,created_by,created_by_username,created_by_display_name,is_system,
             meta:review_message_receipts!review_message_receipts_message_fkey ( user_id, read_at, delivered_at )
-          `,
+          `
           )
           .eq("thread_id", tid)
           .order("created_at", { ascending: true });
@@ -797,13 +789,13 @@ export default function ImageViewer({
         setMsgsForThread(tid, grouped as any);
         setThreadMsgIds(
           tid,
-          grouped.map((x: any) => x.id),
+          grouped.map((x: any) => x.id)
         );
       } catch (e) {
         toastError(e, { title: "No se pudieron cargar los mensajes del hilo" });
       }
     },
-    [setMsgsForThread, setThreadMsgIds],
+    [setMsgsForThread, setThreadMsgIds]
   );
 
   useEffect(() => {
@@ -955,10 +947,12 @@ export default function ImageViewer({
                       th.status === "corrected"
                         ? "Corregido"
                         : th.status === "reopened"
-                          ? "Reabierto"
-                          : "Pendiente"
+                        ? "Reabierto"
+                        : "Pendiente"
                     }
-                    aria-label={`Hilo #${index + 1} — ${STATUS_LABEL[th.status]}`}
+                    aria-label={`Hilo #${index + 1} — ${
+                      STATUS_LABEL[th.status]
+                    }`}
                   >
                     {index + 1}
                   </div>
