@@ -1,3 +1,4 @@
+// src/components/images/ThreadChat.tsx
 "use client";
 
 import React, {
@@ -47,9 +48,8 @@ const UnreadDividerAlign = React.memo(
       if (doneKeyRef.current === key) return;
       doneKeyRef.current = key;
 
-      const cont = containerRef.current;
       const el = sepRef.current;
-      if (!cont || !el) return;
+      if (!el) return;
       el.scrollIntoView({
         behavior: "auto",
         block: "start",
@@ -210,7 +210,7 @@ function ThreadChatInner({
       hour12: false,
     });
 
-  // ===== Orden cronológico estable en el render =====
+  // ===== Orden cronológico estable =====
   const messagesChrono = useMemo(() => {
     const list = activeThread?.messages ?? [];
     return [...list].sort((a, b) => {
@@ -227,76 +227,38 @@ function ThreadChatInner({
     });
   }, [activeThread?.messages]);
 
-  // ===== Modelo de no-leídos (idéntico al tuyo, omitido por brevedad) =====
-  type UnreadSnap = {
+  // ===== Payload "listo": caché o live =====
+  const threadHydratedFlag =
+    (activeThread as any)?.meta?.hydrated === true ||
+    (activeThread as any)?.source === "live";
+  const payloadReady = threadHydratedFlag;
+
+  // ========= UNREAD: congelado una sola vez por hilo =========
+  type FrozenUnread = {
     tid: number;
     cutoffId: number | null;
     count: number;
-    idsToRead: number[];
-  };
-  const [snap, setSnap] = useState<UnreadSnap | null>(null);
-  const stickyRef = useRef<{
-    cutoffId: number | null;
-    count: number;
     label: string;
-  } | null>(null);
-  const stickyLockedRef = useRef<boolean>(false);
+  };
+  const [frozenUnread, setFrozenUnread] = useState<FrozenUnread | null>(null);
   const lastSeenMessageIdRef = useRef<number | null>(null);
+  const computedForTidRef = useRef<number | null>(null);
 
+  // Calcula el divisor una sola vez por hilo, en cuanto haya payload utilizable.
   useEffect(() => {
-    setSnap(null);
-    stickyRef.current = null;
-    stickyLockedRef.current = false;
-
-    const list = messagesChrono;
-    if (!list.length) {
-      lastSeenMessageIdRef.current = null;
-      return;
-    }
-    const firstUnread = list.find(
-      (m) =>
-        !m.isSystem &&
-        !isMine(m) &&
-        ((m.meta?.localDelivery as DeliveryState | undefined) ?? "sent") !==
-          "read"
-    );
-    if (firstUnread) {
-      const frozenCount = list.reduce((acc, m) => {
-        const sys =
-          !!m.isSystem ||
-          (m.createdByName || "").toLowerCase() === "system" ||
-          (m.createdByName || "").toLowerCase() === "sistema";
-        if (sys || isMine(m)) return acc;
-        const d =
-          (m.meta?.localDelivery as DeliveryState | undefined) ?? "sent";
-        return d !== "read" ? acc + 1 : acc;
-      }, 0);
-      stickyRef.current = {
-        cutoffId: (firstUnread.id as number) ?? null,
-        count: frozenCount,
-        label:
-          frozenCount > 0
-            ? `Mensajes no leídos (${frozenCount})`
-            : "Mensajes no leídos",
-      };
-      stickyLockedRef.current = true;
-      const idx = list.findIndex((mm) => mm.id === firstUnread.id);
-      lastSeenMessageIdRef.current =
-        idx > 0 ? (list[idx - 1].id as number) : null;
-    } else {
-      const last = list[list.length - 1];
-      lastSeenMessageIdRef.current = (last?.id as number) ?? null;
-    }
-  }, [activeThread?.id, isMine, messagesChrono]);
-
-  const computeSnap = useCallback((): UnreadSnap | null => {
+    console.log("test");
     const tid = activeThread?.id;
-    const list = messagesChrono;
-    if (!tid || !list.length) return null;
+    if (!tid) return;
 
-    let count = 0;
+    // Evita recomputar si ya se fijó para este hilo
+    if (computedForTidRef.current == tid) return;
+
+    // Espera a tener payload (caché o live). Si el hilo realmente no tiene mensajes y está hidratado, se fijará a null.
+    console.log(payloadReady);
+    if (!payloadReady) return;
+    const list = messagesChrono;
     let cutoffId: number | null = null;
-    const idsToRead: number[] = [];
+    let count = 0;
 
     for (const m of list) {
       const sys =
@@ -304,49 +266,80 @@ function ThreadChatInner({
         (m.createdByName || "").toLowerCase() === "system" ||
         (m.createdByName || "").toLowerCase() === "sistema";
       if (sys || isMine(m)) continue;
-      const delivery = (m.meta?.localDelivery ?? "sent") as DeliveryState;
+      const delivery =
+        (m.meta?.localDelivery as DeliveryState | undefined) ?? "sent";
       if (delivery !== "read") {
-        count++;
         if (cutoffId == null) cutoffId = (m.id as number) ?? null;
-        const mid = (m.id as number) ?? -1;
-        if (Number.isFinite(mid) && mid >= 0) idsToRead.push(mid);
+        count++;
       }
     }
-    return { tid, cutoffId, count, idsToRead };
+
+    if (cutoffId != null && count > 0) {
+      const idx = list.findIndex((mm) => mm.id === cutoffId);
+      lastSeenMessageIdRef.current =
+        idx > 0 ? (list[idx - 1].id as number) : null;
+      setFrozenUnread({
+        tid,
+        cutoffId,
+        count,
+        label: `Mensajes no leídos (${count})`,
+      });
+    } else {
+      const last = list[list.length - 1];
+      lastSeenMessageIdRef.current = (last?.id as number) ?? null;
+      setFrozenUnread(null);
+    }
+
+    computedForTidRef.current = tid;
+
+    return () => {
+      // computedForTidRef.current = null;
+    };
+  }, [activeThread?.id, payloadReady, messagesChrono, isMine]);
+
+  // ========= Read receipts (solo DESPUÉS de fijar el divisor) =========
+  const idsToRead = useMemo(() => {
+    const out: number[] = [];
+    const list = messagesChrono;
+    if (!activeThread?.id || !list.length) return out;
+    for (const m of list) {
+      const sys =
+        !!m.isSystem ||
+        (m.createdByName || "").toLowerCase() === "system" ||
+        (m.createdByName || "").toLowerCase() === "sistema";
+      if (sys || isMine(m)) continue;
+      const delivery =
+        (m.meta?.localDelivery as DeliveryState | undefined) ?? "sent";
+      if (delivery !== "read") {
+        const mid = (m.id as number) ?? -1;
+        if (Number.isFinite(mid) && mid >= 0) out.push(mid);
+      }
+    }
+    return out;
   }, [activeThread?.id, messagesChrono, isMine]);
 
   useEffect(() => {
-    const newSnap = computeSnap();
-    setSnap(newSnap ?? null);
+    const tid = activeThread?.id;
+    if (!tid) return;
+    // No armes recibos hasta haber fijado el divisor (o su ausencia) para este hilo.
+    if (computedForTidRef.current != tid) return;
+    if (!idsToRead.length) return;
 
-    if (!stickyLockedRef.current) {
-      const list = messagesChrono;
-      const lastSeen = lastSeenMessageIdRef.current;
-      if (list.length && lastSeen != null) {
-        const startIdx = list.findIndex((m) => m.id === lastSeen);
-        const slice = startIdx >= 0 ? list.slice(startIdx + 1) : list;
-        const firstNewUnread = slice.find(
-          (m) =>
-            !m.isSystem &&
-            !isMine(m) &&
-            ((m.meta?.localDelivery as DeliveryState | undefined) ?? "sent") !==
-              "read"
-        );
-        if (firstNewUnread) {
-          const frozenCount = Math.max(newSnap?.count ?? 1, 1);
-          stickyRef.current = {
-            cutoffId: (firstNewUnread.id as number) ?? null,
-            count: frozenCount,
-            label:
-              frozenCount > 0
-                ? `Mensajes no leídos (${frozenCount})`
-                : "Mensajes no leídos",
-          };
-          stickyLockedRef.current = true;
-        }
+    (async () => {
+      try {
+        await fetch("/api/messages/receipts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageIds: idsToRead, mark: "read" }),
+        });
+      } catch (e) {
+        toastError(e, {
+          title: "No se pudo confirmar la lectura",
+          fallback: "Reintentaremos automáticamente.",
+        });
       }
-    }
-  }, [computeSnap, messagesChrono, isMine]);
+    })();
+  }, [activeThread?.id, idsToRead]);
 
   type Row =
     | { kind: "divider"; key: string; label: string }
@@ -358,14 +351,14 @@ function ThreadChatInner({
     let lastKey: string | null = null;
     const list = messagesChrono;
 
-    const locked = stickyLockedRef.current;
-    const sticky = stickyRef.current;
-    const cutId = locked ? sticky?.cutoffId ?? null : snap?.cutoffId ?? null;
-    const unreadLabel = locked
-      ? sticky?.label ?? "Mensajes no leídos"
-      : snap && snap.count > 0
-      ? `Mensajes no leídos (${snap.count})`
-      : "Mensajes no leídos";
+    const cutId =
+      frozenUnread && frozenUnread.tid === activeThread.id
+        ? frozenUnread.cutoffId
+        : null;
+    const unreadLabel =
+      frozenUnread && frozenUnread.tid === activeThread.id
+        ? frozenUnread.label
+        : "Mensajes no leídos";
 
     for (const m of list) {
       const dt = new Date(m.createdAt);
@@ -385,8 +378,9 @@ function ThreadChatInner({
       out.push({ kind: "msg", msg: m });
     }
     return out;
-  }, [activeThread?.id, messagesChrono, snap]);
+  }, [activeThread?.id, messagesChrono, frozenUnread]);
 
+  // Autoscroll inicial: espera payload; si hay divisor, no baja al fondo
   const didInitialBottomRef = useRef<Set<number>>(new Set());
   useEffect(() => {
     const container = listRef.current;
@@ -394,19 +388,14 @@ function ThreadChatInner({
     if (!container || tid == null) return;
     if (didInitialBottomRef.current.has(tid)) return;
 
-    const locked = stickyLockedRef.current;
-    const hasFrozen = !!(
-      stickyRef.current && stickyRef.current.cutoffId != null
-    );
-    const hasSnap = !!(
-      snap &&
-      snap.tid === tid &&
-      snap.count > 0 &&
-      snap.cutoffId != null
-    );
-    const hasUnreadDivider = locked ? hasFrozen : hasSnap;
+    if (!payloadReady) return;
 
-    if (!hasUnreadDivider) {
+    const hasFrozen =
+      !!frozenUnread &&
+      frozenUnread.tid === tid &&
+      frozenUnread.cutoffId != null;
+
+    if (!hasFrozen) {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const el = listRef.current;
@@ -414,9 +403,13 @@ function ThreadChatInner({
           didInitialBottomRef.current.add(tid);
         });
       });
+    } else {
+      // Marcamos como hecho para no forzar scroll al fondo después
+      didInitialBottomRef.current.add(tid);
     }
-  }, [activeThread?.id, snap]);
+  }, [activeThread?.id, frozenUnread, payloadReady]);
 
+  // Autoscroll con mensajes entrantes (si son míos o estamos cerca del fondo)
   const lastMsgKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const list = messagesChrono;
@@ -438,27 +431,6 @@ function ThreadChatInner({
       });
     }
   }, [messagesChrono, isMine]);
-
-  useEffect(() => {
-    const tid = activeThread?.id;
-    if (!tid || !snap) return;
-    if (!snap.idsToRead.length) return;
-
-    (async () => {
-      try {
-        await fetch("/api/messages/receipts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messageIds: snap.idsToRead, mark: "read" }),
-        });
-      } catch (e) {
-        toastError(e, {
-          title: "No se pudo confirmar la lectura",
-          fallback: "Reintentaremos automáticamente.",
-        });
-      }
-    })();
-  }, [activeThread?.id, snap]);
 
   const prevDeliveryRef = useRef<Map<number, DeliveryState>>(new Map());
   const toggleLabel = useCallback(
@@ -554,7 +526,6 @@ function ThreadChatInner({
           const dt = new Date(m.createdAt);
           const hhmm = timeHHmm(dt);
 
-          // 🔑 Key realmente estable y sin colisiones
           const idNum = typeof m.id === "number" ? m.id : NaN;
           const isTemp = Number.isFinite(idNum) && idNum < 0;
           const nonce = (m as any)?.meta?.clientNonce;

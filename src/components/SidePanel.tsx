@@ -26,7 +26,7 @@ type Props = {
   onFocusThread: (id: number | null) => void;
   onToggleThreadStatus: (
     threadId: number,
-    next: ThreadStatus,
+    next: ThreadStatus
   ) => Promise<void> | void;
 
   onlineUsers?: { username: string }[];
@@ -86,15 +86,15 @@ export default function SidePanel({
   const selected = useMemo(
     () =>
       activeThreadId != null
-        ? (threads.find((t) => t.id === activeThreadId) ?? null)
+        ? threads.find((t) => t.id === activeThreadId) ?? null
         : null,
-    [activeThreadId, threads],
+    [activeThreadId, threads]
   );
 
   const hasOpenThreads = useMemo(
     () =>
       threads.some((t) => t.status === "pending" || t.status === "reopened"),
-    [threads],
+    [threads]
   );
 
   const threadIndex = useMemo(
@@ -102,7 +102,7 @@ export default function SidePanel({
       activeThreadId
         ? threads.findIndex((t) => t.id === activeThreadId) + 1
         : 0,
-    [threads, activeThreadId],
+    [threads, activeThreadId]
   );
 
   return (
