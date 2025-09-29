@@ -393,6 +393,11 @@ export default function ImageViewer({
     return () => {
       cancelled = true;
       ac.abort();
+      // try {
+      //   useThreadsStore.getState().setActiveThreadId(null);
+      //   startTransition(() => onSelectThread?.(null));
+      //   setActiveKey(null);
+      // } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sku.sku, images.map((i) => i.name).join("|")]);
@@ -405,6 +410,7 @@ export default function ImageViewer({
     }
     if (selectedThreadId == null) {
       lastAppliedThreadRef.current = null;
+      setActiveThreadId(null);
       return;
     }
     if (lastAppliedThreadRef.current === selectedThreadId) return;
