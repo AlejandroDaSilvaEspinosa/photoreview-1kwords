@@ -696,7 +696,9 @@ export default function ImageViewer({
       }** cambió el estado del hilo a "**${STATUS_LABEL[next]}**".`;
       try {
         enqueueSendSystemMessage(threadId, tempText);
-      } catch {}
+      } catch {
+        //TODO: TOAST
+      }
 
       try {
         const ok = await fetch("/api/threads/status", {
