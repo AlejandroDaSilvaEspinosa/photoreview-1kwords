@@ -2,7 +2,6 @@
 
 .loginContainer {
   display: flex;
-  font-family: "Roboto", sans-serif;
   flex-direction: column;
   /* ✨ 2. Apilamos los elementos verticalmente ✨ */
   align-items: center;
