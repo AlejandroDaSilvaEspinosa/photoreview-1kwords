@@ -1,3 +1,4 @@
+// src/lib/realtime/useWireSkuRealtime.ts
 "use client";
 
 import { useEffect } from "react";
@@ -27,7 +28,6 @@ export function useWireSkuRealtime(sku: string) {
 
     const catchUp = async () => {
       try {
-        // THREADS
         const { data: threads, error: e1 } = await sb
           .from("review_threads")
           .select("*")
@@ -47,7 +47,6 @@ export function useWireSkuRealtime(sku: string) {
           }
         }
 
-        // MESSAGES of those threads
         const ids = (threads || []).map((t: any) => t.id).filter(Boolean);
         if (ids.length) {
           const { data: msgs, error: e2 } = await sb
@@ -57,17 +56,9 @@ export function useWireSkuRealtime(sku: string) {
             .order("created_at", { ascending: true })
             .limit(1000);
           if (e2) throw e2;
-
-          for (const m of (msgs || []) as MessageRow[]) {
-            upMsg(m);
-          }
-          // Marca hidratación LIVE por hilo
-          const markLive =
-            useMessagesStore.getState().markThreadMessagesHydrated;
-          for (const tid of ids) markLive(tid, "live");
+          for (const m of (msgs || []) as MessageRow[]) upMsg(m);
         }
 
-        // IMAGE STATUS
         const { data: imgStatus, error: e3 } = await sb
           .from("review_images_status")
           .select("*")
@@ -77,7 +68,6 @@ export function useWireSkuRealtime(sku: string) {
         if (e3) throw e3;
         for (const r of (imgStatus || []) as ImageStatusRow[]) upImg(r);
 
-        // SKU STATUS
         const { data: skuStatus, error: e4 } = await sb
           .from("review_skus_status")
           .select("*")
@@ -146,54 +136,48 @@ export function useWireSkuRealtime(sku: string) {
 
             upMsg(row);
 
-            // Marca que este hilo quedó hidratado por realtime
-            useMessagesStore
-              .getState()
-              .markThreadMessagesHydrated(row.thread_id, "realtime");
+            // ⚠️ Promoción de fase: si veníamos de cache y entra un mensaje por realtime,
+            // dispara un evento global para que los viewers marquen el hilo como "live".
+            if (evt === "INSERT" && row.thread_id != null) {
+              window.dispatchEvent(
+                new CustomEvent("rev:thread-live", {
+                  detail: { tid: row.thread_id },
+                })
+              );
+            }
 
-            // delivered/read automáticos para mensajes que recibo
+            // Recibos: delivered, y read si el hilo está activo.
             if (evt === "INSERT") {
               const isSystem = !!(row as any).is_system;
               if (!isSystem && row.id != null) {
                 const selfId = useMessagesStore.getState().selfAuthId;
-                // Si es mensaje de otro y NO estamos viendo ese hilo, bump epoch (para recalcular divisor al abrir)
                 if (row.created_by !== selfId) {
-                  const activeId = useThreadsStore.getState().activeThreadId;
-                  if (activeId !== row.thread_id) {
-                    useMessagesStore.getState().bumpUnreadEpoch(row.thread_id);
-                  }
-                }
-
-                try {
-                  await fetch("/api/messages/receipts", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      messageIds: [row.id],
-                      mark: "delivered",
-                    }),
-                  });
-
-                  // refleja ✓✓ local para el destinatario
-                  useMessagesStore
-                    .getState()
-                    .markDeliveredLocalIfSent([row.id]);
-
-                  const activeId = useThreadsStore.getState().activeThreadId;
-                  if (activeId === row.thread_id) {
+                  try {
                     await fetch("/api/messages/receipts", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
                         messageIds: [row.id],
-                        mark: "read",
+                        mark: "delivered",
                       }),
                     });
+
+                    const activeId = useThreadsStore.getState().activeThreadId;
+                    if (activeId === row.thread_id) {
+                      await fetch("/api/messages/receipts", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          messageIds: [row.id],
+                          mark: "read",
+                        }),
+                      });
+                    }
+                  } catch (e) {
+                    toastError(e, {
+                      title: "Fallo enviando confirmación de lectura",
+                    });
                   }
-                } catch (e) {
-                  toastError(e, {
-                    title: "Fallo enviando confirmación de lectura de mensaje",
-                  });
                 }
               }
             }

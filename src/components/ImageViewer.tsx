@@ -1,3 +1,4 @@
+// src/components/ImageViewer.tsx
 "use client";
 
 import React, {
@@ -49,6 +50,8 @@ const STATUS_LABEL: Record<ThreadStatus, string> = {
 
 const EMPTY_ARR: [] = [];
 
+type HydratedSource = "cache" | "live";
+
 interface ImageViewerProps {
   sku: SkuWithImagesAndStatus;
   username: string;
@@ -71,7 +74,7 @@ export default function ImageViewer({
   const { images } = sku;
   useWireSkuRealtime(sku.sku);
 
-  // ===== Navegación / imagen seleccionada
+  // ===== navegación
   const [currentImageName, setCurrentImageName] = useState<string | null>(
     selectedImageName ?? images[0]?.name ?? null
   );
@@ -106,7 +109,7 @@ export default function ImageViewer({
   }, [currentImageName, images]);
   const selectedImage = images[selectedImageIndex] ?? null;
 
-  // ===== Stores
+  // ===== stores
   const activeThreadId = useThreadsStore((s) => s.activeThreadId);
   const setActiveThreadId = useThreadsStore((s) => s.setActiveThreadId);
 
@@ -126,18 +129,15 @@ export default function ImageViewer({
     ay: number;
   }>(null);
 
-  // ===== Threads (imagen visible)
+  // ===== threads por imagen visible
   const selectedImageKey = selectedImage?.name ?? "";
   const threadsRaw = useThreadsStore(
     useShallow((s) =>
       selectedImageKey ? s.byImage[selectedImageKey] ?? EMPTY_ARR : EMPTY_ARR
     )
   );
-
-  // Reactivo: mapa threadId → imageName
   const threadToImage = useThreadsStore((s) => s.threadToImage);
 
-  // Reactivo: listas por imagen del SKU
   const threadsByNeededImages = useThreadsStore(
     useShallow((s) => {
       const out: Record<
@@ -150,9 +150,7 @@ export default function ImageViewer({
     })
   );
 
-  const threadToImageMapSize = threadToImage.size;
   const threadToImageStable = useThreadsStore((s) => s.threadToImage);
-
   const setMsgsForThread = useMessagesStore((s) => s.setForThread);
   const moveThreadMessages = useMessagesStore((s) => s.moveThreadMessages);
   const setSelfAuthId = useMessagesStore((s) => s.setSelfAuthId);
@@ -166,27 +164,44 @@ export default function ImageViewer({
   const rollbackCreate = useThreadsStore((s) => s.rollbackCreate);
   const pendingStatusMap = useThreadsStore((s) => s.pendingStatus);
 
-  // NUEVO: mapas de la store para hidratación/epoch
-  const msgHydrationMap = useMessagesStore((s) => s.hydrationByThread);
-  const unreadEpochMap = useMessagesStore((s) => s.unreadEpochByThread);
-  const markThreadMessagesHydrated = useMessagesStore(
-    (s) => s.markThreadMessagesHydrated
-  );
+  // ===== marca de hidratación por hilo (cache / live)
+  const [hydratedThreads, setHydratedThreads] = useState<
+    Map<number, HydratedSource>
+  >(new Map());
+  const markThreadHydrated = useCallback((tid: number, src: HydratedSource) => {
+    setHydratedThreads((prev) => {
+      const current = prev.get(tid);
+      if (current === "live") return prev;
+      if (current === src) return prev;
+      const next = new Map(prev);
+      next.set(tid, src);
+      return next;
+    });
+  }, []);
 
-  // ========================== HIDRATACIÓN (cache + fresh)
+  // Promoción a live si entra realtime
+  useEffect(() => {
+    const onLive = (e: any) => {
+      const tid = e?.detail?.tid;
+      if (typeof tid === "number") markThreadHydrated(tid, "live");
+    };
+    window.addEventListener("rev:thread-live", onLive);
+    return () => window.removeEventListener("rev:thread-live", onLive);
+  }, [markThreadHydrated]);
+
+  // ===== hidratación (cache + servidor)
   useEffect(() => {
     let cancelled = false;
     const ac = new AbortController();
 
     (async () => {
-      // 1) Cache
       let servedFromCache = false;
       const cachedThreadIds: number[] = [];
       try {
         for (const img of images) {
           const name = img.name!;
           const cached = threadsCache.load(name);
-          if (cached && cached.length) {
+          if (cached?.length) {
             hydrateForImage(name, cached);
             cached.forEach((t) => cachedThreadIds.push(t.id));
             servedFromCache = true;
@@ -203,8 +218,7 @@ export default function ImageViewer({
                   .map((m) => m.id as number)
                   .filter((x) => Number.isFinite(x))
               );
-              // marca cache
-              markThreadMessagesHydrated(tid, "cache");
+              markThreadHydrated(tid, "cache");
             }
           }
         }
@@ -219,7 +233,6 @@ export default function ImageViewer({
       setLoading(!servedFromCache);
 
       try {
-        // 2) Auth ID
         const sb = supabaseBrowser();
         const { data: authInfo, error: authErr } = await sb.auth.getUser();
         if (authErr) {
@@ -231,7 +244,6 @@ export default function ImageViewer({
         const myId = authInfo?.user?.id ?? null;
         setSelfAuthId(myId);
 
-        // 3) Fresh threads
         const res = await fetch(`/api/reviews/${sku.sku}`, {
           cache: "no-store",
           signal: ac.signal,
@@ -254,7 +266,6 @@ export default function ImageViewer({
           raw.forEach((r) => allThreadIds.push(r.id));
         }
 
-        // 4) Fresh mensajes
         if (allThreadIds.length) {
           const { data: msgs, error } = await sb
             .from("review_messages")
@@ -305,16 +316,14 @@ export default function ImageViewer({
               tid,
               grouped[tid].map((x) => x.id)
             );
-            // marca live (con mensajes)
-            markThreadMessagesHydrated(tid, "live");
+            markThreadHydrated(tid, "live"); // live DESPUÉS de setear mensajes
           }
 
-          // Hilos sin mensajes (hidratados igualmente desde el servidor)
           for (const tid of allThreadIds) {
             if (!groupedTids.has(tid)) {
               setMsgsForThread(tid, []);
               setThreadMsgIds(tid, []);
-              markThreadMessagesHydrated(tid, "live");
+              markThreadHydrated(tid, "live");
             }
           }
         }
@@ -327,7 +336,7 @@ export default function ImageViewer({
         if (!cancelled) {
           setLoadError(
             servedFromCache
-              ? "No se pudo actualizar (modo sin conexión)"
+              ? "No se pudo actualizar (offline)"
               : e?.message || "Error de carga"
           );
           setLoading(false);
@@ -343,7 +352,7 @@ export default function ImageViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sku.sku, images.map((i) => i.name).join("|")]);
 
-  // ========================== Selección por URL (?thread=ID) — REACTIVO
+  // ===== selección por URL (?thread=ID)
   useEffect(() => {
     if (suppressFollowThreadOnceRef.current) {
       suppressFollowThreadOnceRef.current = false;
@@ -355,10 +364,7 @@ export default function ImageViewer({
     }
     if (lastAppliedThreadRef.current === selectedThreadId) return;
 
-    // 1) Mapa reactivo (threadId -> imageName)
     let imgName = threadToImageStable.get(selectedThreadId) || null;
-
-    // 2) Buscar en listas reactivas del SKU (si aún no mapeado)
     if (!imgName) {
       for (const img of images) {
         const arr = threadsByNeededImages[img.name] || EMPTY_ARR;
@@ -368,7 +374,6 @@ export default function ImageViewer({
         }
       }
     }
-
     if (!imgName) return;
 
     if (currentImageName !== imgName) {
@@ -392,13 +397,11 @@ export default function ImageViewer({
     setActiveThreadId,
     selectedImage?.name,
     threadsRaw,
-    loading,
     threadToImageStable,
-    threadToImageMapSize,
     threadsByNeededImages,
   ]);
 
-  // ========================== Derivados (inyecta meta.hydrated/source/epoch)
+  // ===== derivado con fase/etiqueta
   const threadsInImage: Thread[] = useMemo(() => {
     if (!selectedImage?.name) return [];
     return (threadsRaw || [])
@@ -420,24 +423,17 @@ export default function ImageViewer({
             displayNano: m.meta?.displayNano,
           } as MessageMeta,
         }));
-        const src = msgHydrationMap.get(t.id); // "cache" | "live" | "realtime" | undefined
-        const epoch = unreadEpochMap.get(t.id) ?? 0;
+        const src = hydratedThreads.get(t.id);
         return {
           id: t.id,
           x: t.x,
           y: t.y,
           status: t.status,
           messages: list,
-          meta: { hydrated: !!src, source: src, unreadEpoch: epoch } as any,
+          meta: { source: src, hydrated: !!src } as any,
         };
       });
-  }, [
-    selectedImage?.name,
-    threadsRaw,
-    msgsByThread,
-    msgHydrationMap,
-    unreadEpochMap,
-  ]);
+  }, [selectedImage?.name, threadsRaw, msgsByThread, hydratedThreads]);
 
   const resolvedActiveThreadId: number | null = useMemo(() => {
     if (!activeThreadId) return null;
@@ -453,7 +449,7 @@ export default function ImageViewer({
     return null;
   }, [threadsRaw, selectedImage, activeThreadId, activeKey]);
 
-  // ========================== Acciones
+  // ===== acciones
   const createThreadAt = useCallback(
     async (imgName: string, x: number, y: number) => {
       const rx = roundTo(x, 3);
@@ -482,9 +478,8 @@ export default function ImageViewer({
           }),
         }).then((r) => (r.ok ? r.json() : null));
 
-        if (!created?.threadId) {
+        if (!created?.threadId)
           throw new Error("El servidor no devolvió un ID de hilo.");
-        }
 
         const realId = created.threadId as number;
         const realRow: ThreadRow = {
@@ -501,8 +496,7 @@ export default function ImageViewer({
 
         {
           const current = useThreadsStore.getState().activeThreadId;
-          const nextId = current === tempId ? realId : current;
-          setActiveThreadId(nextId ?? null);
+          setActiveThreadId(current === tempId ? realId : current ?? null);
         }
         setCreatingThreadId(null);
 
@@ -513,9 +507,7 @@ export default function ImageViewer({
         try {
           enqueueSendSystemMessage(realId, sysText);
         } catch (e) {
-          toastError(e, {
-            title: "No se pudo encolar el mensaje del sistema",
-          });
+          toastError(e, { title: "No se pudo encolar el mensaje del sistema" });
         }
       } catch (e) {
         rollbackCreate(tempId);
@@ -540,7 +532,6 @@ export default function ImageViewer({
   const addMessage = useCallback(
     async (threadId: number, text: string) => {
       if (creatingThreadId != null && threadId === creatingThreadId) return;
-
       try {
         enqueueSendMessage(threadId, text);
         requestAnimationFrame(() => {
@@ -576,9 +567,7 @@ export default function ImageViewer({
       }** cambió el estado del hilo a "**${STATUS_LABEL[next]}**".`;
       try {
         enqueueSendSystemMessage(threadId, tempText);
-      } catch {
-        // opcional
-      }
+      } catch {}
 
       try {
         const ok = await fetch("/api/threads/status", {
@@ -586,7 +575,6 @@ export default function ImageViewer({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ threadId, status: next }),
         }).then((r) => r.ok);
-
         if (!ok) throw new Error("No se pudo actualizar el estado del hilo.");
       } catch (e) {
         clearPendingStatus(threadId);
@@ -665,19 +653,7 @@ export default function ImageViewer({
   };
 
   const parentCursor = tool === "pin" ? "crosshair" : "zoom-in";
-  const thumbThreads = useMemo(
-    () =>
-      Object.fromEntries(
-        images.map((img) => [
-          img.name,
-          (threadsByNeededImages[img.name] || []).map((t) => ({
-            ...t,
-            messages: [],
-          })),
-        ])
-      ),
-    [images, threadsByNeededImages]
-  );
+
   const onFocusThread = (id: number | null) => {
     try {
       setActiveThreadId(id);
@@ -740,23 +716,19 @@ export default function ImageViewer({
           tid,
           grouped.map((x: any) => x.id)
         );
-        // marca live también en rehidratación concreta
-        markThreadMessagesHydrated(tid, "live");
+        markThreadHydrated(tid, "live");
       } catch (e) {
         toastError(e, { title: "No se pudieron cargar los mensajes del hilo" });
       }
     },
-    [setMsgsForThread, setThreadMsgIds, markThreadMessagesHydrated]
+    [setMsgsForThread, setThreadMsgIds, markThreadHydrated]
   );
 
   useEffect(() => {
     const tid = selectedThreadId ?? resolvedActiveThreadId;
     if (!tid) return;
-
     const current = msgsByThread[tid] || [];
-    if (!current.length) {
-      rehydrateThreadMessages(tid);
-    }
+    if (!current.length) rehydrateThreadMessages(tid);
   }, [
     selectedThreadId,
     resolvedActiveThreadId,
@@ -955,29 +927,21 @@ export default function ImageViewer({
         statusLocked={
           activeThreadId != null && pendingStatusMap.has(activeThreadId)
         }
-        onValidateSku={() => {
-          try {
-            emitToast({
-              variant: "info",
-              title: "Acción no implementada",
-              description: "La validación de SKU se implementa en otra capa.",
-            });
-          } catch (e) {
-            toastError(e, { title: "No se pudo validar el SKU" });
-          }
-        }}
-        onUnvalidateSku={() => {
-          try {
-            emitToast({
-              variant: "info",
-              title: "Acción no implementada",
-              description:
-                "Quitar validación del SKU se implementa en otra capa.",
-            });
-          } catch (e) {
-            toastError(e, { title: "No se pudo quitar la validación" });
-          }
-        }}
+        onValidateSku={() =>
+          emitToast({
+            variant: "info",
+            title: "Acción no implementada",
+            description: "La validación de SKU se implementa en otra capa.",
+          })
+        }
+        onUnvalidateSku={() =>
+          emitToast({
+            variant: "info",
+            title: "Acción no implementada",
+            description:
+              "Quitar validación del SKU se implementa en otra capa.",
+          })
+        }
         onAddThreadMessage={(threadId: number, text: string) => {
           try {
             if (selectedImage?.name) addMessage(threadId, text);
@@ -992,18 +956,7 @@ export default function ImageViewer({
             toastError(e, { title: "No se pudo borrar el hilo" });
           }
         }}
-        onFocusThread={(id: number | null) => {
-          try {
-            setActiveThreadId(id);
-            startTransition(() => onSelectThread?.(id ?? null));
-            if (selectedImage?.name && id) {
-              const t = (threadsRaw || []).find((x) => x.id === id);
-              if (t) setActiveKey(pointKey(selectedImage.name, t.x, t.y));
-            }
-          } catch (e) {
-            toastError(e, { title: "No se pudo enfocar el hilo" });
-          }
-        }}
+        onFocusThread={onFocusThread}
         onToggleThreadStatus={(id: number, status: ThreadStatus) => {
           try {
             if (selectedImage?.name)
