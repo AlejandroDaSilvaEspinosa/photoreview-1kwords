@@ -36,6 +36,7 @@ import {
   enqueueSendMessage,
   enqueueSendSystemMessage,
 } from "@/lib/net/messagesOutbox";
+import NextSkuCard from "@/components/NextSkuCard";
 
 /**
  * ImageViewer
@@ -70,6 +71,8 @@ interface ImageViewerProps {
   ) => void;
   selectedThreadId?: number | null;
   onSelectThread?: (id: number | null) => void;
+  nextSkuCandidate?: SkuWithImagesAndStatus | null;
+  onGoToSku?: (skuCode: string) => void;
 }
 
 export default function ImageViewer({
@@ -80,6 +83,8 @@ export default function ImageViewer({
   onSelectImage,
   selectedThreadId = null,
   onSelectThread,
+  nextSkuCandidate = null,
+  onGoToSku,
 }: ImageViewerProps) {
   const { images } = sku;
   useWireSkuRealtime(sku.sku);
@@ -899,22 +904,30 @@ export default function ImageViewer({
             · <b>Enter</b> zoom · <b>Esc</b> cerrar
           </div>
         </div>
-
-        <ThumbnailGrid
-          images={images}
-          selectedIndex={selectedImageIndex}
-          onSelect={selectImage}
-          threads={Object.fromEntries(
-            images.map((img) => [
-              img.name,
-              (threadsByNeededImages[img.name] || []).map((t) => ({
-                ...t,
-                messages: [],
-              })),
-            ])
+        <div className={styles.bottomStrip}>
+          <ThumbnailGrid
+            images={images}
+            selectedIndex={selectedImageIndex}
+            onSelect={selectImage}
+            threads={Object.fromEntries(
+              images.map((img) => [
+                img.name,
+                (threadsByNeededImages[img.name] || []).map((t) => ({
+                  ...t,
+                  messages: [],
+                })),
+              ])
+            )}
+            validatedImages={{}}
+          />
+          {nextSkuCandidate && nextSkuCandidate.sku !== sku.sku && (
+            <NextSkuCard
+              sku={nextSkuCandidate}
+              onGo={(code) => onGoToSku?.(code)}
+              title="Siguiente SKU listo"
+            />
           )}
-          validatedImages={{}}
-        />
+        </div>
       </div>
 
       <SidePanel

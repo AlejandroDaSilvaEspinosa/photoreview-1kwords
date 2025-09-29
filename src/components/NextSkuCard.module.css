@@ -1,0 +1,152 @@
+/* ===== Paleta y tokens (fallbacks) ===== */
+:root {
+    --border-1: #2a2a2a;
+    /* fallback si no existe global */
+}
+
+/* ===== Card contenedor (estilo caja como currentImageInfo) ===== */
+.card {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    background: #151515;
+    border: 1px solid var(--border-1, #2a2a2a);
+    border-radius: 12px;
+    padding: 12px;
+    color: #ddd;
+    min-width: 320px;
+    max-width: 420px;
+}
+
+/* miniatura a la izquierda */
+.left {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.thumb {
+    width: 90px;
+    height: 90px;
+    object-fit: cover;
+    border-radius: 10px;
+    background: #131313;
+    border: 1px solid #242424;
+}
+
+/* contenido a la derecha */
+.right {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0 4px 0;
+    color: #ddd;
+    font-weight: 600;
+}
+
+/* “Siguiente SKU” estilo pill/validatedBadge */
+.pill {
+    display: inline-block;
+    background: #222;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #eee;
+    font-weight: 800;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+}
+
+/* filas de datos */
+.rows {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.label {
+    color: #9aa0a6;
+    font-size: 12px;
+}
+
+.value {
+    font-size: 14px;
+    color: #eaeaea;
+}
+
+.valueCode {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 14px;
+    color: #eaeaea;
+}
+
+.valueStrong {
+    font-weight: 800;
+    font-size: 16px;
+    color: #e2e2e2;
+}
+
+/* ===== Botón (mismo patrón actionBtn) ===== */
+.cta {
+    align-self: flex-end;
+    margin-top: 6px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border-1, #2a2a2a);
+    background: #2a2a2a;
+    color: #eee;
+    font-weight: 700;
+    cursor: pointer;
+    transition:
+        background 0.2s ease,
+        transform 0.06s ease,
+        filter 0.15s ease;
+}
+
+.cta:hover {
+    background: #333;
+}
+
+.cta:active {
+    transform: translateY(1px);
+}
+
+.cta:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* variantes compatibles con tu patrón */
+.green {
+    border-color: #274a33;
+    background: #1a241e;
+}
+
+.orange {
+    border-color: #5a3a14;
+    background: #281f17;
+}
+
+.red {
+    border-color: #5a1c1c;
+    background: #281616;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 1200px) {
+    .card {
+        max-width: 100%;
+    }
+}

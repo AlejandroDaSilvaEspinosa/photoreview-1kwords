@@ -7,6 +7,8 @@ import ThreadChat from "./ThreadChat";
 import type { Thread, ThreadStatus } from "@/types/review";
 import { emitToast } from "@/hooks/useToast";
 import { localGet, localSet, toastStorageOnce } from "@/lib/storage";
+import NextSkuCard from "@/components/NextSkuCard";
+import type { SkuWithImagesAndStatus } from "@/types/review";
 
 /**
  * SidePanel (refactor a helpers de storage)
@@ -18,7 +20,13 @@ type Props = {
   isValidated: boolean;
   threads: Thread[];
   activeThreadId: number | null;
-
+  // skuStatus:
+  //   | "pending_validation"
+  //   | "needs_correction"
+  //   | "validated"
+  //   | "reopened";
+  // nextSkuCandidate?: SkuWithImagesAndStatus | null;
+  // onGoToSku?: (skuCode: string) => void;
   onValidateSku: () => void;
   onUnvalidateSku: () => void;
   onAddThreadMessage: (threadId: number, text: string) => Promise<void> | void;
@@ -46,6 +54,9 @@ const LS_KEY = "photoreview:sidepanel:collapsed";
 
 export default function SidePanel({
   name,
+  // skuStatus,
+  // nextSkuCandidate,
+  // onGoToSku,
   isValidated,
   threads,
   activeThreadId,
@@ -66,6 +77,10 @@ export default function SidePanel({
   statusLocked,
 }: Props) {
   const [collapsed, setCollapsed] = useState<boolean>(initialCollapsed);
+  const [modalOpen, setModalOpen] = useState<boolean>(false);
+
+  // const isValidated = skuStatus === "validated";
+  // const canValidate = skuStatus === "pending_validation";
 
   useEffect(() => {
     try {

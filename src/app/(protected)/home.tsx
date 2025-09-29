@@ -24,6 +24,8 @@ import { emitToast, toastError } from "@/hooks/useToast";
 import { localGetJSON, localSetJSON } from "@/lib/storage";
 import { initMessagesOutbox } from "@/lib/net/messagesOutbox";
 import { initReceiptsOutbox } from "@/lib/net/receiptsOutbox";
+import { pickNextSku } from "@/lib/sku/nextSku";
+
 /**
  * DEV NOTES
  * - URL ↔ selección se mantiene con helpers replaceParams/select* (evita renders extra).
@@ -263,6 +265,18 @@ export default function Home({ username, skus, clientInfo }: Props) {
     return m;
   }, [filtered]);
 
+  // Candidato calculado con todos los SKUs live (excluye el actual si hay seleccionado)
+  const nextSkuCandidate = useMemo(() => {
+    return pickNextSku(effectiveSkus, selectedSku?.sku ?? null);
+  }, [effectiveSkus, selectedSku?.sku]);
+
+  const goToSku = useCallback(
+    (skuCode: string) => {
+      const dest = effectiveSkus.find((s) => s.sku === skuCode) ?? null;
+      selectSku(dest); // usa tus helpers (URL replace)
+    },
+    [effectiveSkus, selectSku]
+  );
   return (
     <main className={styles.main}>
       <Header
@@ -286,6 +300,8 @@ export default function Home({ username, skus, clientInfo }: Props) {
             onSelectImage={selectImage}
             selectedThreadId={selectedThreadId}
             onSelectThread={selectThread}
+            nextSkuCandidate={nextSkuCandidate}
+            onGoToSku={goToSku}
           />
         ) : (
           <div className={styles.placeholder}>

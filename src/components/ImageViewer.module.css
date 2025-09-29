@@ -310,3 +310,12 @@
     max-height: fit-content;
   }
 }
+
+.bottomStrip {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  /* tira ocupa, card ajusta */
+  gap: 12px;
+  align-items: stretch;
+  margin-top: 10px;
+}
