@@ -1,4 +1,3 @@
-// src/lib/realtime/useWireSkuRealtime.ts
 "use client";
 
 import { useEffect } from "react";
@@ -101,7 +100,6 @@ export function useWireSkuRealtime(sku: string) {
               evt === "DELETE" ? (p as any).old : (p as any).new
             ) as ThreadRow | null;
             if (!row) return;
-
             if (evt === "DELETE") {
               delThread(row);
               return;
@@ -118,7 +116,7 @@ export function useWireSkuRealtime(sku: string) {
           }
         );
 
-        // MESSAGES (global table)
+        // MESSAGES
         ch.on(
           "postgres_changes",
           { event: "*", schema: "public", table: "review_messages" },
@@ -128,7 +126,6 @@ export function useWireSkuRealtime(sku: string) {
               evt === "DELETE" ? (p as any).old : (p as any).new
             ) as MessageRow | null;
             if (!row) return;
-
             if (evt === "DELETE") {
               delMsg(row);
               return;
@@ -136,8 +133,7 @@ export function useWireSkuRealtime(sku: string) {
 
             upMsg(row);
 
-            // ⚠️ Promoción de fase: si veníamos de cache y entra un mensaje por realtime,
-            // dispara un evento global para que los viewers marquen el hilo como "live".
+            // Promoción cache → live si entra un INSERT por realtime
             if (evt === "INSERT" && row.thread_id != null) {
               window.dispatchEvent(
                 new CustomEvent("rev:thread-live", {
@@ -146,7 +142,7 @@ export function useWireSkuRealtime(sku: string) {
               );
             }
 
-            // Recibos: delivered, y read si el hilo está activo.
+            // Recibos auto: delivered y, si el hilo activo coincide, read
             if (evt === "INSERT") {
               const isSystem = !!(row as any).is_system;
               if (!isSystem && row.id != null) {

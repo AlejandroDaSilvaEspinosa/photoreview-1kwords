@@ -1,4 +1,3 @@
-// src/components/ImageViewer.tsx
 "use client";
 
 import React, {
@@ -129,13 +128,13 @@ export default function ImageViewer({
     ay: number;
   }>(null);
 
-  // ===== threads por imagen visible
   const selectedImageKey = selectedImage?.name ?? "";
   const threadsRaw = useThreadsStore(
     useShallow((s) =>
       selectedImageKey ? s.byImage[selectedImageKey] ?? EMPTY_ARR : EMPTY_ARR
     )
   );
+
   const threadToImage = useThreadsStore((s) => s.threadToImage);
 
   const threadsByNeededImages = useThreadsStore(
@@ -151,10 +150,12 @@ export default function ImageViewer({
   );
 
   const threadToImageStable = useThreadsStore((s) => s.threadToImage);
+
   const setMsgsForThread = useMessagesStore((s) => s.setForThread);
   const moveThreadMessages = useMessagesStore((s) => s.moveThreadMessages);
   const setSelfAuthId = useMessagesStore((s) => s.setSelfAuthId);
   const msgsByThread = useMessagesStore((s) => s.byThread);
+  const markThreadRead = useMessagesStore((s) => s.markThreadRead);
 
   const hydrateForImage = useThreadsStore((s) => s.hydrateForImage);
   const setThreadMsgIds = useThreadsStore((s) => s.setMessageIds);
@@ -179,15 +180,20 @@ export default function ImageViewer({
     });
   }, []);
 
-  // Promoción a live si entra realtime
+  // === NUEVO: al promoverse cache→live por realtime, si es el hilo activo, marcar leído
   useEffect(() => {
     const onLive = (e: any) => {
       const tid = e?.detail?.tid;
-      if (typeof tid === "number") markThreadHydrated(tid, "live");
+      if (typeof tid === "number") {
+        markThreadHydrated(tid, "live");
+        const activeTid = useThreadsStore.getState().activeThreadId;
+        if (activeTid && activeTid === tid)
+          requestAnimationFrame(() => markThreadRead(tid));
+      }
     };
     window.addEventListener("rev:thread-live", onLive);
     return () => window.removeEventListener("rev:thread-live", onLive);
-  }, [markThreadHydrated]);
+  }, [markThreadHydrated, markThreadRead]);
 
   // ===== hidratación (cache + servidor)
   useEffect(() => {
@@ -235,12 +241,11 @@ export default function ImageViewer({
       try {
         const sb = supabaseBrowser();
         const { data: authInfo, error: authErr } = await sb.auth.getUser();
-        if (authErr) {
+        if (authErr)
           toastError(authErr, {
             title: "No se pudo recuperar el usuario",
             fallback: "Continuamos sin usuario.",
           });
-        }
         const myId = authInfo?.user?.id ?? null;
         setSelfAuthId(myId);
 
@@ -256,7 +261,7 @@ export default function ImageViewer({
         for (const img of images) {
           const name = img.name!;
           const raw = payload[name]?.points ?? [];
-          const rows: Thread[] = raw.map((t: ThreadRow) => ({
+          const rows = raw.map((t: ThreadRow) => ({
             id: t.id,
             x: roundTo(+t.x, 3),
             y: roundTo(+t.y, 3),
@@ -277,7 +282,6 @@ export default function ImageViewer({
             )
             .in("thread_id", allThreadIds)
             .order("created_at", { ascending: true });
-
           if (error) throw error;
 
           const grouped: Record<number, Msg[]> = {};
@@ -316,9 +320,8 @@ export default function ImageViewer({
               tid,
               grouped[tid].map((x) => x.id)
             );
-            markThreadHydrated(tid, "live"); // live DESPUÉS de setear mensajes
+            markThreadHydrated(tid, "live");
           }
-
           for (const tid of allThreadIds) {
             if (!groupedTids.has(tid)) {
               setMsgsForThread(tid, []);
@@ -352,7 +355,16 @@ export default function ImageViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sku.sku, images.map((i) => i.name).join("|")]);
 
-  // ===== selección por URL (?thread=ID)
+  // ===== marcar leído al enfocar/seleccionar un hilo
+  const triggerMarkRead = useCallback(
+    (tid: number | null | undefined) => {
+      if (!tid) return;
+      requestAnimationFrame(() => markThreadRead(tid));
+    },
+    [markThreadRead]
+  );
+
+  // Selección por URL
   useEffect(() => {
     if (suppressFollowThreadOnceRef.current) {
       suppressFollowThreadOnceRef.current = false;
@@ -384,6 +396,7 @@ export default function ImageViewer({
 
     setActiveThreadId(selectedThreadId);
     lastAppliedThreadRef.current = selectedThreadId;
+    triggerMarkRead(selectedThreadId);
 
     if (imgName === selectedImage?.name) {
       const t = (threadsRaw || []).find((x) => x.id === selectedThreadId);
@@ -399,10 +412,11 @@ export default function ImageViewer({
     threadsRaw,
     threadToImageStable,
     threadsByNeededImages,
+    triggerMarkRead,
   ]);
 
   // ===== derivado con fase/etiqueta
-  const threadsInImage: Thread[] = useMemo(() => {
+  const threadsInImage = useMemo<Thread[]>(() => {
     if (!selectedImage?.name) return [];
     return (threadsRaw || [])
       .filter((t) => t.status !== "deleted")
@@ -477,7 +491,6 @@ export default function ImageViewer({
             y: ry,
           }),
         }).then((r) => (r.ok ? r.json() : null));
-
         if (!created?.threadId)
           throw new Error("El servidor no devolvió un ID de hilo.");
 
@@ -506,9 +519,7 @@ export default function ImageViewer({
 
         try {
           enqueueSendSystemMessage(realId, sysText);
-        } catch (e) {
-          toastError(e, { title: "No se pudo encolar el mensaje del sistema" });
-        }
+        } catch {}
       } catch (e) {
         rollbackCreate(tempId);
         setActiveThreadId(null);
@@ -560,7 +571,7 @@ export default function ImageViewer({
         byImage[img]?.find((t) => t.id === threadId)?.status ?? "pending";
 
       beginStatusOptimistic(threadId, prev, next);
-      setThreadStatus(threadId, next);
+      useThreadsStore.getState().setStatus(threadId, next);
 
       const tempText = `**@${
         username ?? "usuario"
@@ -578,16 +589,16 @@ export default function ImageViewer({
         if (!ok) throw new Error("No se pudo actualizar el estado del hilo.");
       } catch (e) {
         clearPendingStatus(threadId);
-        setThreadStatus(threadId, prev);
+        useThreadsStore.getState().setStatus(threadId, prev);
         toastError(e, { title: "No se pudo cambiar el estado" });
       }
     },
-    [setThreadStatus, username]
+    [username]
   );
 
   const removeThread = useCallback(
     async (id: number) => {
-      setThreadStatus(id, "deleted");
+      useThreadsStore.getState().setStatus(id, "deleted");
       try {
         await fetch(`/api/threads/status`, {
           method: "POST",
@@ -603,7 +614,7 @@ export default function ImageViewer({
       if (resolvedActiveThreadId === id)
         startTransition(() => onSelectThread?.(null));
     },
-    [setThreadStatus, resolvedActiveThreadId, onSelectThread]
+    [resolvedActiveThreadId, onSelectThread]
   );
 
   // ===== UI helpers
@@ -658,6 +669,7 @@ export default function ImageViewer({
     try {
       setActiveThreadId(id);
       startTransition(() => onSelectThread?.(id ?? null));
+      triggerMarkRead(id ?? null);
       if (selectedImage?.name && id) {
         const t = (threadsRaw || []).find((x) => x.id === id);
         if (t) setActiveKey(pointKey(selectedImage.name, t.x, t.y));
@@ -678,13 +690,12 @@ export default function ImageViewer({
           .from("review_messages")
           .select(
             `
-            id,thread_id,text,created_at,updated_at,created_by,created_by_username,created_by_display_name,is_system,
-            meta:review_message_receipts!review_message_receipts_message_fkey ( user_id, read_at, delivered_at )
-          `
+          id,thread_id,text,created_at,updated_at,created_by,created_by_username,created_by_display_name,is_system,
+          meta:review_message_receipts!review_message_receipts_message_fkey ( user_id, read_at, delivered_at )
+        `
           )
           .eq("thread_id", tid)
           .order("created_at", { ascending: true });
-
         if (error) throw error;
 
         const grouped = (msgs || []).map((m: any) => {
@@ -717,23 +728,66 @@ export default function ImageViewer({
           grouped.map((x: any) => x.id)
         );
         markThreadHydrated(tid, "live");
+
+        // Al tener el hilo rehidratado, marcamos leído si es el activo
+        const activeTid = useThreadsStore.getState().activeThreadId;
+        if (activeTid && activeTid === tid)
+          requestAnimationFrame(() => markThreadRead(tid));
       } catch (e) {
         toastError(e, { title: "No se pudieron cargar los mensajes del hilo" });
       }
     },
-    [setMsgsForThread, setThreadMsgIds, markThreadHydrated]
+    [setMsgsForThread, setThreadMsgIds, markThreadHydrated, markThreadRead]
   );
+  // ==========================
+  //  Atajos de teclado
+  // ==========================
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase();
+      const typing =
+        el?.isContentEditable ||
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select";
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        if (selectedImageIndex > 0) selectImage(selectedImageIndex - 1);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        if (selectedImageIndex < images.length - 1)
+          selectImage(selectedImageIndex + 1);
+      } else if (e.key === "z" || e.key === "Z") {
+        setTool("zoom");
+      } else if (e.key === "p" || e.key === "P") {
+        setTool("pin");
+      } else if (e.key === "t" || e.key === "T") {
+        setShowThreads((v) => !v);
+      } else if (e.key === "Enter") {
+        if (!zoomOverlay) setZoomOverlay({ x: 50, y: 50, ax: 0.5, ay: 0.5 });
+      } else if (e.key === "Escape") {
+        if (zoomOverlay) setZoomOverlay(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [images.length, selectedImageIndex, zoomOverlay]);
 
   useEffect(() => {
     const tid = selectedThreadId ?? resolvedActiveThreadId;
     if (!tid) return;
     const current = msgsByThread[tid] || [];
     if (!current.length) rehydrateThreadMessages(tid);
+    else triggerMarkRead(tid); // si ya hay mensajes, marcamos leído al entrar
   }, [
     selectedThreadId,
     resolvedActiveThreadId,
     msgsByThread,
     rehydrateThreadMessages,
+    triggerMarkRead,
   ]);
 
   return (
@@ -862,6 +916,7 @@ export default function ImageViewer({
                       e.stopPropagation();
                       setActiveThreadId(th.id);
                       startTransition(() => onSelectThread?.(th.id));
+                      triggerMarkRead(th.id);
                       if (selectedImage?.name)
                         setActiveKey(pointKey(selectedImage.name, th.x, th.y));
                     }}
@@ -985,6 +1040,7 @@ export default function ImageViewer({
             try {
               setActiveThreadId(id);
               startTransition(() => onSelectThread?.(id ?? null));
+              triggerMarkRead(id ?? null);
             } catch (e) {
               toastError(e, { title: "No se pudo enfocar el hilo" });
             }

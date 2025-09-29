@@ -1,4 +1,3 @@
-// src/components/images/ThreadChat.tsx
 "use client";
 
 import React, {
@@ -66,7 +65,7 @@ const UnreadDividerAlign = React.memo(function UnreadDividerAlign({
 });
 
 type Props = {
-  activeThread: Thread; // Thread.meta.source: "cache" | "live"
+  activeThread: Thread; // meta.source: "cache" | "live"
   composeLocked?: boolean;
   statusLocked?: boolean;
   threadIndex: number;
@@ -197,7 +196,7 @@ function ThreadChatInner({
       hour12: false,
     });
 
-  // ===== orden cronológico estable
+  // Orden cronológico estable
   const messagesChrono = useMemo(() => {
     const list = activeThread?.messages ?? [];
     return [...list].sort((a, b) => {
@@ -214,7 +213,7 @@ function ThreadChatInner({
     });
   }, [activeThread?.messages]);
 
-  // ===== fase de payload: cache / live (o none)
+  // Fase payload
   const hydrationSource: "cache" | "live" | undefined = (activeThread as any)
     ?.meta?.source;
   const payloadPhase: "none" | "cache" | "live" =
@@ -225,7 +224,7 @@ function ThreadChatInner({
       : "none";
   const payloadReady = payloadPhase !== "none";
 
-  // ===== UNREAD: congelado por hilo y por FASE
+  // UNREAD: congelado por hilo y FASE (pinta solo, no envía recibos)
   type FrozenUnread = {
     tid: number;
     cutoffId: number | null;
@@ -262,63 +261,17 @@ function ThreadChatInner({
     }
 
     requestAnimationFrame(() => {
-      if (cutoffId != null && count > 0) {
+      if (cutoffId != null && count > 0)
         setFrozenUnread({
           tid,
           cutoffId,
           count,
           label: `Mensajes no leídos (${count})`,
         });
-      } else {
-        setFrozenUnread(null);
-      }
+      else setFrozenUnread(null);
       computedForKeyRef.current = key;
     });
   }, [activeThread?.id, payloadReady, payloadPhase, messagesChrono, isMine]);
-
-  // ===== Enviar recibos de lectura tras fijar divisor (si aplica)
-  const idsToRead = useMemo(() => {
-    const out: number[] = [];
-    const list = messagesChrono;
-    if (!activeThread?.id || !list.length) return out;
-    for (const m of list) {
-      const sys =
-        !!(m as any).isSystem ||
-        (m.createdByName || "").toLowerCase() === "system" ||
-        (m.createdByName || "").toLowerCase() === "sistema";
-      if (sys || isMine(m)) continue;
-      const delivery = ((m.meta || {}) as any)?.localDelivery as
-        | DeliveryState
-        | undefined;
-      if (delivery !== "read") {
-        const mid = (m.id as number) ?? -1;
-        if (Number.isFinite(mid) && mid >= 0) out.push(mid);
-      }
-    }
-    return out;
-  }, [activeThread?.id, messagesChrono, isMine]);
-
-  useEffect(() => {
-    const tid = activeThread?.id;
-    if (!tid) return;
-    if (computedForKeyRef.current !== `${tid}:${payloadPhase}`) return;
-    if (!idsToRead.length) return;
-
-    (async () => {
-      try {
-        await fetch("/api/messages/receipts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messageIds: idsToRead, mark: "read" }),
-        });
-      } catch (e) {
-        toastError(e, {
-          title: "No se pudo confirmar la lectura",
-          fallback: "Reintentaremos automáticamente.",
-        });
-      }
-    })();
-  }, [activeThread?.id, idsToRead, payloadPhase]);
 
   type Row =
     | { kind: "divider"; key: string; label: string }
@@ -359,7 +312,7 @@ function ThreadChatInner({
     return out;
   }, [activeThread?.id, messagesChrono, frozenUnread]);
 
-  // Auto-scroll inicial: por fase
+  // Auto-scroll inicial por fase
   const didInitialBottomForKeyRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const container = listRef.current;
@@ -383,7 +336,7 @@ function ThreadChatInner({
     });
   }, [activeThread?.id, frozenUnread, payloadReady, payloadPhase]);
 
-  // Auto-scroll con mensajes entrantes
+  // Auto-scroll en mensajes entrantes si procede
   const lastMsgKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const list = messagesChrono;
@@ -659,20 +612,15 @@ function messagesSignature(list: ThreadMessage[] = []): string {
   }
   return parts.join("|");
 }
-
 function areEqual(prev: any, next: any) {
   if (prev.activeThread.id !== next.activeThread.id) return false;
   if (prev.activeThread.status !== next.activeThread.status) return false;
-
-  // 👇 clave: incluir la fase cache/live para forzar re-render al pasar de cache→live
   const prevPhase = (prev.activeThread as any)?.meta?.source ?? "none";
   const nextPhase = (next.activeThread as any)?.meta?.source ?? "none";
   if (prevPhase !== nextPhase) return false;
-
   const prevSig = messagesSignature(prev.activeThread.messages);
   const nextSig = messagesSignature(next.activeThread.messages);
   if (prevSig !== nextSig) return false;
-
   if (prev.threadIndex !== next.threadIndex) return false;
   return true;
 }
