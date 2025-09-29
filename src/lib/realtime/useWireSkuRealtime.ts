@@ -10,6 +10,13 @@ import type { ImageStatusRow, SkuStatusRow } from "@/stores/statuses";
 import { toastError } from "@/hooks/useToast";
 import { connectWithBackoff } from "@/lib/realtime/channel";
 
+/**
+ * Realtime por SKU:
+ * - Threads/messages/statuses en vivo.
+ * - SOLO marca delivered automáticamente (nunca read).
+ * - Emite "rev:thread-live" si entra un mensaje por realtime para ese hilo (ascenso cache→live).
+ */
+
 const round3 = (n: number) => Math.round(Number(n) * 1000) / 1000;
 const keyOf = (image: string, x: number, y: number) =>
   `${image}|${round3(x)}|${round3(y)}`;
@@ -27,6 +34,7 @@ export function useWireSkuRealtime(sku: string) {
 
     const catchUp = async () => {
       try {
+        // Threads recientes del SKU
         const { data: threads, error: e1 } = await sb
           .from("review_threads")
           .select("*")
@@ -58,6 +66,7 @@ export function useWireSkuRealtime(sku: string) {
           for (const m of (msgs || []) as MessageRow[]) upMsg(m);
         }
 
+        // Estados imagen
         const { data: imgStatus, error: e3 } = await sb
           .from("review_images_status")
           .select("*")
@@ -67,6 +76,7 @@ export function useWireSkuRealtime(sku: string) {
         if (e3) throw e3;
         for (const r of (imgStatus || []) as ImageStatusRow[]) upImg(r);
 
+        // Estado SKU
         const { data: skuStatus, error: e4 } = await sb
           .from("review_skus_status")
           .select("*")
@@ -100,6 +110,7 @@ export function useWireSkuRealtime(sku: string) {
               evt === "DELETE" ? (p as any).old : (p as any).new
             ) as ThreadRow | null;
             if (!row) return;
+
             if (evt === "DELETE") {
               delThread(row);
               return;
@@ -116,7 +127,7 @@ export function useWireSkuRealtime(sku: string) {
           }
         );
 
-        // MESSAGES
+        // MESSAGES (global table)
         ch.on(
           "postgres_changes",
           { event: "*", schema: "public", table: "review_messages" },
@@ -126,6 +137,7 @@ export function useWireSkuRealtime(sku: string) {
               evt === "DELETE" ? (p as any).old : (p as any).new
             ) as MessageRow | null;
             if (!row) return;
+
             if (evt === "DELETE") {
               delMsg(row);
               return;
@@ -133,7 +145,7 @@ export function useWireSkuRealtime(sku: string) {
 
             upMsg(row);
 
-            // Promoción cache → live si entra un INSERT por realtime
+            // Si llega un INSERT por realtime para este hilo, ascender a live (para divisor correcto).
             if (evt === "INSERT" && row.thread_id != null) {
               window.dispatchEvent(
                 new CustomEvent("rev:thread-live", {
@@ -142,7 +154,7 @@ export function useWireSkuRealtime(sku: string) {
               );
             }
 
-            // Recibos auto: delivered y, si el hilo activo coincide, read
+            // delivered automático (nunca read aquí)
             if (evt === "INSERT") {
               const isSystem = !!(row as any).is_system;
               if (!isSystem && row.id != null) {
@@ -218,7 +230,7 @@ export function useWireSkuRealtime(sku: string) {
           }
         );
 
-        // RECEIPTS
+        // RECEIPTS → actualiza delivery local (read/delivered) al llegar por realtime
         ch.on(
           "postgres_changes",
           { event: "*", schema: "public", table: "review_message_receipts" },

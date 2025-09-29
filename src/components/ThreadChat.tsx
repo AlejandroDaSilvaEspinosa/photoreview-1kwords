@@ -14,58 +14,71 @@ import AutoGrowTextarea from "./AutoGrowTextarea";
 import { useSupabaseUserId } from "@/hooks/useSupabaseUserId";
 import { toastError } from "@/hooks/useToast";
 
-type DeliveryState = "sending" | "sent" | "delivered" | "read";
-const NEAR_BOTTOM_PX = 130;
+/**
+ * ThreadChat
+ * - Congela divisor cuando payload está listo (“cache” o “live” en meta.source)
+ * - Emite "rev:thread-unread-ready" una sola vez por (tid, phase) tras congelar
+ * - NO envía read aquí (lo hace ImageViewer al recibir el evento)
+ */
 
+type DeliveryState = "sending" | "sent" | "delivered" | "read";
+
+const NEAR_BOTTOM_PX = 130;
 function isNearBottom(el: HTMLDivElement | null, slackPx = NEAR_BOTTOM_PX) {
   if (!el) return true;
   const dist = el.scrollHeight - (el.scrollTop + el.clientHeight);
   return dist <= slackPx;
 }
 
-const UnreadDividerAlign = React.memo(function UnreadDividerAlign({
-  containerRef,
-  label,
-  threadId,
-  cutoffId,
-}: {
-  containerRef: React.RefObject<HTMLDivElement | null>;
-  label: string;
-  threadId: number;
-  cutoffId: number | null;
-}) {
-  const sepRef = useRef<HTMLDivElement | null>(null);
-  const doneKeyRef = useRef<string>("");
+const UnreadDividerAlign = React.memo(
+  function UnreadDividerAlign({
+    label,
+    threadId,
+    cutoffId,
+  }: {
+    label: string;
+    threadId: number;
+    cutoffId: number | null;
+  }) {
+    const sepRef = useRef<HTMLDivElement | null>(null);
+    const doneKeyRef = useRef<string>("");
 
-  useEffect(() => {
-    const key = `${threadId}:${cutoffId ?? "none"}`;
-    if (doneKeyRef.current === key) return;
-    doneKeyRef.current = key;
-    sepRef.current?.scrollIntoView({
-      behavior: "auto",
-      block: "start",
-      inline: "nearest",
-    });
-  }, [threadId, cutoffId, containerRef]);
+    useEffect(() => {
+      const key = `${threadId}:${cutoffId ?? "none"}`;
+      if (doneKeyRef.current === key) return;
+      doneKeyRef.current = key;
+      const el = sepRef.current;
+      if (!el) return;
+      el.scrollIntoView({
+        behavior: "auto",
+        block: "start",
+        inline: "nearest",
+      });
+    }, [threadId, cutoffId]);
 
-  return (
-    <div
-      ref={sepRef}
-      className={styles.unreadDivider}
-      role="separator"
-      aria-label={label}
-      title={label}
-      data-unread-cutoff="true"
-    >
-      <span className={styles.unreadDividerLine} />
-      <span className={styles.unreadDividerLabel}>{label}</span>
-      <span className={styles.unreadDividerLine} />
-    </div>
-  );
-});
+    return (
+      <div
+        ref={sepRef}
+        className={styles.unreadDivider}
+        role="separator"
+        aria-label={label}
+        title={label}
+        data-unread-cutoff="true"
+      >
+        <span className={styles.unreadDividerLine} />
+        <span className={styles.unreadDividerLabel}>{label}</span>
+        <span className={styles.unreadDividerLine} />
+      </div>
+    );
+  },
+  (prev, next) =>
+    prev.threadId === next.threadId &&
+    prev.cutoffId === next.cutoffId &&
+    prev.label === next.label
+);
 
 type Props = {
-  activeThread: Thread; // meta.source: "cache" | "live"
+  activeThread: Thread;
   composeLocked?: boolean;
   statusLocked?: boolean;
   threadIndex: number;
@@ -146,28 +159,6 @@ function ThreadChatInner({
     [selfAuthId]
   );
 
-  const handleSend = useCallback(async () => {
-    const id = activeThread?.id;
-    if (!id) return;
-    const draft = getDraft(id).trim();
-    if (!draft) return;
-    clearDraft(id);
-    try {
-      await onAddThreadMessage(id, draft);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const el = listRef.current;
-          if (el) el.scrollTop = el.scrollHeight;
-        });
-      });
-    } catch (e) {
-      toastError(e, {
-        title: "No se pudo enviar el mensaje",
-        fallback: "Revisa tu conexión e inténtalo de nuevo.",
-      });
-    }
-  }, [activeThread?.id, getDraft, clearDraft, onAddThreadMessage]);
-
   const dateKey = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -196,7 +187,7 @@ function ThreadChatInner({
       hour12: false,
     });
 
-  // Orden cronológico estable
+  // ===== Orden cronológico estable =====
   const messagesChrono = useMemo(() => {
     const list = activeThread?.messages ?? [];
     return [...list].sort((a, b) => {
@@ -213,18 +204,16 @@ function ThreadChatInner({
     });
   }, [activeThread?.messages]);
 
-  // Fase payload
-  const hydrationSource: "cache" | "live" | undefined = (activeThread as any)
-    ?.meta?.source;
-  const payloadPhase: "none" | "cache" | "live" =
-    hydrationSource === "live"
-      ? "live"
-      : hydrationSource === "cache"
-      ? "cache"
-      : "none";
-  const payloadReady = payloadPhase !== "none";
+  // ===== Fase de payload: "none" | "cache" | "live"
+  const payloadPhase: "none" | "cache" | "live" = useMemo(() => {
+    const src = (activeThread as any)?.meta?.source as
+      | "cache"
+      | "live"
+      | undefined;
+    return src === "live" ? "live" : src === "cache" ? "cache" : "none";
+  }, [activeThread]);
 
-  // UNREAD: congelado por hilo y FASE (pinta solo, no envía recibos)
+  // ========= UNREAD: congelado una sola vez por (tid, phase)
   type FrozenUnread = {
     tid: number;
     cutoffId: number | null;
@@ -236,7 +225,8 @@ function ThreadChatInner({
 
   useEffect(() => {
     const tid = activeThread?.id;
-    if (!tid || !payloadReady) return;
+    if (!tid) return;
+    if (payloadPhase === "none") return;
 
     const key = `${tid}:${payloadPhase}`;
     if (computedForKeyRef.current === key) return;
@@ -260,18 +250,26 @@ function ThreadChatInner({
       }
     }
 
+    // Congelar y avisar en el próximo frame
     requestAnimationFrame(() => {
-      if (cutoffId != null && count > 0)
+      if (cutoffId != null && count > 0) {
         setFrozenUnread({
           tid,
           cutoffId,
           count,
           label: `Mensajes no leídos (${count})`,
         });
-      else setFrozenUnread(null);
+      } else {
+        setFrozenUnread(null);
+      }
       computedForKeyRef.current = key;
+
+      // 👇 Aviso de handshake: ImageViewer podrá enviar los "read" ahora sin romper el divisor
+      window.dispatchEvent(
+        new CustomEvent("rev:thread-unread-ready", { detail: { tid } })
+      );
     });
-  }, [activeThread?.id, payloadReady, payloadPhase, messagesChrono, isMine]);
+  }, [activeThread?.id, payloadPhase, messagesChrono, isMine]);
 
   type Row =
     | { kind: "divider"; key: string; label: string }
@@ -312,31 +310,34 @@ function ThreadChatInner({
     return out;
   }, [activeThread?.id, messagesChrono, frozenUnread]);
 
-  // Auto-scroll inicial por fase
-  const didInitialBottomForKeyRef = useRef<Set<string>>(new Set());
+  // Autoscroll inicial (si no hay divisor)
+  const didInitialBottomRef = useRef<Set<number>>(new Set());
   useEffect(() => {
     const container = listRef.current;
     const tid = activeThread?.id;
-    if (!container || tid == null || !payloadReady) return;
-
-    const key = `${tid}:${payloadPhase}`;
-    if (didInitialBottomForKeyRef.current.has(key)) return;
+    if (!container || tid == null) return;
+    if (didInitialBottomRef.current.has(tid)) return;
+    if (payloadPhase === "none") return;
 
     const hasFrozen =
       !!frozenUnread &&
       frozenUnread.tid === tid &&
       frozenUnread.cutoffId != null;
 
-    requestAnimationFrame(() => {
+    if (!hasFrozen) {
       requestAnimationFrame(() => {
-        if (!hasFrozen && listRef.current)
-          listRef.current.scrollTop = listRef.current.scrollHeight;
-        didInitialBottomForKeyRef.current.add(key);
+        requestAnimationFrame(() => {
+          const el = listRef.current;
+          if (el) el.scrollTop = el.scrollHeight;
+          didInitialBottomRef.current.add(tid);
+        });
       });
-    });
-  }, [activeThread?.id, frozenUnread, payloadReady, payloadPhase]);
+    } else {
+      didInitialBottomRef.current.add(tid);
+    }
+  }, [activeThread?.id, frozenUnread, payloadPhase]);
 
-  // Auto-scroll en mensajes entrantes si procede
+  // Autoscroll con mensajes entrantes (si son míos o estamos cerca del fondo)
   const lastMsgKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const list = messagesChrono;
@@ -359,7 +360,28 @@ function ThreadChatInner({
     }
   }, [messagesChrono, isMine]);
 
-  const prevDeliveryRef = useRef<Map<number, DeliveryState>>(new Map());
+  const handleSend = useCallback(async () => {
+    const id = activeThread?.id;
+    if (!id) return;
+    const draft = getDraft(id).trim();
+    if (!draft) return;
+    clearDraft(id);
+    try {
+      await onAddThreadMessage(id, draft);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const el = listRef.current;
+          if (el) el.scrollTop = el.scrollHeight;
+        });
+      });
+    } catch (e) {
+      toastError(e, {
+        title: "No se pudo enviar el mensaje",
+        fallback: "Revisa tu conexión e inténtalo de nuevo.",
+      });
+    }
+  }, [activeThread?.id, getDraft, clearDraft, onAddThreadMessage]);
+
   const toggleLabel = useCallback(
     (s: ThreadStatus) =>
       s === "corrected" ? "Reabrir hilo" : "Validar correcciones",
@@ -414,7 +436,6 @@ function ThreadChatInner({
                 key={`unread-thread-${activeThread.id}-${
                   row.cutoffId ?? "none"
                 }`}
-                containerRef={listRef}
                 label={row.label}
                 threadId={activeThread.id}
                 cutoffId={row.cutoffId}
@@ -427,7 +448,7 @@ function ThreadChatInner({
           const delivery =
             (meta.localDelivery as DeliveryState | undefined) ?? "sent";
           const sys =
-            !!(m as any).isSystem ||
+            !!m.isSystem ||
             (m.createdByName || "").toLowerCase() === "system" ||
             (m.createdByName || "").toLowerCase() === "sistema";
           const mine = isMine(m);
@@ -440,13 +461,6 @@ function ThreadChatInner({
               : delivery === "delivered"
               ? "✓✓"
               : "✓";
-
-          const prev = prevDeliveryRef.current.get(m.id as number);
-          const justDelivered =
-            prev === "sent" &&
-            (delivery === "delivered" || delivery === "read");
-          const justRead = prev !== "read" && delivery === "read";
-          prevDeliveryRef.current.set(m.id as number, delivery);
 
           const dt = new Date(m.createdAt);
           const hhmm = timeHHmm(dt);
@@ -490,8 +504,6 @@ function ThreadChatInner({
                     <span
                       className={`${styles.ticks} ${
                         delivery === "read" ? styles.read : ""
-                      } ${justDelivered ? styles.justDelivered : ""} ${
-                        justRead ? styles.justRead : ""
                       }`}
                       aria-live="polite"
                       aria-label={
@@ -615,13 +627,14 @@ function messagesSignature(list: ThreadMessage[] = []): string {
 function areEqual(prev: any, next: any) {
   if (prev.activeThread.id !== next.activeThread.id) return false;
   if (prev.activeThread.status !== next.activeThread.status) return false;
-  const prevPhase = (prev.activeThread as any)?.meta?.source ?? "none";
-  const nextPhase = (next.activeThread as any)?.meta?.source ?? "none";
-  if (prevPhase !== nextPhase) return false;
   const prevSig = messagesSignature(prev.activeThread.messages);
   const nextSig = messagesSignature(next.activeThread.messages);
   if (prevSig !== nextSig) return false;
   if (prev.threadIndex !== next.threadIndex) return false;
+  // meta.source cambia la fase y debe re-renderizar para congelar divisor:
+  const prevSrc = (prev.activeThread as any)?.meta?.source;
+  const nextSrc = (next.activeThread as any)?.meta?.source;
+  if (prevSrc !== nextSrc) return false;
   return true;
 }
 
