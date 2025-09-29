@@ -23,7 +23,7 @@ import { toastError } from "@/hooks/useToast";
 
 type DeliveryState = "sending" | "sent" | "delivered" | "read";
 
-const NEAR_BOTTOM_PX = 130;
+const NEAR_BOTTOM_PX = 300;
 function isNearBottom(el: HTMLDivElement | null, slackPx = NEAR_BOTTOM_PX) {
   if (!el) return true;
   const dist = el.scrollHeight - (el.scrollTop + el.clientHeight);
