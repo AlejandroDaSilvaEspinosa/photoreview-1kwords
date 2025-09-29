@@ -41,7 +41,7 @@ export async function getAllSkus(): Promise<SkuWithImages[]> {
       const images = (await getImageUrlThumbnail(folder)) ?? [];
 
       return { sku, images };
-    }),
+    })
   );
 
   // Dedupe por SKU
@@ -56,12 +56,12 @@ export async function getAllSkus(): Promise<SkuWithImages[]> {
 export const getCachedSkus = unstable_cache(
   async () => getAllSkus(),
   ["skus-cache-v1"],
-  { revalidate: 60 * 15, tags: ["skus"] }, // 15 min
+  { revalidate: 60 * 15, tags: ["skus"] } // 15 min
 );
 
 /** Devuelve las imágenes (thumbnails + url) de la subcarpeta 1200px y 3000*/
 export async function getImageUrlThumbnail(
-  driveMainFolderSKU: string | null,
+  driveMainFolderSKU: string | null
 ): Promise<ImageItem[] | null> {
   if (!driveMainFolderSKU) return null;
 
@@ -108,6 +108,7 @@ export async function getImageUrlThumbnail(
   const sizeThumbnail = 80;
   const sizeListing = 200;
   const sizeZoom = 3000;
+  const sizeImageViewer = 1200;
 
   // 4) Construir objetos ImageItem
   const images: ImageItem[] = files.map((file) => {
@@ -118,7 +119,7 @@ export async function getImageUrlThumbnail(
 
     const obj = {
       name: name,
-      url: `https://drive.google.com/uc?id=${id}`,
+      url: `https://lh3.googleusercontent.com/d/${id}=s${sizeZoom}-c`,
       listingImageUrl: `https://lh3.googleusercontent.com/d/${id}=s${sizeListing}-c`,
       thumbnailUrl: `https://lh3.googleusercontent.com/d/${id}=s${sizeThumbnail}-c`,
       bigImgUrl: `https://lh3.googleusercontent.com/d/${idBigFile}=s${sizeZoom}-c`,
