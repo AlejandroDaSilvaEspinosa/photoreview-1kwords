@@ -1,3 +1,4 @@
+// src/lib/realtime/useWireSkuRealtime.ts
 "use client";
 
 import { useEffect } from "react";
@@ -9,13 +10,7 @@ import type { ThreadRow, MessageRow } from "@/types/review";
 import type { ImageStatusRow, SkuStatusRow } from "@/stores/statuses";
 import { toastError } from "@/hooks/useToast";
 import { connectWithBackoff } from "@/lib/realtime/channel";
-
-/**
- * Realtime por SKU:
- * - Threads/messages/statuses en vivo.
- * - SOLO marca delivered automáticamente (nunca read).
- * - Emite "rev:thread-live" si entra un mensaje por realtime para ese hilo (ascenso cache→live).
- */
+import { enqueueDelivered, enqueueRead } from "@/lib/net/receiptsOutbox";
 
 const round3 = (n: number) => Math.round(Number(n) * 1000) / 1000;
 const keyOf = (image: string, x: number, y: number) =>
@@ -34,7 +29,6 @@ export function useWireSkuRealtime(sku: string) {
 
     const catchUp = async () => {
       try {
-        // Threads recientes del SKU
         const { data: threads, error: e1 } = await sb
           .from("review_threads")
           .select("*")
@@ -66,7 +60,6 @@ export function useWireSkuRealtime(sku: string) {
           for (const m of (msgs || []) as MessageRow[]) upMsg(m);
         }
 
-        // Estados imagen
         const { data: imgStatus, error: e3 } = await sb
           .from("review_images_status")
           .select("*")
@@ -76,7 +69,6 @@ export function useWireSkuRealtime(sku: string) {
         if (e3) throw e3;
         for (const r of (imgStatus || []) as ImageStatusRow[]) upImg(r);
 
-        // Estado SKU
         const { data: skuStatus, error: e4 } = await sb
           .from("review_skus_status")
           .select("*")
@@ -110,12 +102,10 @@ export function useWireSkuRealtime(sku: string) {
               evt === "DELETE" ? (p as any).old : (p as any).new
             ) as ThreadRow | null;
             if (!row) return;
-
             if (evt === "DELETE") {
               delThread(row);
               return;
             }
-
             const tmpMap = useThreadsStore.getState().pendingByKey;
             const tempId = tmpMap.get(
               keyOf(row.image_name, row.x as any, row.y as any)
@@ -127,11 +117,11 @@ export function useWireSkuRealtime(sku: string) {
           }
         );
 
-        // MESSAGES (global table)
+        // MESSAGES
         ch.on(
           "postgres_changes",
           { event: "*", schema: "public", table: "review_messages" },
-          async (p) => {
+          (p) => {
             const evt = (p as any).eventType as "INSERT" | "UPDATE" | "DELETE";
             const row = (
               evt === "DELETE" ? (p as any).old : (p as any).new
@@ -145,7 +135,7 @@ export function useWireSkuRealtime(sku: string) {
 
             upMsg(row);
 
-            // Si llega un INSERT por realtime para este hilo, ascender a live (para divisor correcto).
+            // Ascenso a live para divisor
             if (evt === "INSERT" && row.thread_id != null) {
               window.dispatchEvent(
                 new CustomEvent("rev:thread-live", {
@@ -154,39 +144,13 @@ export function useWireSkuRealtime(sku: string) {
               );
             }
 
-            // delivered automático (nunca read aquí)
-            if (evt === "INSERT") {
-              const isSystem = !!(row as any).is_system;
-              if (!isSystem && row.id != null) {
-                const selfId = useMessagesStore.getState().selfAuthId;
-                if (row.created_by !== selfId) {
-                  try {
-                    await fetch("/api/messages/receipts", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        messageIds: [row.id],
-                        mark: "delivered",
-                      }),
-                    });
-
-                    const activeId = useThreadsStore.getState().activeThreadId;
-                    if (activeId === row.thread_id) {
-                      await fetch("/api/messages/receipts", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          messageIds: [row.id],
-                          mark: "read",
-                        }),
-                      });
-                    }
-                  } catch (e) {
-                    toastError(e, {
-                      title: "Fallo enviando confirmación de lectura",
-                    });
-                  }
-                }
+            // Recibos batched (sin deliveryAck)
+            if (evt === "INSERT" && row.id != null && !(row as any).is_system) {
+              const selfId = useMessagesStore.getState().selfAuthId;
+              if (selfId && row.created_by !== selfId) {
+                enqueueDelivered([row.id]);
+                const activeId = useThreadsStore.getState().activeThreadId;
+                if (activeId === row.thread_id) enqueueRead([row.id]);
               }
             }
           }
@@ -230,7 +194,7 @@ export function useWireSkuRealtime(sku: string) {
           }
         );
 
-        // RECEIPTS → actualiza delivery local (read/delivered) al llegar por realtime
+        // RECEIPTS realtime → actualiza local
         ch.on(
           "postgres_changes",
           { event: "*", schema: "public", table: "review_message_receipts" },

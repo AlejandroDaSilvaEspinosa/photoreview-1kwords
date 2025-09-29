@@ -1,94 +1,115 @@
-// src/app/api/messages/receipts/route.ts
+// app/api/messages/receipts/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseFromRequest } from "@/lib/supabase/route";
 
-type Body = { messageIds: number[]; mark: "delivered" | "read" };
+/**
+ * Acepta:
+ *  - { messageIds: number[], mark: "delivered" | "read" } (retrocompat)
+ *  - { deliveredIds?: number[], readIds?: number[] } (nuevo, recomendado)
+ *
+ * Semántica:
+ *  - delivered: upsert (message_id,user_id) con read_at = null (si no existe).
+ *  - read: upsert con read_at = now() (si existe, actualiza a leído; si no, crea leído).
+ *  - "read" tapa "delivered".
+ */
 
 export async function POST(req: NextRequest) {
   const { client: sb, res } = supabaseFromRequest(req);
+
   const {
     data: { user },
   } = await sb.auth.getUser();
   if (!user)
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      { status: 401, headers: res.headers },
-    );
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = (await req.json()) as Body;
-  const ids = Array.from(new Set(body?.messageIds || [])).filter((n) =>
-    Number.isFinite(n),
-  );
-  if (!ids.length || !["delivered", "read"].includes(body.mark)) {
+  const body = await req.json().catch(() => ({}));
+  let deliveredIds: number[] = [];
+  let readIds: number[] = [];
+
+  // Retrocompat: shape antiguo
+  if (Array.isArray(body?.messageIds) && typeof body?.mark === "string") {
+    if (body.mark === "read") readIds = body.messageIds;
+    else if (body.mark === "delivered") deliveredIds = body.messageIds;
+  }
+
+  // Shape nuevo mixto
+  if (Array.isArray(body?.deliveredIds)) deliveredIds = body.deliveredIds;
+  if (Array.isArray(body?.readIds)) readIds = body.readIds;
+
+  // Normaliza
+  const uniq = (arr: number[]) =>
+    Array.from(new Set(arr.filter((x) => Number.isFinite(x))));
+  readIds = uniq(readIds);
+  deliveredIds = uniq(deliveredIds).filter((id) => !readIds.includes(id)); // read tapa delivered
+
+  if (!deliveredIds.length && !readIds.length) {
     return NextResponse.json(
-      { error: "Bad request" },
-      { status: 400, headers: res.headers },
+      { ok: true, delivered: 0, read: 0 },
+      { headers: res.headers }
     );
   }
 
-  // Filtra mensajes propios: sólo marcamos recibos de mensajes AJENOS
-  const { data: msgs, error: msgsErr } = await sb
-    .from("review_messages")
-    .select("id, created_by")
-    .in("id", ids);
+  // Mapear usuario app
+  const username =
+    (user.user_metadata?.display_name as string | undefined) ??
+    user.email ??
+    "";
+  const { data: appUser, error: mapErr } = await sb
+    .from("app_users")
+    .select("id, username, display_name")
+    .eq("username", username)
+    .single();
 
-  if (msgsErr) {
+  if (mapErr || !appUser) {
     return NextResponse.json(
-      { error: msgsErr.message },
-      { status: 500, headers: res.headers },
+      { error: "Fallo al autenticar al usuario de aplicación" },
+      { status: 500 }
     );
   }
 
-  const targetIds = (msgs || [])
-    .filter((m) => m.created_by !== user.id)
-    .map((m) => m.id);
-
-  if (!targetIds.length) {
-    return NextResponse.json(
-      { ok: true, updated: 0 },
-      { headers: res.headers },
-    );
-  }
-
-  const now = new Date().toISOString();
-
-  // Paso 1: UPSERT para garantizar fila (delivered siempre presente)
-  const upsertPayload = targetIds.map((id) => ({
-    message_id: id,
-    user_id: user.id, // auth uid
-    delivered_at: now,
-    // NO toques read_at aquí (lo fijamos en el UPDATE)
-  }));
-
-  const { error: upErr } = await sb
-    .from("review_message_receipts")
-    .upsert(upsertPayload, { onConflict: "message_id,user_id" });
-
-  if (upErr) {
-    return NextResponse.json(
-      { error: upErr.message },
-      { status: 500, headers: res.headers },
-    );
-  }
-
-  // Paso 2: si hay que marcar READ, haz UPDATE explícito (requiere política UPDATE)
-  if (body.mark === "read") {
-    const { error: updErr } = await sb
+  // delivered: crea filas sin read_at
+  let deliveredCount = 0;
+  if (deliveredIds.length) {
+    const ins = deliveredIds.map((id) => ({
+      message_id: id,
+      user_id: String(appUser.id),
+      read_at: null as string | null,
+    }));
+    const { error } = await sb
       .from("review_message_receipts")
-      .update({ read_at: now })
-      .in("message_id", targetIds)
-      .eq("user_id", user.id);
-
-    if (updErr) {
-      return NextResponse.json(
-        { error: updErr.message },
-        { status: 500, headers: res.headers },
-      );
+      .upsert(ins, {
+        onConflict: "message_id,user_id",
+        ignoreDuplicates: false,
+      });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
+    deliveredCount = deliveredIds.length;
+  }
+
+  // read: upsert con read_at = now()
+  let readCount = 0;
+  if (readIds.length) {
+    const nowIso = new Date().toISOString();
+    const ins = readIds.map((id) => ({
+      message_id: id,
+      user_id: String(appUser.id),
+      read_at: nowIso,
+    }));
+    const { error } = await sb
+      .from("review_message_receipts")
+      .upsert(ins, {
+        onConflict: "message_id,user_id",
+        ignoreDuplicates: false,
+      });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    readCount = readIds.length;
   }
 
   return NextResponse.json(
-    { ok: true, updated: targetIds.length },
-    { headers: res.headers },
+    { ok: true, delivered: deliveredCount, read: readCount },
+    { headers: res.headers }
   );
 }

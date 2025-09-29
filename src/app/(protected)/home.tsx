@@ -23,7 +23,7 @@ import { useImagesCatalogStore } from "@/stores/imagesCatalog";
 import { emitToast, toastError } from "@/hooks/useToast";
 import { localGetJSON, localSetJSON } from "@/lib/storage";
 import { initMessagesOutbox } from "@/lib/net/messagesOutbox";
-
+import { initReceiptsOutbox } from "@/lib/net/receiptsOutbox";
 /**
  * DEV NOTES
  * - URL ↔ selección se mantiene con helpers replaceParams/select* (evita renders extra).
@@ -83,10 +83,13 @@ export default function Home({ username, skus, clientInfo }: Props) {
   }, [skus, liveBySku]);
 
   useEffect(() => {
-    const dispose = initMessagesOutbox();
-    return () => dispose?.();
+    const disposeMsg = initMessagesOutbox();
+    const disposeRcpt = initReceiptsOutbox();
+    return () => {
+      disposeMsg?.();
+      disposeRcpt?.();
+    };
   }, []);
-
   // Hidrata catálogo de imágenes (para thumbnails/toasts)
   const hydrateImages = useImagesCatalogStore((s) => s.hydrateFromSkus);
   useEffect(() => {

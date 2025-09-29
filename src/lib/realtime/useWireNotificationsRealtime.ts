@@ -9,8 +9,11 @@ import {
 import { presentNotification } from "@/lib/notifications/presenter";
 import { useToast, toastError } from "@/hooks/useToast";
 import { format } from "timeago.js";
-import { deliveryAck } from "@/lib/realtime/deliveryAck";
 import { connectWithBackoff } from "@/lib/realtime/channel";
+import {
+  enqueueDelivered,
+  pokeReceiptsFlushSoon,
+} from "@/lib/net/receiptsOutbox";
 
 export function useWireNotificationsRealtime(opts?: {
   initial?: { items: NotificationRow[]; unseen?: number } | null;
@@ -30,45 +33,57 @@ export function useWireNotificationsRealtime(opts?: {
       const { data } = await sb.auth.getUser();
       const uid = data.user?.id ?? null;
       setSelfAuthId(uid);
-      deliveryAck.setUser(uid);
+
       if (!uid) return;
 
+      // 1) Cache local
       const cached = notificationsCache.load();
       if (cached) {
         hydrate(cached.rows, cached.unseen);
-        cached.rows.forEach((r) => {
-          if (r.type === "new_message")
-            deliveryAck.enqueueFromNotification(r.message_id as any);
-        });
+        // Para nuevas notificaciones de mensajes, encola "delivered" batched
+        const msgIds = cached.rows
+          .filter((r) => r.type === "new_message" && r.message_id)
+          .map((r) => Number(r.message_id));
+        if (msgIds.length) {
+          enqueueDelivered(msgIds);
+          pokeReceiptsFlushSoon();
+        }
       }
 
+      // 2) Inicial del SSR / prop
       if (opts?.initial) {
         hydrate(opts.initial.items || [], opts.initial.unseen ?? undefined);
-        (opts.initial.items || []).forEach((r) => {
-          if (r.type === "new_message")
-            deliveryAck.enqueueFromNotification(r.message_id as any);
-        });
+        const msgIds = (opts.initial.items || [])
+          .filter((r) => r.type === "new_message" && r.message_id)
+          .map((r) => Number(r.message_id));
+        if (msgIds.length) {
+          enqueueDelivered(msgIds);
+          pokeReceiptsFlushSoon();
+        }
       } else if (opts?.prefetchFromApi !== false) {
+        // 3) Prefetch desde API
         try {
           const res = await fetch(
             `/api/notifications?limit=${opts?.limit ?? 30}`,
-            { cache: "no-store" },
+            { cache: "no-store" }
           );
           if (!cancelled && res.ok) {
             const json = await res.json();
             const rows: NotificationRow[] = json.items || [];
             hydrate(rows, json.unseen ?? undefined);
-            rows.forEach((r) => {
-              if (r.type === "new_message")
-                deliveryAck.enqueueFromNotification(r.message_id as any);
-            });
+            const msgIds = rows
+              .filter((r) => r.type === "new_message" && r.message_id)
+              .map((r) => Number(r.message_id));
+            if (msgIds.length) {
+              enqueueDelivered(msgIds);
+              pokeReceiptsFlushSoon();
+            }
           }
         } catch (e) {
           if (!cancelled)
             toastError(e, { title: "Fallo cargando notificaciones" });
         }
       }
-      deliveryAck.flush();
     };
 
     const catchUp = async () => {
@@ -83,16 +98,21 @@ export function useWireNotificationsRealtime(opts?: {
         const res = await fetch(url.toString(), { cache: "no-store" });
         if (!res.ok)
           throw new Error(
-            "Respuesta no válida del servidor de notificaciones.",
+            "Respuesta no válida del servidor de notificaciones."
           );
         const json = await res.json();
         const rows: NotificationRow[] = json.items ?? [];
         for (const r of rows) {
           upsert(r);
-          if (r.type === "new_message")
-            deliveryAck.enqueueFromNotification(r.message_id as any);
         }
-        deliveryAck.flush();
+        // Encola delivered de los "new_message" que hayan llegado en catch-up
+        const msgIds = rows
+          .filter((r) => r.type === "new_message" && r.message_id)
+          .map((r) => Number(r.message_id));
+        if (msgIds.length) {
+          enqueueDelivered(msgIds);
+          pokeReceiptsFlushSoon();
+        }
       } catch (e) {
         toastError(e, {
           title: "No se pudieron sincronizar notificaciones",
@@ -101,10 +121,13 @@ export function useWireNotificationsRealtime(opts?: {
       }
     };
 
+    // Prime (no bloquea la suscripción; el outbox está debounced)
     primeLocal().catch(() => {});
 
     const dispose = connectWithBackoff({
-      channelName: `notifications-${useNotificationsStore.getState().selfAuthId ?? "anon"}`,
+      channelName: `notifications-${
+        useNotificationsStore.getState().selfAuthId ?? "anon"
+      }`,
       onSetup: (ch) => {
         ch.on(
           "postgres_changes",
@@ -119,10 +142,12 @@ export function useWireNotificationsRealtime(opts?: {
             upsert(row);
 
             if (evt === "INSERT") {
-              if (row.type === "new_message") {
-                deliveryAck.enqueueFromNotification(row.message_id as any);
-                deliveryAck.flush();
+              if (row.type === "new_message" && row.message_id) {
+                // Encola delivered (batched) y provoca flush pronto
+                enqueueDelivered([Number(row.message_id)]);
+                pokeReceiptsFlushSoon();
               }
+              // Toast UI
               const pres = presentNotification(row);
               const createdAt = row.created_at
                 ? new Date(row.created_at)
@@ -149,14 +174,14 @@ export function useWireNotificationsRealtime(opts?: {
                 },
               });
             }
-          },
+          }
         );
       },
       onCatchUp: catchUp,
     });
 
-    const vis = () => deliveryAck.onVisibilityOrOnline();
-    const onl = () => deliveryAck.onVisibilityOrOnline();
+    const vis = () => pokeReceiptsFlushSoon();
+    const onl = () => pokeReceiptsFlushSoon();
     window.addEventListener("visibilitychange", vis);
     window.addEventListener("focus", vis);
     window.addEventListener("online", onl);
@@ -167,7 +192,7 @@ export function useWireNotificationsRealtime(opts?: {
       window.removeEventListener("focus", vis);
       window.removeEventListener("online", onl);
       dispose();
-      deliveryAck.reset();
+      // No hay reset necesario: el outbox se autogestiona
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [

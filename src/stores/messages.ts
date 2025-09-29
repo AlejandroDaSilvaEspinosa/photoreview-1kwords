@@ -173,6 +173,7 @@ const mergePendingReceipt = (
       : wanted.status;
   return { status: higher, fromSelf: existing.fromSelf || wanted.fromSelf };
 };
+
 function applyAndConsumeReceipt(
   msg: Msg,
   pendingReceipts: Map<number, PendingReceipt>,
@@ -186,12 +187,15 @@ function applyAndConsumeReceipt(
   const isMine = (msg as any).created_by === selfId;
   const applicable = isMine ? !receipt.fromSelf : receipt.fromSelf;
 
+  if (!applicable) return msg; // <-- ya NO borramos nada si no aplica
+
+  // Solo cuando aplicamos eliminamos la entrada
   pendingReceipts.delete(id);
-  if (!applicable) return msg;
 
   const current = (msg.meta?.localDelivery ?? "sent") as LocalDelivery;
   const next = preferHigher(current, receipt.status);
   if (next === current) return msg;
+
   return { ...msg, meta: { ...msg.meta, localDelivery: next } };
 }
 
@@ -513,17 +517,18 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
 
       if (!toMark.length) return;
 
+      // Optimismo local + marca de "ya enviado" por sesión
+      for (const id of toMark) {
+        readFlag.mark(id);
+      }
+      // Encola read en el outbox de recibos (batch+debounce)
       try {
-        await fetch("/api/messages/receipts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messageIds: toMark, mark: "read" }),
-        });
-        for (const id of toMark) readFlag.mark(id);
+        const { enqueueRead } = await import("@/lib/net/receiptsOutbox");
+        enqueueRead(toMark);
       } catch (error) {
         toastError(error, {
-          title: "No se pudo confirmar lectura",
-          fallback: "Seguiremos intentando más tarde.",
+          title: "No se pudo encolar lectura",
+          fallback: "Reintentaremos en segundo plano.",
         });
       }
     },
@@ -860,4 +865,19 @@ function internalQuickState(state: MessagesStoreState, id: number): QuickState {
     default:
       return "sent";
   }
+}
+
+export function inspectMessageById(id: number): {
+  ld: LocalDelivery | null;
+  isMine: boolean;
+} {
+  const st = useMessagesStore.getState();
+  const tid = st.messageToThread.get(id);
+  if (!tid) return { ld: null, isMine: false };
+  const list = st.byThread[tid] || [];
+  const m = list.find((x) => x.id === id);
+  if (!m) return { ld: null, isMine: false };
+  const ld = (m.meta?.localDelivery ?? null) as LocalDelivery | null;
+  const isMine = !!st.selfAuthId && (m as any).created_by === st.selfAuthId;
+  return { ld, isMine };
 }
