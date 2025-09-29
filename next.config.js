@@ -28,6 +28,7 @@ const nextConfig = {
 
   // Configuración de imágenes para permitir dominios externos
   images: {
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: "https",
