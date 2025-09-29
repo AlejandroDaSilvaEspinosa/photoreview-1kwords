@@ -158,11 +158,11 @@ export default function Home({ username, skus, clientInfo }: Props) {
   );
 
   const selectImage = useCallback(
-    (imageName: string | null) => {
+    (imageName: string | null, opts?: { preserveThread?: boolean }) => {
       const next = new URLSearchParams(searchParams.toString());
       if (imageName) next.set("image", imageName);
       else next.delete("image");
-      next.delete("thread");
+      if (!opts?.preserveThread) next.delete("thread");
       replaceParams(next);
     },
     [searchParams, replaceParams]

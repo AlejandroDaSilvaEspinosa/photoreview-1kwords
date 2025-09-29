@@ -64,7 +64,10 @@ interface ImageViewerProps {
   username: string;
   selectSku: (sku: SkuWithImagesAndStatus | null) => void;
   selectedImageName?: string | null;
-  onSelectImage?: (name: string | null) => void;
+  onSelectImage?: (
+    name: string | null,
+    opts?: { preserveThread?: boolean }
+  ) => void;
   selectedThreadId?: number | null;
   onSelectThread?: (id: number | null) => void;
 }
@@ -393,11 +396,6 @@ export default function ImageViewer({
     return () => {
       cancelled = true;
       ac.abort();
-      // try {
-      //   useThreadsStore.getState().setActiveThreadId(null);
-      //   startTransition(() => onSelectThread?.(null));
-      //   setActiveKey(null);
-      // } catch {}
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sku.sku, images.map((i) => i.name).join("|")]);
@@ -431,7 +429,7 @@ export default function ImageViewer({
     if (currentImageName !== imgName) {
       pendingUrlImageRef.current = imgName;
       setCurrentImageName(imgName);
-      onSelectImage?.(imgName);
+      onSelectImage?.(imgName, { preserveThread: true });
     }
 
     setActiveThreadId(selectedThreadId);

@@ -81,7 +81,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       const toast: Toast = {
         id,
         title: input.title ?? "",
-        timeAgo: input.timeAgo ?? "", // ⬅️ NUEVO
+        timeAgo: input.timeAgo ?? "",
         description: input.description ?? "",
         variant: input.variant ?? "info",
         durationMs: input.durationMs ?? 10000,
@@ -98,12 +98,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       };
       if (!pausedAll) schedule(id);
     },
-    [pausedAll, schedule],
+    [pausedAll, schedule]
   );
 
   const clear = useCallback(() => {
     Object.values(timersRef.current).forEach(
-      (t) => t.handle && window.clearTimeout(t.handle),
+      (t) => t.handle && window.clearTimeout(t.handle)
     );
     timersRef.current = {};
     setToasts([]);
@@ -135,7 +135,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     return () => {
       Object.values(timersRef.current).forEach(
-        (t) => t.handle && window.clearTimeout(t.handle),
+        (t) => t.handle && window.clearTimeout(t.handle)
       );
       timersRef.current = {};
     };
@@ -161,7 +161,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       pauseAll,
       resumeAll,
     }),
-    [toasts, push, dismiss, clear, pausedAll, pauseAll, resumeAll],
+    [toasts, push, dismiss, clear, pausedAll, pauseAll, resumeAll]
   );
 
   return <ToastCtx.Provider value={value}>{children}</ToastCtx.Provider>;
@@ -185,7 +185,7 @@ export function emitToast(t: ToastInput) {
 /** Para usar en catch(...) */
 export function toastError(
   error: unknown,
-  opts?: { title?: string; fallback?: string; durationMs?: number },
+  opts?: { title?: string; fallback?: string; durationMs?: number }
 ) {
   const title = opts?.title ?? "Error";
   let description = opts?.fallback ?? "Ha ocurrido un error inesperado.";

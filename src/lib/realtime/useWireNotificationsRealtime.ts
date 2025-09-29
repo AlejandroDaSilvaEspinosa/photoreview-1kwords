@@ -152,6 +152,10 @@ export function useWireNotificationsRealtime(opts?: {
               const createdAt = row.created_at
                 ? new Date(row.created_at)
                 : new Date();
+              let mill = createdAt.getMilliseconds(); // Get millisecond value from date
+              //evitar desfase
+              mill -= 1000; // Add your one millisecond to it
+              createdAt.setMilliseconds(mill); // convert millisecond to again date object
               push({
                 title: pres.title,
                 timeAgo: format(createdAt, "es"),

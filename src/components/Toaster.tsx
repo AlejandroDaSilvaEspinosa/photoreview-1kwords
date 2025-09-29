@@ -25,7 +25,9 @@ export default function Toaster() {
           <div
             key={t.id}
             className={`${s.toast} ${s[t.variant]} ${isNewest ? s.isNew : ""}`}
-            style={{ zIndex: 1000 + (L - idx) } as React.CSSProperties}
+            style={
+              { zIndex: 1000 + (L - idx), "--i": idx } as React.CSSProperties
+            }
           >
             {t.thumbUrl ? (
               <Image
