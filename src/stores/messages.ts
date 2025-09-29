@@ -224,7 +224,9 @@ const saveMessagesCacheIdle = (() => {
       const stableRows = rows.filter((m) => (m.id ?? -1) >= 0);
       try {
         msgsCache.save(String(tid), { rows: stableRows });
-      } catch {}
+      } catch {
+        //TODO: TOAST DEBUG
+      }
     }
     pending.clear();
   };
@@ -249,7 +251,9 @@ const clearMessagesCache = (threadId: number): void => {
   if (typeof window === "undefined") return;
   try {
     msgsCache.clear(String(threadId));
-  } catch {}
+  } catch {
+    //todo: toast debug
+  }
 };
 export const messagesCache = {
   load: loadMessagesCache,
