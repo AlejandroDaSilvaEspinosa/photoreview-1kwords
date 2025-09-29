@@ -1,4 +1,3 @@
-// src/components/images/ThreadChat.tsx
 "use client";
 
 import React, {
@@ -227,35 +226,34 @@ function ThreadChatInner({
     });
   }, [activeThread?.messages]);
 
-  // ===== Payload "listo": caché o live =====
+  // ===== Payload listo + epoch =====
+  const threadMeta: any = (activeThread as any)?.meta || {};
   const threadHydratedFlag =
-    (activeThread as any)?.meta?.hydrated === true ||
-    (activeThread as any)?.source === "live";
+    threadMeta?.hydrated === true ||
+    threadMeta?.source === "live" ||
+    threadMeta?.source === "realtime";
   const payloadReady = threadHydratedFlag;
+  const unreadEpoch = threadMeta?.unreadEpoch ?? 0;
 
-  // ========= UNREAD: congelado una sola vez por hilo =========
+  // ========= UNREAD: congelado por (tid, epoch) =========
   type FrozenUnread = {
     tid: number;
+    epoch: number;
     cutoffId: number | null;
     count: number;
     label: string;
   };
   const [frozenUnread, setFrozenUnread] = useState<FrozenUnread | null>(null);
-  const lastSeenMessageIdRef = useRef<number | null>(null);
-  const computedForTidRef = useRef<number | null>(null);
+  const computedKeyRef = useRef<string | null>(null);
 
-  // Calcula el divisor una sola vez por hilo, en cuanto haya payload utilizable.
   useEffect(() => {
-    console.log("test");
     const tid = activeThread?.id;
     if (!tid) return;
-
-    // Evita recomputar si ya se fijó para este hilo
-    if (computedForTidRef.current == tid) return;
-
-    // Espera a tener payload (caché o live). Si el hilo realmente no tiene mensajes y está hidratado, se fijará a null.
-    console.log(payloadReady);
     if (!payloadReady) return;
+
+    const key = `${tid}:${unreadEpoch}`;
+    if (computedKeyRef.current === key) return; // ya congelado para este (tid,epoch)
+
     const list = messagesChrono;
     let cutoffId: number | null = null;
     let count = 0;
@@ -275,29 +273,21 @@ function ThreadChatInner({
     }
 
     if (cutoffId != null && count > 0) {
-      const idx = list.findIndex((mm) => mm.id === cutoffId);
-      lastSeenMessageIdRef.current =
-        idx > 0 ? (list[idx - 1].id as number) : null;
       setFrozenUnread({
         tid,
+        epoch: unreadEpoch,
         cutoffId,
         count,
         label: `Mensajes no leídos (${count})`,
       });
     } else {
-      const last = list[list.length - 1];
-      lastSeenMessageIdRef.current = (last?.id as number) ?? null;
       setFrozenUnread(null);
     }
 
-    computedForTidRef.current = tid;
+    computedKeyRef.current = key;
+  }, [activeThread?.id, payloadReady, messagesChrono, isMine, unreadEpoch]);
 
-    return () => {
-      // computedForTidRef.current = null;
-    };
-  }, [activeThread?.id, payloadReady, messagesChrono, isMine]);
-
-  // ========= Read receipts (solo DESPUÉS de fijar el divisor) =========
+  // ========= Read receipts (después de fijar divisor) =========
   const idsToRead = useMemo(() => {
     const out: number[] = [];
     const list = messagesChrono;
@@ -321,8 +311,8 @@ function ThreadChatInner({
   useEffect(() => {
     const tid = activeThread?.id;
     if (!tid) return;
-    // No armes recibos hasta haber fijado el divisor (o su ausencia) para este hilo.
-    if (computedForTidRef.current != tid) return;
+    // No armes recibos hasta haber fijado el divisor (o su ausencia) para este (tid,epoch)
+    if (computedKeyRef.current !== `${tid}:${unreadEpoch}`) return;
     if (!idsToRead.length) return;
 
     (async () => {
@@ -339,7 +329,7 @@ function ThreadChatInner({
         });
       }
     })();
-  }, [activeThread?.id, idsToRead]);
+  }, [activeThread?.id, idsToRead, unreadEpoch]);
 
   type Row =
     | { kind: "divider"; key: string; label: string }
@@ -404,7 +394,6 @@ function ThreadChatInner({
         });
       });
     } else {
-      // Marcamos como hecho para no forzar scroll al fondo después
       didInitialBottomRef.current.add(tid);
     }
   }, [activeThread?.id, frozenUnread, payloadReady]);

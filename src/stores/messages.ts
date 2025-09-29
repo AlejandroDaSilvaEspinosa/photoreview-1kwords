@@ -53,6 +53,7 @@ function ensureSeqBase(threadId: number, currentList: Msg[]): void {
     seqPerThread.set(threadId, maxVisible);
   }
 }
+
 // === Dedupe fuerte por clientNonce (prefiere real vs optimista, mejor delivery, fecha más nueva)
 function dedupeByClientNonce(list: Msg[]): Msg[] {
   const byNonce = new Map<string, Msg>();
@@ -334,11 +335,17 @@ const createMessage = (
    State + Actions
    ========================= */
 
+type MsgHydrationSrc = "cache" | "live" | "realtime";
+
 export type MessagesStoreState = {
   byThread: Record<number, Msg[]>;
   messageToThread: Map<number, number>;
   selfAuthId: string | null;
   pendingReceipts: Map<number, PendingReceipt>;
+
+  // NUEVO: tracking de hidratación por hilo y epoch de no leídos
+  hydrationByThread: Map<number, MsgHydrationSrc>;
+  unreadEpochByThread: Map<number, number>;
 };
 
 type Actions = {
@@ -363,6 +370,11 @@ type Actions = {
   moveThreadMessages: (fromThreadId: number, toThreadId: number) => void;
   markDeliveredLocalIfSent: (messageIds: number[]) => void;
   quickStateByMessageId: (id: number) => QuickState;
+
+  // NUEVO
+  markThreadMessagesHydrated: (threadId: number, src: MsgHydrationSrc) => void;
+  bumpUnreadEpoch: (threadId: number) => void;
+  getUnreadEpoch: (threadId: number) => number;
 };
 
 const readFlag = makeSessionFlag("ack:read:v1");
@@ -373,6 +385,10 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
     messageToThread: new Map(),
     selfAuthId: null,
     pendingReceipts: new Map(),
+
+    // NUEVO
+    hydrationByThread: new Map(),
+    unreadEpochByThread: new Map(),
 
     setSelfAuthId: (id) => set({ selfAuthId: id }),
 
@@ -922,6 +938,29 @@ export const useMessagesStore = create<MessagesStoreState & Actions>()(
       }),
 
     quickStateByMessageId: (id: number) => internalQuickState(get(), id),
+
+    // ===== NUEVO: hidratación y epoch =====
+    markThreadMessagesHydrated: (threadId, src) =>
+      set((state) => {
+        const map = new Map(state.hydrationByThread);
+        const prev = map.get(threadId);
+        // No degradar (realtime > live > cache)
+        if (prev === "realtime") return {};
+        if (prev === "live" && src === "cache") return {};
+        if (prev === src) return {};
+        map.set(threadId, src);
+        return { hydrationByThread: map };
+      }),
+
+    bumpUnreadEpoch: (threadId) =>
+      set((state) => {
+        const m = new Map(state.unreadEpochByThread);
+        const next = (m.get(threadId) ?? 0) + 1;
+        m.set(threadId, next);
+        return { unreadEpochByThread: m };
+      }),
+
+    getUnreadEpoch: (threadId) => get().unreadEpochByThread.get(threadId) ?? 0,
   }))
 );
 

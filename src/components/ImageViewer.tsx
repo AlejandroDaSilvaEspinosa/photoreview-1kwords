@@ -1,4 +1,3 @@
-// src/components/ImageViewer.tsx
 "use client";
 
 import React, {
@@ -49,8 +48,6 @@ const STATUS_LABEL: Record<ThreadStatus, string> = {
 };
 
 const EMPTY_ARR: [] = [];
-
-type HydratedSource = "cache" | "live";
 
 interface ImageViewerProps {
   sku: SkuWithImagesAndStatus;
@@ -169,20 +166,12 @@ export default function ImageViewer({
   const rollbackCreate = useThreadsStore((s) => s.rollbackCreate);
   const pendingStatusMap = useThreadsStore((s) => s.pendingStatus);
 
-  // ===== Marca de hidratación por hilo (cache o live)
-  const [hydratedThreads, setHydratedThreads] = useState<
-    Map<number, HydratedSource>
-  >(new Map());
-  const markThreadHydrated = useCallback((tid: number, src: HydratedSource) => {
-    setHydratedThreads((prev) => {
-      const current = prev.get(tid);
-      if (current === "live") return prev; // live domina
-      if (current === src) return prev;
-      const next = new Map(prev);
-      next.set(tid, src);
-      return next;
-    });
-  }, []);
+  // NUEVO: mapas de la store para hidratación/epoch
+  const msgHydrationMap = useMessagesStore((s) => s.hydrationByThread);
+  const unreadEpochMap = useMessagesStore((s) => s.unreadEpochByThread);
+  const markThreadMessagesHydrated = useMessagesStore(
+    (s) => s.markThreadMessagesHydrated
+  );
 
   // ========================== HIDRATACIÓN (cache + fresh)
   useEffect(() => {
@@ -214,7 +203,8 @@ export default function ImageViewer({
                   .map((m) => m.id as number)
                   .filter((x) => Number.isFinite(x))
               );
-              markThreadHydrated(tid, "cache"); // ← marca cache
+              // marca cache
+              markThreadMessagesHydrated(tid, "cache");
             }
           }
         }
@@ -306,7 +296,6 @@ export default function ImageViewer({
             (grouped[m.thread_id] ||= []).push(mm);
           });
 
-          // Mensajes por hilo (con marca live)
           const groupedTids = new Set<number>();
           for (const tidStr of Object.keys(grouped)) {
             const tid = Number(tidStr);
@@ -316,15 +305,16 @@ export default function ImageViewer({
               tid,
               grouped[tid].map((x) => x.id)
             );
-            markThreadHydrated(tid, "live"); // ← marca live (con mensajes)
+            // marca live (con mensajes)
+            markThreadMessagesHydrated(tid, "live");
           }
 
-          // Hilos sin mensajes (igualmente hidratados desde el servidor)
+          // Hilos sin mensajes (hidratados igualmente desde el servidor)
           for (const tid of allThreadIds) {
             if (!groupedTids.has(tid)) {
               setMsgsForThread(tid, []);
               setThreadMsgIds(tid, []);
-              markThreadHydrated(tid, "live"); // ← marca live (sin mensajes)
+              markThreadMessagesHydrated(tid, "live");
             }
           }
         }
@@ -408,7 +398,7 @@ export default function ImageViewer({
     threadsByNeededImages,
   ]);
 
-  // ========================== Derivados (inyectamos meta.hydrated/source)
+  // ========================== Derivados (inyecta meta.hydrated/source/epoch)
   const threadsInImage: Thread[] = useMemo(() => {
     if (!selectedImage?.name) return [];
     return (threadsRaw || [])
@@ -430,17 +420,24 @@ export default function ImageViewer({
             displayNano: m.meta?.displayNano,
           } as MessageMeta,
         }));
-        const src = hydratedThreads.get(t.id);
+        const src = msgHydrationMap.get(t.id); // "cache" | "live" | "realtime" | undefined
+        const epoch = unreadEpochMap.get(t.id) ?? 0;
         return {
           id: t.id,
           x: t.x,
           y: t.y,
           status: t.status,
           messages: list,
-          meta: { hydrated: !!src, source: src } as any, // ← señal para ThreadChat
+          meta: { hydrated: !!src, source: src, unreadEpoch: epoch } as any,
         };
       });
-  }, [selectedImage?.name, threadsRaw, msgsByThread, hydratedThreads]);
+  }, [
+    selectedImage?.name,
+    threadsRaw,
+    msgsByThread,
+    msgHydrationMap,
+    unreadEpochMap,
+  ]);
 
   const resolvedActiveThreadId: number | null = useMemo(() => {
     if (!activeThreadId) return null;
@@ -743,12 +740,13 @@ export default function ImageViewer({
           tid,
           grouped.map((x: any) => x.id)
         );
-        markThreadHydrated(tid, "live"); // ← marca live también en rehidratación puntual
+        // marca live también en rehidratación concreta
+        markThreadMessagesHydrated(tid, "live");
       } catch (e) {
         toastError(e, { title: "No se pudieron cargar los mensajes del hilo" });
       }
     },
-    [setMsgsForThread, setThreadMsgIds, markThreadHydrated]
+    [setMsgsForThread, setThreadMsgIds, markThreadMessagesHydrated]
   );
 
   useEffect(() => {
