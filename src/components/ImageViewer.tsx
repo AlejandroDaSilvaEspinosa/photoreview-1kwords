@@ -36,14 +36,17 @@ import {
   enqueueSendMessage,
   enqueueSendSystemMessage,
 } from "@/lib/net/messagesOutbox";
+
+import Modal from "@/components/ui/Modal";
 import NextSkuCard from "@/components/NextSkuCard";
+import { useStatusesStore } from "@/stores/statuses";
 
 /**
  * ImageViewer
- * - Carga caché de threads+mensajes → marca source "cache"
- * - Fetch de threads+mensajes → marca source "live" (por hilo SOLO tras setMsgsForThread)
- * - Realtime INSERT de mensaje → evento "rev:thread-live" → ascenso a "live"
- * - Handshake de lectura: escucha "rev:thread-unread-ready" y ahí hace markThreadRead(tid)
+ * - Carga caché de threads+mensajes → "cache"
+ * - Fetch de threads+mensajes → "live" (por hilo)
+ * - Realtime INSERT → ascenso a "live"
+ * - Handshake read con rev:thread-unread-ready
  */
 
 const colorByStatus = (s: ThreadStatus) =>
@@ -71,6 +74,8 @@ interface ImageViewerProps {
   ) => void;
   selectedThreadId?: number | null;
   onSelectThread?: (id: number | null) => void;
+
+  // NUEVO: navegación a siguiente SKU
   nextSkuCandidate?: SkuWithImagesAndStatus | null;
   onGoToSku?: (skuCode: string) => void;
 }
@@ -89,7 +94,18 @@ export default function ImageViewer({
   const { images } = sku;
   useWireSkuRealtime(sku.sku);
 
-  // ===== Navegación / imagen seleccionada
+  // ======= estado para modal de validación
+  const [validatedModalOpen, setValidatedModalOpen] = useState(false);
+
+  // ======= SKU status + locks
+  const skuStatus = sku.status; // "pending_validation" | "needs_correction" | "validated" | "reopened"
+  const isSkuValidated = skuStatus === "validated";
+  const canValidateSku = skuStatus === "pending_validation";
+
+  const imagesReadyToValidate = sku.counts?.finished ?? 0;
+  const totalImages = images.length;
+
+  // ======= Navegación / imagen seleccionada
   const [currentImageName, setCurrentImageName] = useState<string | null>(
     selectedImageName ?? images[0]?.name ?? null
   );
@@ -191,14 +207,13 @@ export default function ImageViewer({
   const markSource = useCallback((tid: number, src: HydratedSource) => {
     setSourceByTid((prev) => {
       const cur = prev.get(tid);
-      if (cur === "live") return prev; // live manda
+      if (cur === "live") return prev;
       if (cur === src) return prev;
       const m = new Map(prev);
       m.set(tid, src);
       return m;
     });
   }, []);
-  // Upgrade a live cuando entre un INSERT realtime para el hilo (si estábamos en cache)
   useEffect(() => {
     const onLive = (e: any) => {
       const tid = e?.detail?.tid as number | undefined;
@@ -207,11 +222,8 @@ export default function ImageViewer({
         const cur = prev.get(tid);
         if (cur === "live") return prev;
         const m = new Map(prev);
-        if (tid != resolvedActiveThreadId) {
-          m.set(tid, "live");
-        } else {
-          m.set(tid, "cache");
-        }
+        if (tid != resolvedActiveThreadId) m.set(tid, "live");
+        else m.set(tid, "cache");
         return m;
       });
     };
@@ -219,7 +231,6 @@ export default function ImageViewer({
     return () => window.removeEventListener("rev:thread-live", onLive);
   }, []);
 
-  // Handshake: marcar read cuando ThreadChat avise (después de congelar divisor)
   useEffect(() => {
     const onUnreadReady = (e: any) => {
       const tid = e?.detail?.tid as number | undefined;
@@ -284,12 +295,11 @@ export default function ImageViewer({
         // 2) Auth ID
         const sb = supabaseBrowser();
         const { data: authInfo, error: authErr } = await sb.auth.getUser();
-        if (authErr) {
+        if (authErr)
           toastError(authErr, {
             title: "No se pudo recuperar el usuario",
             fallback: "Continuamos sin usuario.",
           });
-        }
         const myId = authInfo?.user?.id ?? null;
         setSelfAuthId(myId);
 
@@ -316,7 +326,7 @@ export default function ImageViewer({
           raw.forEach((r) => allThreadIds.push(r.id));
         }
 
-        // 4) Mensajes frescos (y marcar 'live' SOLO tras setMsgsForThread)
+        // 4) Mensajes frescos
         if (allThreadIds.length) {
           const { data: msgs, error } = await sb
             .from("review_messages")
@@ -363,15 +373,12 @@ export default function ImageViewer({
             const tid = Number(tidStr);
             touched.add(tid);
             setMsgsForThread(tid, grouped[tid]);
-
             setThreadMsgIds(
               tid,
               grouped[tid].map((x) => x.id)
             );
             markSource(tid, "live");
           }
-
-          // Hilos sin mensajes: asegúrate de fijar vacío como live
           for (const tid of allThreadIds) {
             if (!touched.has(tid)) {
               setMsgsForThread(tid, []);
@@ -387,11 +394,7 @@ export default function ImageViewer({
         }
       } catch (e: any) {
         if (!cancelled) {
-          setLoadError(
-            servedFromCache
-              ? "No se pudo actualizar (modo sin conexión)"
-              : e?.message || "Error de carga"
-          );
+          setLoadError("No se pudo actualizar (modo sin conexión)");
           setLoading(false);
           toastError(e, { title: "Fallo cargando anotaciones" });
         }
@@ -411,12 +414,12 @@ export default function ImageViewer({
       suppressFollowThreadOnceRef.current = false;
       return;
     }
+    if (lastAppliedThreadRef.current === selectedThreadId) return;
     if (selectedThreadId == null) {
       lastAppliedThreadRef.current = null;
       setActiveThreadId(null);
       return;
     }
-    if (lastAppliedThreadRef.current === selectedThreadId) return;
 
     let imgName = threadToImageStable.get(selectedThreadId) || null;
 
@@ -458,7 +461,7 @@ export default function ImageViewer({
     threadsByNeededImages,
   ]);
 
-  // ========================== Derivados: inyecta meta.source para ThreadChat
+  // ========================== Derivados para ThreadChat
   const threadsInImage: Thread[] = useMemo(() => {
     if (!selectedImage?.name) return [];
     return (threadsRaw || [])
@@ -506,13 +509,74 @@ export default function ImageViewer({
     return null;
   }, [threadsRaw, selectedImage, activeThreadId, activeKey]);
 
-  // ========================== Acciones
+  // ======== Acciones de estado del SKU ========
+  const upsertSkuStatus = useStatusesStore((s) => s.upsertSku);
+
+  const handleValidateSku = useCallback(async () => {
+    try {
+      const ok = await fetch("/api/sku/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sku: sku.sku, status: "validated" }),
+      }).then((r) => r.ok);
+      if (!ok) throw new Error("No se pudo validar el SKU.");
+
+      // Optimista
+      upsertSkuStatus({
+        sku: sku.sku,
+        status: "validated" as any,
+        images_total: sku.counts.total,
+        images_needing_fix: 0,
+        updated_at: new Date().toISOString(),
+      });
+
+      setValidatedModalOpen(true);
+    } catch (e) {
+      toastError(e, { title: "Fallo al validar el SKU" });
+    }
+  }, [sku.sku, sku.counts.total, upsertSkuStatus]);
+
+  const handleReopenSku = useCallback(async () => {
+    try {
+      const ok = await fetch("/api/sku/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sku: sku.sku, status: "reopened" }),
+      }).then((r) => r.ok);
+      if (!ok) throw new Error("No se pudo reabrir el SKU.");
+
+      upsertSkuStatus({
+        sku: sku.sku,
+        status: "reopened" as any,
+        images_total: sku.counts.total,
+        images_needing_fix: sku.counts.needs_correction,
+        updated_at: new Date().toISOString(),
+      });
+
+      emitToast({
+        variant: "success",
+        title: "SKU reabierto",
+        description: "Puedes volver a añadir hilos y mensajes.",
+      });
+    } catch (e) {
+      toastError(e, { title: "Fallo al reabrir el SKU" });
+    }
+  }, [sku.sku, sku.counts.total, sku.counts.needs_correction, upsertSkuStatus]);
+
   const createThreadAt = useCallback(
     async (imgName: string, x: number, y: number) => {
+      if (isSkuValidated) {
+        emitToast({
+          variant: "warning",
+          title: "SKU bloqueado",
+          description: "Este SKU está validado. Reábrelo para poder anotar.",
+        });
+        return;
+      }
       const rx = roundTo(x, 3);
       const ry = roundTo(y, 3);
       suppressFollowThreadOnceRef.current = true;
-      startTransition(() => onSelectThread?.(null));
+      // startTransition(() => onSelectThread?.(null));
 
       const tempId = createThreadOptimistic(imgName, rx, ry);
       setCreatingThreadId(tempId);
@@ -551,11 +615,6 @@ export default function ImageViewer({
         confirmCreate(tempId, realRow);
         moveThreadMessages(tempId, realId);
 
-        {
-          const current = useThreadsStore.getState().activeThreadId;
-          const nextId = current === tempId ? realId : current;
-          setActiveThreadId(nextId ?? null);
-        }
         setCreatingThreadId(null);
 
         startTransition(() => {
@@ -584,11 +643,21 @@ export default function ImageViewer({
       onSelectThread,
       selectedThreadId,
       createThreadOptimistic,
+      isSkuValidated,
     ]
   );
 
   const addMessage = useCallback(
     async (threadId: number, text: string) => {
+      if (isSkuValidated) {
+        emitToast({
+          variant: "warning",
+          title: "SKU bloqueado",
+          description:
+            "Este SKU está validado. Reábrelo para escribir mensajes.",
+        });
+        return;
+      }
       if (creatingThreadId != null && threadId === creatingThreadId) return;
       try {
         enqueueSendMessage(threadId, text);
@@ -602,11 +671,13 @@ export default function ImageViewer({
         toastError(e, { title: "No se pudo encolar el mensaje" });
       }
     },
-    [creatingThreadId]
+    [isSkuValidated, creatingThreadId]
   );
 
   const toggleThreadStatus = useCallback(
     async (_imgName: string, threadId: number, next: ThreadStatus) => {
+      if (isSkuValidated) return;
+
       const {
         byImage,
         threadToImage,
@@ -640,11 +711,12 @@ export default function ImageViewer({
         toastError(e, { title: "No se pudo cambiar el estado" });
       }
     },
-    [setThreadStatus, username]
+    [setThreadStatus, username, isSkuValidated]
   );
 
   const removeThread = useCallback(
     async (id: number) => {
+      if (isSkuValidated) return;
       setThreadStatus(id, "deleted");
       try {
         await fetch(`/api/threads/status`, {
@@ -661,7 +733,7 @@ export default function ImageViewer({
       if (resolvedActiveThreadId === id)
         startTransition(() => onSelectThread?.(null));
     },
-    [setThreadStatus, resolvedActiveThreadId, onSelectThread]
+    [setThreadStatus, resolvedActiveThreadId, onSelectThread, isSkuValidated]
   );
 
   // ===== UI helpers
@@ -698,6 +770,7 @@ export default function ImageViewer({
 
   const handleImageClick = async (e: React.MouseEvent) => {
     if (!selectedImage?.name) return;
+    if (isSkuValidated) return;
     const rect = imgRef.current?.getBoundingClientRect();
     if (!rect) return;
     const xPct = ((e.clientX - rect.left) / rect.width) * 100;
@@ -710,11 +783,10 @@ export default function ImageViewer({
     await createThreadAt(selectedImage.name, xPct, yPct);
   };
 
-  const parentCursor = tool === "pin" ? "crosshair" : "zoom-in";
+  const parentCursor =
+    tool === "pin" && !isSkuValidated ? "crosshair" : "zoom-in";
 
-  // ==========================
-  //  Atajos de teclado
-  // ==========================
+  // ===== Atajos
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
@@ -736,7 +808,7 @@ export default function ImageViewer({
       } else if (e.key === "z" || e.key === "Z") {
         setTool("zoom");
       } else if (e.key === "p" || e.key === "P") {
-        setTool("pin");
+        if (!isSkuValidated) setTool("pin");
       } else if (e.key === "t" || e.key === "T") {
         setShowThreads((v) => !v);
       } else if (e.key === "Enter") {
@@ -747,7 +819,23 @@ export default function ImageViewer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [images.length, selectedImageIndex, zoomOverlay]);
+  }, [images.length, selectedImageIndex, zoomOverlay, isSkuValidated]);
+
+  // ===== Contadores para SidePanel
+  const skuImagesReadyToValidate = sku.counts.finished; // imágenes sin hilos abiertos (listas)
+  const threadStats = useMemo(() => {
+    let pending = 0,
+      reopened = 0,
+      corrected = 0;
+    for (const key of Object.keys(threadsByNeededImages)) {
+      for (const t of (threadsByNeededImages as any)[key] as Thread[]) {
+        if (t.status === "pending") pending++;
+        else if (t.status === "reopened") reopened++;
+        else if (t.status === "corrected") corrected++;
+      }
+    }
+    return { pending, reopened, corrected };
+  }, [threadsByNeededImages]);
 
   return (
     <div className={styles.viewerContainer}>
@@ -786,8 +874,13 @@ export default function ImageViewer({
                 tool === "pin" ? styles.toolActive : ""
               }`}
               aria-pressed={tool === "pin"}
-              title="Añadir nuevo hilo"
-              onClick={() => setTool("pin")}
+              title={
+                isSkuValidated
+                  ? "SKU validado (bloqueado)"
+                  : "Añadir nuevo hilo"
+              }
+              onClick={() => !isSkuValidated && setTool("pin")}
+              disabled={isSkuValidated}
             >
               📍
             </button>
@@ -904,6 +997,8 @@ export default function ImageViewer({
             · <b>Enter</b> zoom · <b>Esc</b> cerrar
           </div>
         </div>
+
+        {/* Strip de thumbnails + card a la derecha */}
         <div className={styles.bottomStrip}>
           <ThumbnailGrid
             images={images}
@@ -920,6 +1015,7 @@ export default function ImageViewer({
             )}
             validatedImages={{}}
           />
+
           {nextSkuCandidate && nextSkuCandidate.sku !== sku.sku && (
             <NextSkuCard
               sku={nextSkuCandidate}
@@ -929,35 +1025,13 @@ export default function ImageViewer({
           )}
         </div>
       </div>
-
       <SidePanel
         name={selectedImage?.name || ""}
-        isValidated={false}
+        skuStatus={skuStatus}
         threads={threadsInImage}
         activeThreadId={resolvedActiveThreadId}
-        composeLocked={
-          creatingThreadId != null &&
-          activeThreadId != null &&
-          creatingThreadId === activeThreadId
-        }
-        statusLocked={
-          activeThreadId != null && pendingStatusMap.has(activeThreadId)
-        }
-        onValidateSku={() =>
-          emitToast({
-            variant: "info",
-            title: "Acción no implementada",
-            description: "La validación de SKU se implementa en otra capa.",
-          })
-        }
-        onUnvalidateSku={() =>
-          emitToast({
-            variant: "info",
-            title: "Acción no implementada",
-            description:
-              "Quitar validación del SKU se implementa en otra capa.",
-          })
-        }
+        onValidateSku={handleValidateSku}
+        onUnvalidateSku={handleReopenSku}
         onAddThreadMessage={(threadId: number, text: string) => {
           try {
             if (selectedImage?.name) addMessage(threadId, text);
@@ -992,14 +1066,46 @@ export default function ImageViewer({
             toastError(e, { title: "No se pudo cambiar el estado del hilo" });
           }
         }}
-        withCorrectionsCount={0}
-        validatedImagesCount={0}
-        totalCompleted={0}
-        totalImages={images.length}
         onlineUsers={onlineUsers}
         loading={loading}
+        initialCollapsed={false}
+        composeLocked={
+          isSkuValidated ||
+          (creatingThreadId != null &&
+            activeThreadId != null &&
+            creatingThreadId === activeThreadId)
+        }
+        statusLocked={
+          isSkuValidated ||
+          (activeThreadId != null && pendingStatusMap.has(activeThreadId))
+        }
+        imagesReadyToValidate={imagesReadyToValidate}
+        totalImages={totalImages}
       />
+      {/* Modal de éxito tras validar */}
+      <Modal
+        open={validatedModalOpen}
+        onClose={() => setValidatedModalOpen(false)}
+        title="SKU validado con éxito"
+      >
+        <p>
+          🎉 Listo. Este SKU ha sido validado. <br />
+          Puedes continuar con el siguiente de tu cola.
+        </p>
 
+        {nextSkuCandidate ? (
+          <NextSkuCard
+            sku={nextSkuCandidate}
+            onGo={(code) => {
+              setValidatedModalOpen(false);
+              onGoToSku?.(code);
+            }}
+            title="Siguiente SKU listo"
+          />
+        ) : (
+          <p>No hay más SKUs pendientes en tu selección.</p>
+        )}
+      </Modal>
       {zoomOverlay && selectedImage?.url && (
         <ZoomOverlay
           src={selectedImage.bigImgUrl || selectedImage.url}

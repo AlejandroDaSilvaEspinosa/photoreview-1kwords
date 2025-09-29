@@ -4,43 +4,39 @@ import React from "react";
 import styles from "./NextSkuCard.module.css";
 import type { SkuWithImagesAndStatus } from "@/types/review";
 import { STATUS_LABEL } from "@/lib/sku/nextSku";
-import ImageWithSkeleton from "./ImageWithSkeleton";
 
 type Props = {
   sku: SkuWithImagesAndStatus | null;
   onGo: (skuCode: string) => void;
-  title?: string; // opcional (por si la reutilizas)
+  title?: string;
 };
 
 export default function NextSkuCard({
   sku,
   onGo,
-  title = "Siguiente SKU",
+  title = "Siguiente SKU listo",
 }: Props) {
   if (!sku) return null;
 
-  // Miniatura: primera imagen que tenga thumbnailUrl, si no, coge la primera.
   const thumb =
     sku.images.find((i) => i.thumbnailUrl)?.thumbnailUrl ||
     sku.images[0]?.thumbnailUrl ||
     "";
-  const baseName =
-    sku.images.find((i) => i.thumbnailUrl)?.name ||
-    sku.images[0]?.name ||
-    "IMG";
 
-  // “Listas para validar” = imágenes en estado finished (sin hilos abiertos).
-  const readyToValidate = sku.counts.finished;
+  const porValidar = sku.counts?.finished ?? 0;
+  const conCorrecciones = sku.counts?.needs_correction ?? 0;
+  const readyVariant =
+    sku.status === "pending_validation" && conCorrecciones === 0;
 
   return (
     <aside className={styles.card} aria-label="Recomendación de siguiente SKU">
       <div className={styles.left}>
-        <ImageWithSkeleton
+        <img
           className={styles.thumb}
-          src={thumb || ""}
-          alt={baseName}
-          width={64}
-          height={64}
+          src={thumb}
+          alt={sku.sku}
+          width={128}
+          height={128}
         />
       </div>
 
@@ -59,13 +55,17 @@ export default function NextSkuCard({
             <span className={styles.value}>{STATUS_LABEL[sku.status]}</span>
           </div>
           <div className={styles.row}>
-            <span className={styles.label}>Listas para validar</span>
-            <span className={styles.valueStrong}>{readyToValidate}</span>
+            <span className={styles.label}>Por validar</span>
+            <span className={styles.valueStrong}>{porValidar}</span>
+          </div>
+          <div className={styles.row}>
+            <span className={styles.label}>Con correcciones</span>
+            <span className={styles.valueStrong}>{conCorrecciones}</span>
           </div>
         </div>
 
         <button
-          className={styles.cta}
+          className={`${styles.cta} ${readyVariant ? styles.green : ""}`}
           onClick={() => onGo(sku.sku)}
           aria-label={`Ir al SKU ${sku.sku}`}
         >

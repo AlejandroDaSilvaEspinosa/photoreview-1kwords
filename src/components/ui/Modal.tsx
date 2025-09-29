@@ -1,7 +1,7 @@
 "use client";
 
 import React, { PropsWithChildren, useEffect } from "react";
-import styles from "./AppModal.module.css";
+import styles from "./Modal.module.css";
 
 type Props = {
   open: boolean;

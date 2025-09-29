@@ -1,4 +1,3 @@
-// app/(protected)/home.tsx
 "use client";
 
 import {
@@ -25,13 +24,6 @@ import { localGetJSON, localSetJSON } from "@/lib/storage";
 import { initMessagesOutbox } from "@/lib/net/messagesOutbox";
 import { initReceiptsOutbox } from "@/lib/net/receiptsOutbox";
 import { pickNextSku } from "@/lib/sku/nextSku";
-
-/**
- * DEV NOTES
- * - URL ↔ selección se mantiene con helpers replaceParams/select* (evita renders extra).
- * - Hidratamos catálogo de imágenes para thumbnails/toasts.
- * - Guardamos filtros en localStorage.
- */
 
 type Prefetched = { items: any[]; unseen: number } | null;
 
@@ -61,11 +53,9 @@ export default function Home({ username, skus, clientInfo }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Realtime statuses (SKUs/Imágenes)
   useWireAllStatusesRealtime();
   const liveBySku = useStatusesStore((s) => s.bySku);
 
-  // Props + estado live
   const effectiveSkus = useMemo(() => {
     return skus.map((s) => {
       const live = liveBySku[s.sku];
@@ -92,16 +82,14 @@ export default function Home({ username, skus, clientInfo }: Props) {
       disposeRcpt?.();
     };
   }, []);
-  // Hidrata catálogo de imágenes (para thumbnails/toasts)
+
   const hydrateImages = useImagesCatalogStore((s) => s.hydrateFromSkus);
   useEffect(() => {
     hydrateImages(effectiveSkus);
   }, [effectiveSkus, hydrateImages]);
 
-  // Resúmenes y "unread"
   const { stats, unread } = useHomeOverview(effectiveSkus);
 
-  // Prefetch notifs (no bloquea UI)
   const [notifPrefetch, setNotifPrefetch] = useState<Prefetched>(null);
   useEffect(() => {
     let alive = true;
@@ -125,7 +113,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
     };
   }, []);
 
-  // ==================== URL <-> selección helpers ====================
+  // ===== URL helpers =====
   const replaceParams = useCallback(
     (next: URLSearchParams) => {
       const current = `${pathname}${
@@ -134,9 +122,8 @@ export default function Home({ username, skus, clientInfo }: Props) {
       const target = `${pathname}${
         next.toString() ? `?${next.toString()}` : ""
       }`;
-      if (current !== target) {
+      if (current !== target)
         startTransition(() => router.replace(target, { scroll: false }));
-      }
     },
     [pathname, router, searchParams]
   );
@@ -186,7 +173,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
     [selectSku, effectiveSkus]
   );
 
-  // URL params → selección actual
+  // ===== URL -> selección
   const skuParam = searchParams.get("sku");
   const imageParam = searchParams.get("image");
   const threadParam = searchParams.get("thread");
@@ -212,7 +199,6 @@ export default function Home({ username, skus, clientInfo }: Props) {
     [threadParam]
   );
 
-  // Evita incoherencias imagen/thread si la imagen no pertenece al SKU
   useEffect(() => {
     if (!selectedSku || !imageParam) return;
     const belongs = selectedSku.images.some((i) => i.name === imageParam);
@@ -231,16 +217,14 @@ export default function Home({ username, skus, clientInfo }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSku, imageParam]);
 
-  // ==================== Filtros (LocalStorage con util) ====================
+  // ===== Filtros (LS)
   const [active, setActive] = useState<Set<SkuStatus>>(() => new Set(ALL));
-
   useEffect(() => {
     const arr = localGetJSON<SkuStatus[]>(LS_KEY);
     if (Array.isArray(arr) && arr.length) setActive(new Set(arr));
   }, []);
-
   useEffect(() => {
-    localSetJSON(LS_KEY, Array.from(active)); // escribe en idle y con toast en caso de error
+    localSetJSON(LS_KEY, Array.from(active));
   }, [active]);
 
   const toggle = useCallback((s: SkuStatus) => {
@@ -252,7 +236,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
     });
   }, []);
 
-  // ==================== Derivados ====================
+  // ===== Derivados
   const filtered = useMemo(
     () => effectiveSkus.filter((s) => active.has(s.status)),
     [effectiveSkus, active]
@@ -265,18 +249,20 @@ export default function Home({ username, skus, clientInfo }: Props) {
     return m;
   }, [filtered]);
 
-  // Candidato calculado con todos los SKUs live (excluye el actual si hay seleccionado)
-  const nextSkuCandidate = useMemo(() => {
-    return pickNextSku(effectiveSkus, selectedSku?.sku ?? null);
-  }, [effectiveSkus, selectedSku?.sku]);
+  // ===== Siguiente SKU candidato + navegación
+  const nextSkuCandidate = useMemo(
+    () => pickNextSku(effectiveSkus, selectedSku?.sku ?? null),
+    [effectiveSkus, selectedSku?.sku]
+  );
 
   const goToSku = useCallback(
     (skuCode: string) => {
       const dest = effectiveSkus.find((s) => s.sku === skuCode) ?? null;
-      selectSku(dest); // usa tus helpers (URL replace)
+      selectSku(dest);
     },
     [effectiveSkus, selectSku]
   );
+
   return (
     <main className={styles.main}>
       <Header

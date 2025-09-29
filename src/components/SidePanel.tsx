@@ -1,34 +1,36 @@
-// src/components/SidePanel.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import styles from "./SidePanel.module.css";
 import ThreadChat from "./ThreadChat";
-import type { Thread, ThreadStatus } from "@/types/review";
-import { emitToast } from "@/hooks/useToast";
+import type {
+  Thread,
+  ThreadStatus,
+  SkuWithImagesAndStatus,
+} from "@/types/review";
 import { localGet, localSet, toastStorageOnce } from "@/lib/storage";
-import NextSkuCard from "@/components/NextSkuCard";
-import type { SkuWithImagesAndStatus } from "@/types/review";
 
-/**
- * SidePanel (refactor a helpers de storage)
- * - Reemplaza acceso directo a localStorage por utilidades con toasts deduplicados.
- */
+type SkuStatus =
+  | "pending_validation"
+  | "needs_correction"
+  | "validated"
+  | "reopened";
 
 type Props = {
   name: string;
-  isValidated: boolean;
+
+  /** Estado del SKU (fuente de verdad) */
+  skuStatus: SkuStatus;
+
+  /** Threads de la IMAGEN visible (el panel es por imagen) */
   threads: Thread[];
   activeThreadId: number | null;
-  // skuStatus:
-  //   | "pending_validation"
-  //   | "needs_correction"
-  //   | "validated"
-  //   | "reopened";
-  // nextSkuCandidate?: SkuWithImagesAndStatus | null;
-  // onGoToSku?: (skuCode: string) => void;
+
+  /** Acciones sobre SKU */
   onValidateSku: () => void;
   onUnvalidateSku: () => void;
+
+  /** Operaciones de chat/thread */
   onAddThreadMessage: (threadId: number, text: string) => Promise<void> | void;
   onDeleteThread: (id: number) => void;
   onFocusThread: (id: number | null) => void;
@@ -39,11 +41,11 @@ type Props = {
 
   onlineUsers?: { username: string }[];
 
-  withCorrectionsCount: number;
-  validatedImagesCount: number;
-  totalCompleted: number;
+  /** Métricas del SKU */
+  imagesReadyToValidate: number; // imágenes finished (listas para validar)
   totalImages: number;
 
+  /** Flags/UI */
   loading?: boolean;
   initialCollapsed?: boolean;
   composeLocked?: boolean;
@@ -54,10 +56,7 @@ const LS_KEY = "photoreview:sidepanel:collapsed";
 
 export default function SidePanel({
   name,
-  // skuStatus,
-  // nextSkuCandidate,
-  // onGoToSku,
-  isValidated,
+  skuStatus,
   threads,
   activeThreadId,
   onValidateSku,
@@ -67,9 +66,7 @@ export default function SidePanel({
   onFocusThread,
   onToggleThreadStatus,
   onlineUsers = [],
-  withCorrectionsCount,
-  validatedImagesCount,
-  totalCompleted,
+  imagesReadyToValidate,
   totalImages,
   loading = false,
   initialCollapsed = false,
@@ -77,10 +74,6 @@ export default function SidePanel({
   statusLocked,
 }: Props) {
   const [collapsed, setCollapsed] = useState<boolean>(initialCollapsed);
-  const [modalOpen, setModalOpen] = useState<boolean>(false);
-
-  // const isValidated = skuStatus === "validated";
-  // const canValidate = skuStatus === "pending_validation";
 
   useEffect(() => {
     try {
@@ -105,13 +98,6 @@ export default function SidePanel({
         : null,
     [activeThreadId, threads]
   );
-
-  const hasOpenThreads = useMemo(
-    () =>
-      threads.some((t) => t.status === "pending" || t.status === "reopened"),
-    [threads]
-  );
-
   const threadIndex = useMemo(
     () =>
       activeThreadId
@@ -119,6 +105,24 @@ export default function SidePanel({
         : 0,
     [threads, activeThreadId]
   );
+
+  // Contadores por estado (de la imagen actual)
+  const threadsPending = useMemo(
+    () => threads.filter((t) => t.status === "pending").length,
+    [threads]
+  );
+  const threadsReopened = useMemo(
+    () => threads.filter((t) => t.status === "reopened").length,
+    [threads]
+  );
+  const threadsCorrected = useMemo(
+    () => threads.filter((t) => t.status === "corrected").length,
+    [threads]
+  );
+
+  const isValidated = skuStatus === "validated";
+  const canValidate = skuStatus === "pending_validation";
+  const showReopen = skuStatus === "validated" || skuStatus === "reopened";
 
   return (
     <aside
@@ -172,28 +176,28 @@ export default function SidePanel({
           )}
 
           <div className={styles.validationButtons}>
-            {!isValidated ? (
-              <button
-                type="button"
-                className={`${styles.actionBtn} ${styles.green}`}
-                onClick={onValidateSku}
-                disabled={hasOpenThreads}
-                title={
-                  hasOpenThreads
-                    ? "Hay hilos pendientes o reabiertos. Resuélvelos para validar el SKU."
-                    : "Validar SKU"
-                }
-              >
-                ✓ Validar SKU
-              </button>
-            ) : (
+            <button
+              type="button"
+              className={`${styles.actionBtn} ${styles.green}`}
+              onClick={onValidateSku}
+              disabled={!canValidate}
+              title={
+                canValidate
+                  ? "Validar SKU"
+                  : "Sólo disponible cuando el SKU está pendiente de validación"
+              }
+            >
+              ✓ Validar SKU
+            </button>
+
+            {showReopen && (
               <button
                 type="button"
                 className={`${styles.actionBtn} ${styles.orange}`}
                 onClick={onUnvalidateSku}
-                title="Quitar validación del SKU"
+                title="Reabrir SKU para continuar trabajando"
               >
-                ↩️ Quitar validación
+                ↩️ Reabrir SKU
               </button>
             )}
           </div>
@@ -209,7 +213,12 @@ export default function SidePanel({
             </div>
           ) : (
             <div className={styles.annotationsList}>
-              {!selected ? (
+              {isValidated ? (
+                <p className={styles.noAnnotations}>
+                  Este SKU está <b>validado</b>. No puedes añadir hilos ni
+                  mensajes hasta que se reabra.
+                </p>
+              ) : !selected ? (
                 <p className={styles.noAnnotations}>
                   Selecciona un punto en la imagen para ver su chat.
                 </p>
@@ -221,8 +230,8 @@ export default function SidePanel({
                   onFocusThread={onFocusThread}
                   onToggleThreadStatus={onToggleThreadStatus}
                   onDeleteThread={onDeleteThread}
-                  composeLocked={composeLocked}
-                  statusLocked={statusLocked}
+                  composeLocked={composeLocked || isValidated}
+                  statusLocked={statusLocked || isValidated}
                 />
               )}
             </div>
@@ -233,21 +242,27 @@ export default function SidePanel({
             aria-label="Progreso de revisión"
           >
             <h4>Progreso</h4>
+
+            {/* Imágenes listas para validar (de TODO el SKU) */}
             <div className={styles.progressInfo}>
-              <span>Con correcciones</span>
-              <strong className={styles.countWarn}>
-                {withCorrectionsCount}
+              <span>Imágenes listas para validar</span>
+              <strong className={styles.countOk}>
+                {imagesReadyToValidate} / {totalImages}
               </strong>
             </div>
+
+            {/* Threads de la imagen actual */}
             <div className={styles.progressInfo}>
-              <span>Validadas</span>
-              <strong className={styles.countOk}>{validatedImagesCount}</strong>
+              <span>Threads pendientes</span>
+              <strong className={styles.countWarn}>{threadsPending}</strong>
             </div>
             <div className={styles.progressInfo}>
-              <span>Completadas</span>
-              <strong>
-                {totalCompleted} / {totalImages}
-              </strong>
+              <span>Threads reabiertos</span>
+              <strong className={styles.countWarn}>{threadsReopened}</strong>
+            </div>
+            <div className={styles.progressInfo}>
+              <span>Threads corregidos</span>
+              <strong className={styles.countOk}>{threadsCorrected}</strong>
             </div>
           </section>
         </div>
