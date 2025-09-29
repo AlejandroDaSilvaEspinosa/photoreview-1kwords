@@ -226,7 +226,7 @@ function ThreadChatInner({
   useEffect(() => {
     const tid = activeThread?.id;
     if (!tid) return;
-    if (payloadPhase === "none") return;
+    if (payloadPhase === "none" || payloadPhase === "cache") return;
 
     const key = `${tid}:${payloadPhase}`;
     if (computedForKeyRef.current === key) return;

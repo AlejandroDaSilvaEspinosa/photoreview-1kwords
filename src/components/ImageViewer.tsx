@@ -190,7 +190,6 @@ export default function ImageViewer({
       return m;
     });
   }, []);
-
   // Upgrade a live cuando entre un INSERT realtime para el hilo (si estábamos en cache)
   useEffect(() => {
     const onLive = (e: any) => {
@@ -200,7 +199,11 @@ export default function ImageViewer({
         const cur = prev.get(tid);
         if (cur === "live") return prev;
         const m = new Map(prev);
-        m.set(tid, "live");
+        if (tid != resolvedActiveThreadId) {
+          m.set(tid, "live");
+        } else {
+          m.set(tid, "cache");
+        }
         return m;
       });
     };
@@ -352,6 +355,7 @@ export default function ImageViewer({
             const tid = Number(tidStr);
             touched.add(tid);
             setMsgsForThread(tid, grouped[tid]);
+
             setThreadMsgIds(
               tid,
               grouped[tid].map((x) => x.id)
