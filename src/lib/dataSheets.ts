@@ -119,7 +119,7 @@ export async function getImageUrlThumbnail(
 
     const obj = {
       name: name,
-      url: `https://lh3.googleusercontent.com/d/${id}=s${sizeZoom}-c`,
+      url: `https://lh3.googleusercontent.com/d/${id}=s${sizeImageViewer}-c`,
       listingImageUrl: `https://lh3.googleusercontent.com/d/${id}=s${sizeListing}-c`,
       thumbnailUrl: `https://lh3.googleusercontent.com/d/${id}=s${sizeThumbnail}-c`,
       bigImgUrl: `https://lh3.googleusercontent.com/d/${idBigFile}=s${sizeZoom}-c`,

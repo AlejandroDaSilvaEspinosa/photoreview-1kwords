@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Image, { ImageProps } from "next/image";
 import styles from "./ImageWithSkeleton.module.css";
+import { proxifySrc } from "@/lib/imgProxy";
 
 type Props = Omit<ImageProps, "onError"> & {
   wrapperClassName?: string;
@@ -28,7 +29,7 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
       onReady,
       ...imgProps
     },
-    ref,
+    ref
   ) => {
     const [loaded, setLoaded] = useState(false);
     const [error, setError] = useState(false);
@@ -70,7 +71,10 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
         }, remaining) as unknown as number;
       }
     };
-
+    const proxiedSrc = useMemo(
+      () => proxifySrc(srcToString(imgProps.src)),
+      [imgProps.src]
+    );
     return (
       <div
         className={`${styles.wrapper} ${wrapperClassName ?? ""}`}
@@ -86,8 +90,9 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
         {!error ? (
           <Image
             ref={ref as any}
-            key={srcKey}
+            key={proxiedSrc}
             {...imgProps}
+            src={proxiedSrc}
             onLoad={(e) => {
               const img = e.currentTarget as HTMLImageElement;
               setRatio(img.naturalWidth / img.naturalHeight);
@@ -97,7 +102,9 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
               setError(true);
               setLoaded(false);
             }}
-            className={`${styles.image} ${loaded ? styles.imageVisible : ""} ${className ?? ""}`}
+            className={`${styles.image} ${loaded ? styles.imageVisible : ""} ${
+              className ?? ""
+            }`}
           />
         ) : (
           <div className={styles.fallback} title="No se pudo cargar la imagen">
@@ -106,7 +113,7 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
         )}
       </div>
     );
-  },
+  }
 );
 
 ImageWithSkeleton.displayName = "ImageWithSkeleton";
