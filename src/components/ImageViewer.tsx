@@ -929,7 +929,7 @@ export default function ImageViewer({
             )}
 
             <ImageWithSkeleton
-              priority
+              // priority
               ref={imgRef}
               src={selectedImage?.url}
               onClick={handleImageClick}
