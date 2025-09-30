@@ -14,6 +14,7 @@ import AutoGrowTextarea from "./AutoGrowTextarea";
 import { useSupabaseUserId } from "@/hooks/useSupabaseUserId";
 import { toastError } from "@/hooks/useToast";
 import CloseIcon from "@/icons/close.svg";
+import DeleteIcon from "@/icons/delete.svg";
 /**
  * ThreadChat
  * - Congela divisor cuando payload está listo (“cache” o “live” en meta.source)
@@ -606,7 +607,7 @@ function ThreadChatInner({
             }
           }}
         >
-          🗑
+          <DeleteIcon />
         </button>
       </div>
     </div>

@@ -253,15 +253,15 @@ export default function SidePanel({
 
             {/* Threads de la imagen actual */}
             <div className={styles.progressInfo}>
-              <span>Threads pendientes</span>
+              <span>Correcciones pendientes</span>
               <strong className={styles.countWarn}>{threadsPending}</strong>
             </div>
             <div className={styles.progressInfo}>
-              <span>Threads reabiertos</span>
+              <span>Correcciones reabiertas</span>
               <strong className={styles.countWarn}>{threadsReopened}</strong>
             </div>
             <div className={styles.progressInfo}>
-              <span>Threads corregidos</span>
+              <span>Correcciones realizadas</span>
               <strong className={styles.countOk}>{threadsCorrected}</strong>
             </div>
           </section>
