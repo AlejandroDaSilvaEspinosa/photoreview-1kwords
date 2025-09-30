@@ -27,7 +27,12 @@ import {
   useThreadsStore,
   threadsCacheApi as threadsCache,
 } from "@/stores/threads";
-import { useMessagesStore, Msg, messagesCache } from "@/stores/messages";
+import {
+  useMessagesStore,
+  Msg,
+  messagesCache,
+  hasUnreadInThread,
+} from "@/stores/messages";
 import { useWireSkuRealtime } from "@/lib/realtime/useWireSkuRealtime";
 import { useShallow } from "zustand/react/shallow";
 import { emitToast, toastError } from "@/hooks/useToast";
@@ -44,6 +49,7 @@ import SearchIcon from "@/icons/search.svg";
 import EyeOffIncon from "@/icons/eye-off.svg";
 import PinIcon from "@/icons/pin.svg";
 import HomeIcon from "@/icons/home.svg";
+import ChatIcon from "@/icons/chat.svg";
 
 /**
  * ImageViewer
@@ -957,6 +963,8 @@ export default function ImageViewer({
                 const leftPx = imgBox.offsetLeft + (th.x / 100) * imgBox.width;
                 const bg = colorByStatus(th.status);
                 const isActive = activeThreadId === th.id;
+                const hasUnread = hasUnreadInThread(th.id); // nuevo
+
                 return (
                   <div
                     key={th.id}
@@ -984,6 +992,14 @@ export default function ImageViewer({
                     }`}
                   >
                     {index + 1}
+                    {hasUnread && (
+                      <div
+                        className={styles.unreadBadge}
+                        title="Mensajes sin leer"
+                      >
+                        <ChatIcon />
+                      </div>
+                    )}
                   </div>
                 );
               })}

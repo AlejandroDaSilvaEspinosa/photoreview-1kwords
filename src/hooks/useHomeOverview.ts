@@ -27,7 +27,7 @@ const isCountable = (s: unknown): s is CountableStatus =>
 export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
   const skuList = useMemo(
     () => (skus?.length ? skus.map((s) => s.sku) : []),
-    [skus],
+    [skus]
   );
 
   const [stats, setStats] = useState<StatsBySku>({});
@@ -109,7 +109,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
               user_id,
               read_at
             )
-          `,
+          `
           )
           .in("review_threads.sku", skuList as string[]);
 
@@ -122,7 +122,11 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
         for (const row of (data ?? []) as any[]) {
           const sku = row?.review_threads?.sku as string | undefined;
           if (!sku) continue;
-          if (row.created_by === selfId) continue;
+          if (
+            row.created_by === selfId ||
+            row.review_message_receipts.length === 0
+          )
+            continue;
 
           const receipts = (row.review_message_receipts ?? []) as {
             user_id: string;
@@ -205,7 +209,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
         } catch (e) {
           toastError(e, { title: "Error en tiempo real de hilos" });
         }
-      },
+      }
     );
 
     // RECEIPTS → actualizar bandera de no leídos
@@ -229,7 +233,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
               id,
               review_threads!inner(sku),
               review_message_receipts!left(user_id, read_at)
-            `,
+            `
             )
             .eq("id", merged.message_id)
             .limit(1)
@@ -250,7 +254,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
         } catch (e) {
           toastError(e, { title: "Error actualizando lectura de mensajes" });
         }
-      },
+      }
     );
 
     ch.subscribe((status) => {

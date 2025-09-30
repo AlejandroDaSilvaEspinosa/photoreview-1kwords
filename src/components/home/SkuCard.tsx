@@ -46,16 +46,14 @@ export default function SkuCard({ sku, unread, perImageStats, onOpen }: Props) {
           fallbackText={sku.sku.slice(0, 2).toUpperCase()}
         />
 
-        <span className={styles.badge}>
-          {hasStatusRow
-            ? needFix > 0
-              ? `${needFix} img necesitan corrección`
-              : `0 img por corregir`
-            : "(pendiente de validación)"}
-        </span>
+        {hasStatusRow && needFix > 0 && (
+          <span className={styles.badge}>
+            {needFix} img necesitan corrección
+          </span>
+        )}
       </div>
 
-      <span className={styles.openHint}>sku: {sku.sku}</span>
+      <span className={styles.openHint}>SKU: {sku.sku}</span>
 
       {needFix > 0 && <ProgressList statsByImage={perImageStats} />}
     </button>

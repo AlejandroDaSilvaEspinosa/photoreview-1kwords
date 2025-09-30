@@ -885,3 +885,20 @@ export function inspectMessageById(id: number): {
   const isMine = !!st.selfAuthId && (m as any).created_by === st.selfAuthId;
   return { ld, isMine };
 }
+
+export const hasUnreadInThread = (threadId: number): boolean => {
+  const st = useMessagesStore.getState();
+  if (!st.selfAuthId) return false;
+  const list = st.byThread[threadId] || [];
+
+  return list.some(
+    (m) =>
+      !(m as any).is_system &&
+      m.id != null &&
+      (m as any).created_by != "me" &&
+      (m as any).created_by != null &&
+      (m as any).created_by !== st.selfAuthId &&
+      (m.meta?.localDelivery ?? "sent") !== "read" &&
+      (m.meta?.localDelivery ?? "sent") !== "sent"
+  );
+};
