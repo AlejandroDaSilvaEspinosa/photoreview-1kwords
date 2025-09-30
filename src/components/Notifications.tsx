@@ -13,6 +13,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { format } from "timeago.js";
 import styles from "./Notifications.module.css";
+import NotificationIcon from "@/icons/notification.svg";
 
 const PAGE_SIZE = 30;
 
@@ -38,7 +39,7 @@ export default function Notifications({
   const hasBadge = unseen > 0;
   const currentCursor = useMemo(
     () => (items.length ? items[items.length - 1].created_at : null),
-    [items],
+    [items]
   );
 
   const [loadingMore, setLoadingMore] = useState(false);
@@ -84,7 +85,7 @@ export default function Notifications({
     if (!container || !sentinel) return;
     const io = new IntersectionObserver(
       (entries) => entries.forEach((e) => e.isIntersecting && loadMore()),
-      { root: container, rootMargin: "100px", threshold: 0 },
+      { root: container, rootMargin: "100px", threshold: 0 }
     );
     io.observe(sentinel);
     return () => io.disconnect();
@@ -111,7 +112,7 @@ export default function Notifications({
         aria-label="Notificaciones"
         onClick={() => setOpen((o) => !o)}
       >
-        🔔 {hasBadge && <span className={styles.badge} />}
+        <NotificationIcon /> {hasBadge && <span className={styles.badge} />}
       </button>
 
       {open && (

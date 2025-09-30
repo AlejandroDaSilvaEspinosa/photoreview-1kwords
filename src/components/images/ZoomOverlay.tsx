@@ -19,6 +19,11 @@ import {
   toggleThreadStatusLabel,
 } from "@/lib/ui/status";
 
+import SearchIcon from "@/icons/search.svg";
+import EyeOffIncon from "@/icons/eye-off.svg";
+import PinIcon from "@/icons/pin.svg";
+import HandIcon from "@/icons/hand.svg";
+
 type Props = {
   src: string;
   threads: Thread[];
@@ -211,7 +216,7 @@ export default function ZoomOverlay({
 
       return { cx: (cxPxClamped / imgW) * 100, cy: (cyPxClamped / imgH) * 100 };
     },
-    [imgW, imgH, view.vw, view.vh],
+    [imgW, imgH, view.vw, view.vh]
   );
 
   // centrar con ancla y “pegar a bordes” si es esquina
@@ -237,7 +242,7 @@ export default function ZoomOverlay({
       cyNew = clamp(cyNew, halfH, 100 - halfH);
       return { cx: cxNew, cy: cyNew };
     },
-    [imgW, imgH, view.vw, view.vh],
+    [imgW, imgH, view.vw, view.vh]
   );
 
   // ====== inicialización ======
@@ -264,7 +269,7 @@ export default function ZoomOverlay({
       fy,
       z0,
       initial?.ax ?? 0.5,
-      initial?.ay ?? 0.5,
+      initial?.ay ?? 0.5
     );
 
     setZoom(z0);
@@ -336,7 +341,7 @@ export default function ZoomOverlay({
       cy,
       getMinZoom,
       clampCenterPxFor,
-    ],
+    ]
   );
 
   // ====== mouse drag (pan) ======
@@ -352,7 +357,7 @@ export default function ZoomOverlay({
       setCx(newCx);
       setCy(newCy);
     },
-    [imgW, imgH, visWpx, visHpx],
+    [imgW, imgH, visWpx, visHpx]
   );
 
   const onMouseDown = (e: React.MouseEvent) => {
@@ -426,14 +431,14 @@ export default function ZoomOverlay({
       setCx(clamp(nx, halfW, 100 - halfW));
       setCy(clamp(ny, halfH, 100 - halfH));
     },
-    [miniDims, view.vw, view.vh, imgW, imgH, zoom],
+    [miniDims, view.vw, view.vh, imgW, imgH, zoom]
   );
 
   const onMiniClickOrDrag = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       moveViewportToMiniPos(e.clientX, e.clientY);
     },
-    [moveViewportToMiniPos],
+    [moveViewportToMiniPos]
   );
 
   // ✅ minimapa táctil (1 dedo)
@@ -444,7 +449,7 @@ export default function ZoomOverlay({
       if (!t) return;
       moveViewportToMiniPos(t.clientX, t.clientY);
     },
-    [moveViewportToMiniPos],
+    [moveViewportToMiniPos]
   );
 
   const onMiniTouchMove = useCallback(
@@ -454,7 +459,7 @@ export default function ZoomOverlay({
       if (!t) return;
       moveViewportToMiniPos(t.clientX, t.clientY);
     },
-    [moveViewportToMiniPos],
+    [moveViewportToMiniPos]
   );
 
   const vpStyle = useMemo(() => {
@@ -477,7 +482,7 @@ export default function ZoomOverlay({
   // ====== chat ======
   const activeThread = useMemo(
     () => threads.find((t) => t.id === activeThreadId) || null,
-    [threads, activeThreadId],
+    [threads, activeThreadId]
   );
 
   const threadIndex = useMemo(
@@ -485,7 +490,7 @@ export default function ZoomOverlay({
       activeThreadId
         ? threads.findIndex((t) => t.id === activeThreadId) + 1
         : 0,
-    [threads, activeThreadId],
+    [threads, activeThreadId]
   );
 
   const fitToView = useCallback(() => {
@@ -534,7 +539,7 @@ export default function ZoomOverlay({
         gestureRef.current.didPinch = true;
       }
     },
-    [wrapRef, imgW, imgH, cx, cy, zoom, tx, ty],
+    [wrapRef, imgW, imgH, cx, cy, zoom, tx, ty]
   );
 
   const onTouchMove = useCallback(
@@ -556,7 +561,7 @@ export default function ZoomOverlay({
         const { cx: cxPct, cy: cyPct } = clampCenterPxFor(
           cxPxNew,
           cyPxNew,
-          zoom,
+          zoom
         );
         setCx(cxPct);
         setCy(cyPct);
@@ -588,7 +593,7 @@ export default function ZoomOverlay({
           const nextZ = clamp(
             gestureRef.current.startZoom * factor,
             minZ,
-            maxZ,
+            maxZ
           );
 
           const mx = (x0 + x1) / 2;
@@ -601,7 +606,7 @@ export default function ZoomOverlay({
           const { cx: cxPct, cy: cyPct } = clampCenterPxFor(
             cxPxNext,
             cyPxNext,
-            nextZ,
+            nextZ
           );
 
           setZoom(nextZ);
@@ -610,7 +615,7 @@ export default function ZoomOverlay({
         });
       }
     },
-    [wrapRef, imgW, imgH, zoom, view.vw, view.vh, getMinZoom, clampCenterPxFor],
+    [wrapRef, imgW, imgH, zoom, view.vw, view.vh, getMinZoom, clampCenterPxFor]
   );
 
   const onTouchEnd = useCallback(
@@ -642,7 +647,7 @@ export default function ZoomOverlay({
             const { cx: cx2, cy: cy2 } = clampCenterPxFor(
               cxPxNow,
               cyPxNow,
-              nextZ,
+              nextZ
             );
             setZoom(nextZ);
             setCx(cx2);
@@ -656,14 +661,14 @@ export default function ZoomOverlay({
             const nextZ = clamp(
               Math.max(zoom * 2, fit * 2.4),
               getMinZoom(),
-              10,
+              10
             );
             const cxPxNext = view.vw / (2 * nextZ) + xImg - localX / nextZ;
             const cyPxNext = view.vh / (2 * nextZ) + yImg - localY / nextZ;
             const { cx: cxPct, cy: cyPct } = clampCenterPxFor(
               cxPxNext,
               cyPxNext,
-              nextZ,
+              nextZ
             );
             setZoom(nextZ);
             setCx(cxPct);
@@ -700,7 +705,7 @@ export default function ZoomOverlay({
       getPanEnabledZoom,
       getMinZoom,
       clampCenterPxFor,
-    ],
+    ]
   );
 
   // ====== dots ======
@@ -713,7 +718,7 @@ export default function ZoomOverlay({
         status: t.status,
         num: 1 + threads.findIndex((x) => x.id === t.id),
       })),
-    [threads],
+    [threads]
   );
 
   const centerToThread = (t: Thread) => {
@@ -726,7 +731,7 @@ export default function ZoomOverlay({
   const [cursor, setCursor] = useState("");
   useEffect(() => {
     setCursor(
-      tool === "pin" ? "crosshair" : dragRef.current ? "grabbing" : "grab",
+      tool === "pin" ? "crosshair" : dragRef.current ? "grabbing" : "grab"
     );
   }, [isDragging, tool]);
 
@@ -745,29 +750,35 @@ export default function ZoomOverlay({
       <div className={styles.toolbox} aria-label="Herramientas">
         <button
           type="button"
-          className={`${styles.toolBtn} ${tool === "pan" ? styles.toolActive : ""}`}
+          className={`${styles.toolBtn} ${
+            tool === "pan" ? styles.toolActive : ""
+          }`}
           aria-pressed={tool === "pan"}
           title="Mover (arrastrar)"
           onClick={() => setTool("pan")}
         >
-          🖐️
+          <HandIcon />
         </button>
         <button
           type="button"
-          className={`${styles.toolBtn} ${tool === "pin" ? styles.toolActive : ""}`}
+          className={`${styles.toolBtn} ${
+            tool === "pin" ? styles.toolActive : ""
+          }`}
           aria-pressed={tool === "pin"}
           title="Añadir nuevo hilo"
           onClick={() => setTool("pin")}
         >
-          📍
+          <PinIcon />
         </button>
         <button
-          className={`${styles.toolBtn} ${hideThreads ? "" : styles.toolActive}`}
+          className={`${styles.toolBtn} ${
+            !hideThreads ? "" : styles.toolActive
+          }`}
           aria-pressed={hideThreads}
           title={`${hideThreads ? "Ocultar" : "Mostrar"} hilos — T`}
           onClick={() => setHideThreads((v) => !v)}
         >
-          🧵
+          <EyeOffIncon />
         </button>
       </div>
 
@@ -824,7 +835,9 @@ export default function ZoomOverlay({
             dots.map((d) => (
               <button
                 key={d.id}
-                className={`${styles.dot} ${activeThreadId === d.id ? styles.dotActive : ""}`}
+                className={`${styles.dot} ${
+                  activeThreadId === d.id ? styles.dotActive : ""
+                }`}
                 style={{
                   left: d.left,
                   top: d.top,
@@ -907,7 +920,9 @@ export default function ZoomOverlay({
                 {threads.map((t, i) => (
                   <li
                     key={t.id}
-                    className={`${styles.threadRow} ${activeThreadId === t.id ? styles.threadRowActive : ""}`}
+                    className={`${styles.threadRow} ${
+                      activeThreadId === t.id ? styles.threadRowActive : ""
+                    }`}
                   >
                     <button
                       className={styles.threadRowMain}

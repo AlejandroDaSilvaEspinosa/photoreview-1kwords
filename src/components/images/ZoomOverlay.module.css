@@ -106,7 +106,6 @@
 
 .dotNum {
   pointer-events: none;
-  transform: translateY(0.5px);
 }
 
 /* Sidebar */
@@ -225,7 +224,7 @@
   border-radius: 8px;
 }
 
-.threadRow + .threadRow {
+.threadRow+.threadRow {
   margin-top: 4px;
 }
 
@@ -312,8 +311,9 @@
 }
 
 .toolActive {
-  border-color: #ff0040;
-  box-shadow: 0 0 0 2px rgba(255, 0, 64, 0.25);
+  /* border-color: #ff0040;
+  box-shadow: 0 0 0 2px rgba(255, 0, 64, 0.25); */
+  border-color: white;
 }
 
 /* Responsivo */

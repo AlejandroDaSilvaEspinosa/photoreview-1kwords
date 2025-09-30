@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ImageWithSkeleton from "./ImageWithSkeleton";
 import styles from "./SkuSearch.module.css";
 import type { SkuWithImages } from "@/types/review";
+import SearchIcon from "@/icons/search.svg";
 
 type Props = {
   skus: SkuWithImages[];
@@ -123,7 +124,7 @@ export default function SkuSearch({
     >
       <div className={styles.inputWrap}>
         <span className={styles.icon} aria-hidden>
-          🔎
+          <SearchIcon />
         </span>
         <input
           ref={inputRef}

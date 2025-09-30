@@ -5,7 +5,7 @@ import styles from "./NextSkuCard.module.css";
 import type { SkuWithImagesAndStatus } from "@/types/review";
 import { STATUS_LABEL } from "@/lib/sku/nextSku";
 import ImageWithSkeleton from "./ImageWithSkeleton";
-import ImagesIcon from "@/icons/images.svg";
+import ImageIcon from "@/icons/image.svg";
 
 type Props = {
   sku: SkuWithImagesAndStatus | null;
@@ -38,7 +38,7 @@ export default function NextSkuCard({ sku, onGo }: Props) {
           height={90}
         />
         <div className={styles.pendingImagesBubble}>
-          <ImagesIcon className={styles.imageIcon} />
+          <ImageIcon className={styles.imageIcon} />
           <span>{totalImagenes}</span>
         </div>
       </div>

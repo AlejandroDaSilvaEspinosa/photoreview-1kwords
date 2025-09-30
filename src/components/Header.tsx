@@ -48,17 +48,17 @@ export default function Header({
   notificationsInitial,
 }: HeaderProps) {
   const [open, setOpen] = useState(false);
-  const [pinned, setPinned] = useState(false);
+  // const [pinned, setPinned] = useState(false);
 
   // pequeño “peek” inicial
   useEffect(() => {
     setOpen(true);
-    const t = setTimeout(() => !pinned && setOpen(false), 2500);
+    const t = setTimeout(() => setOpen(false), 2500);
     return () => clearTimeout(t);
-  }, [pinned]);
+  }, []);
 
   const reveal = () => setOpen(true);
-  const hide = () => !pinned && setOpen(false);
+  const hide = () => setOpen(false);
 
   return (
     <>
@@ -66,7 +66,7 @@ export default function Header({
       <div className={styles.hoverZone} onMouseEnter={reveal} />
 
       <header
-        className={`${styles.appHeader} ${open ? styles.open : ""} ${pinned ? styles.pinned : ""}`}
+        className={`${styles.appHeader} ${open ? styles.open : ""}`}
         onMouseEnter={reveal}
         onMouseLeave={hide}
         aria-expanded={open}
@@ -76,14 +76,14 @@ export default function Header({
 
         {/* Izquierda: logo */}
         <div className={styles.left}>
-          <button
+          {/* <button
             className={styles.pinBtn}
             aria-pressed={pinned}
             title={pinned ? "Desanclar" : "Anclar"}
             onClick={() => setPinned((v) => !v)}
           >
             {pinned ? "📍" : "📌"}
-          </button>
+          </button> */}
 
           <div className={styles.logo}>
             <Image
