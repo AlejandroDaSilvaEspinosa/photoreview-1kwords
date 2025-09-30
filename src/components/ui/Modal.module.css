@@ -1,9 +1,12 @@
 .backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, .6);
-    display: grid;
-    place-items: center;
+    background: rgba(0, 0, 0, .8);
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
     z-index: 999;
 }
 
@@ -15,6 +18,7 @@
     box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
     color: #ddd;
     padding: 14px;
+    max-width: fit-content;
 }
 
 .header {
@@ -22,6 +26,7 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 6px;
+    gap: 32px;
 }
 
 .title {

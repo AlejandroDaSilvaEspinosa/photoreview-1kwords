@@ -269,8 +269,10 @@
 }
 
 .toolActive {
-  border-color: var(--accent-red);
-  box-shadow: 0 0 0 2px rgba(255, 0, 64, 0.25);
+  /* border-color: var(--accent-red);
+  box-shadow: 0 0 0 2px rgba(255, 0, 64, 0.25); */
+  border-color: white;
+  /* box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25); */
 }
 
 /* ===== Errores ===== */
@@ -317,5 +319,6 @@
   /* tira ocupa, card ajusta */
   gap: 12px;
   align-items: stretch;
-  margin-top: 10px;
+  padding: 8px;
+  border-top: 1px solid var(--border-1, #2a2a2a);
 }

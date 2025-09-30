@@ -50,7 +50,15 @@ const nextConfig = {
     ],
     qualities: [50, 75, 100],
   },
-
+  turbopack: {
+    rules: {
+      // Importar .svg como componentes React con SVGR
+      "*.svg": {
+        loaders: [{ loader: "@svgr/webpack", options: { icon: true } }],
+        as: "*.js", // tratar la salida como JS
+      },
+    },
+  },
   // Configuración experimental
   experimental: {
     // Configuraciones experimentales si las necesitas

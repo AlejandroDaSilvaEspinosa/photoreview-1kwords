@@ -28,22 +28,23 @@
   background: var(--surface-2);
   border: 1px solid var(--border-1);
   border-radius: 14px;
-  padding: 20px 16px;
+  padding: 64px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  min-height: 100%;
 }
 
 .placeholderInner h2 {
   margin: 0 0 6px;
-  font-size: 18px;
+  font-size: 32px;
   font-weight: 700;
   color: #fff;
   letter-spacing: 0.2px;
 }
 
 .placeholderInner p {
-  margin: 0 0 10px;
+  margin: 0 0 16px;
   color: var(--text-2);
-  font-size: 14px;
+  font-size: 24px;
 }
 
 .section {

@@ -4,6 +4,7 @@ import { hydrateStatuses } from "@/lib/status";
 import Home from "./home";
 import type { SkuWithImages, SkuWithImagesAndStatus } from "@/types/review";
 import { supabaseServer } from "@/lib/supabase/server";
+import { ensureStatusesInitialized } from "@/lib/statusInit"; // ⬅️ NUEVO
 
 export default async function HomePage() {
   const clientInfo = {
@@ -19,6 +20,9 @@ export default async function HomePage() {
     (user?.user_metadata?.display_name as string) || user?.email || "user";
 
   const skus: SkuWithImages[] = await getCachedSkus();
+
+  await ensureStatusesInitialized(skus);
+
   const skusWithStatus: SkuWithImagesAndStatus[] = await hydrateStatuses(skus);
 
   return (

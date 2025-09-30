@@ -40,6 +40,9 @@ import {
 import Modal from "@/components/ui/Modal";
 import NextSkuCard from "@/components/NextSkuCard";
 import { useStatusesStore } from "@/stores/statuses";
+import SearchIcon from "@/icons/search.svg";
+import EyeOffIncon from "@/icons/eye-off.svg";
+import PinIcon from "@/icons/pin.svg";
 
 /**
  * ImageViewer
@@ -869,7 +872,7 @@ export default function ImageViewer({
               title="Lupa (abrir zoom)"
               onClick={() => setTool("zoom")}
             >
-              🔍
+              <SearchIcon />
             </button>
             <button
               className={`${styles.toolBtn} ${
@@ -884,17 +887,17 @@ export default function ImageViewer({
               onClick={() => !isSkuValidated && setTool("pin")}
               disabled={isSkuValidated}
             >
-              📍
+              <PinIcon />
             </button>
             <button
               className={`${styles.toolBtn} ${
-                showThreads ? styles.toolActive : ""
+                !showThreads ? styles.toolActive : ""
               }`}
               aria-pressed={showThreads}
               title={`${showThreads ? "Ocultar" : "Mostrar"} hilos — T`}
               onClick={() => setShowThreads((v) => !v)}
             >
-              🧵
+              <EyeOffIncon />
             </button>
           </div>
 
@@ -1088,12 +1091,9 @@ export default function ImageViewer({
       <Modal
         open={validatedModalOpen}
         onClose={() => setValidatedModalOpen(false)}
-        title="SKU validado con éxito"
+        title={`SKU ${sku.sku} validado con éxito`}
       >
-        <p>
-          🎉 Listo. Este SKU ha sido validado. <br />
-          Puedes continuar con el siguiente de tu cola.
-        </p>
+        <p>Puedes continuar con el siguiente SKU.</p>
 
         {nextSkuCandidate ? (
           <NextSkuCard

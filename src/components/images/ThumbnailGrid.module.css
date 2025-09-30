@@ -3,12 +3,14 @@
   display: flex;
   gap: 10px;
   padding: 12px 14px;
-  background: var(--surface-1);
   border-top: 1px solid var(--border-1);
   overflow-x: auto;
   max-height: 128px;
   scroll-snap-type: x proximity;
   outline: none;
+  background: #151515;
+  border-radius: 12px;
+  border: 1px solid var(--border-1, #2a2a2a);
 }
 
 /* Scrollbar sutil */
@@ -87,12 +89,10 @@
   align-items: center;
   justify-content: center;
 
-  background: linear-gradient(
-    to top,
-    rgba(0, 0, 0, 0.78),
-    rgba(0, 0, 0, 0.55),
-    transparent
-  );
+  background: linear-gradient(to top,
+      rgba(0, 0, 0, 0.78),
+      rgba(0, 0, 0, 0.55),
+      transparent);
   color: #fff;
 }
 
