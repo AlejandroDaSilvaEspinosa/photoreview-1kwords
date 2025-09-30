@@ -110,7 +110,7 @@ export default function ImageViewer({
   // ======= SKU status + locks
   const skuStatus = sku.status; // "pending_validation" | "needs_correction" | "validated" | "reopened"
   const isSkuValidated = skuStatus === "validated";
-  const canValidateSku = skuStatus === "pending_validation";
+  // const canValidateSku = skuStatus === "pending_validation";
 
   const imagesReadyToValidate = sku.counts?.finished ?? 0;
   const totalImages = images.length;

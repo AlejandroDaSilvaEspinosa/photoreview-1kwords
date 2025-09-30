@@ -31,7 +31,7 @@ type State = {
 const THREADS_CACHE_VER = 2;
 const threadsCache = createVersionedCacheNS<{ rows: Thread[] }>(
   "rev_threads",
-  THREADS_CACHE_VER,
+  THREADS_CACHE_VER
 );
 
 const loadThreadsCache = (image: string): Thread[] | null => {
@@ -93,7 +93,7 @@ type Actions = {
   beginStatusOptimistic: (
     threadId: number,
     from: ThreadStatus,
-    to: ThreadStatus,
+    to: ThreadStatus
   ) => void;
   clearPendingStatus: (threadId: number) => void;
 };
@@ -222,8 +222,8 @@ export const useThreadsStore = create<State & Actions>()(
           idx >= 0
             ? [...list.slice(0, idx), newThread, ...list.slice(idx + 1)]
             : list.some((t) => t.id === real.id)
-              ? list
-              : [...list, newThread];
+            ? list
+            : [...list, newThread];
 
         const byImage = { ...s.byImage, [image]: nextList };
         const m = new Map(s.threadToImage);
@@ -265,7 +265,11 @@ export const useThreadsStore = create<State & Actions>()(
         return { byImage, threadToImage: m, pendingByKey: p };
       }),
 
-    upsertFromRealtime: (r) =>
+    upsertFromRealtime: (r) => {
+      if (r.status === "deleted") {
+        useThreadsStore.getState().removeFromRealtime(r);
+        return;
+      }
       set((s) => {
         const image = r.image_name;
         const list = s.byImage[image] || [];
@@ -320,7 +324,8 @@ export const useThreadsStore = create<State & Actions>()(
           pendingByKey: p,
           pendingStatus: ps,
         };
-      }),
+      });
+    },
 
     removeFromRealtime: (r) =>
       set((s) => {
@@ -348,7 +353,7 @@ export const useThreadsStore = create<State & Actions>()(
         const image = s.threadToImage.get(threadId);
         if (!image) return {};
         const nextList = (s.byImage[image] || []).map((t) =>
-          t.id === threadId ? { ...t, status } : t,
+          t.id === threadId ? { ...t, status } : t
         );
         saveThreadsCache(image, nextList);
         return { byImage: { ...s.byImage, [image]: nextList } };
@@ -359,7 +364,7 @@ export const useThreadsStore = create<State & Actions>()(
         const image = s.threadToImage.get(threadId);
         if (!image) return {};
         const nextList = (s.byImage[image] || []).map((t) =>
-          t.id === threadId ? { ...t, messageIds: ids } : t,
+          t.id === threadId ? { ...t, messageIds: ids } : t
         );
         saveThreadsCache(image, nextList);
         return { byImage: { ...s.byImage, [image]: nextList } };
@@ -378,5 +383,5 @@ export const useThreadsStore = create<State & Actions>()(
         ps.delete(threadId);
         return { pendingStatus: ps };
       }),
-  })),
+  }))
 );
