@@ -206,15 +206,29 @@
   background: var(--green-bg, #1a241e);
 }
 
+.green:hover {
+  background: color-mix(in srgb, var(--green-bg) 97%, white);
+}
+
 .orange {
   border-color: var(--orange-border, #5a3a14);
   background: var(--orange-bg, #281f17);
 }
 
+.orange:hover {
+  background: color-mix(in srgb, var(--orange-bg) 97%, white);
+}
+
+
 .red {
   border-color: var(--red-border, #5a1c1c);
   background: var(--red-bg, #281616);
 }
+
+.red:hover {
+  background: color-mix(in srgb, var(--red-bg) 97%, white);
+}
+
 
 /* ===== Divider ===== */
 .divider {
@@ -293,6 +307,9 @@
 
 /* ===== Tarjeta de progreso (look controles/threads) ===== */
 .reviewSummary {
+  gap: 10px;
+  display: flex;
+  flex-direction: column;
   margin-top: 6px;
   padding: 12px;
   background: #151515;
@@ -302,7 +319,6 @@
 }
 
 .reviewSummary h4 {
-  margin: 0 0 8px;
   color: #ddd;
   font-size: 14px;
   font-weight: 700;
@@ -314,16 +330,15 @@
   justify-content: space-between;
   color: #e2e2e2;
   font-size: 13px;
-  margin-bottom: 8px;
 }
 
 .countWarn {
-  color: #ffb000;
+  color: #EB7042;
   font-weight: 800;
 }
 
 .countOk {
-  color: #0fa958;
+  color: #6BEB42;
   font-weight: 800;
 }
 
@@ -336,4 +351,33 @@
   .isCollapsed {
     width: 56px;
   }
+
+  .collapseBtn {
+    display: none;
+  }
+}
+
+/* ===== Progress Bar estilizada ===== */
+.progressBarWrap {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  width: 100%;
+  height: 8px;
+  margin-top: 2px;
+  position: relative;
+  overflow: hidden;
+}
+
+.progressBarFill {
+  height: 100%;
+  background: #eeeeeed8;
+  /* blanco para corregidas */
+  transition: width 0.3s ease;
+}
+
+.progressHeader {
+  display: flex;
+  gap: 32px;
+  align-items: center;
 }

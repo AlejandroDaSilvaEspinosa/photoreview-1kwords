@@ -241,9 +241,20 @@ export default function SidePanel({
             className={styles.reviewSummary}
             aria-label="Progreso de revisión"
           >
-            <h4>Progreso</h4>
+            <div className={styles.progressHeader}>
+              <h4>Progreso</h4>
 
-            {/* Imágenes listas para validar (de TODO el SKU) */}
+              {/* Barra estilizada: corregidas (blanco) vs resto (negro) */}
+              <div className={styles.progressBarWrap}>
+                <div
+                  className={styles.progressBarFill}
+                  style={{
+                    width: `${(threadsCorrected / threads.length) * 100 || 0}%`,
+                  }}
+                />
+              </div>
+            </div>
+
             <div className={styles.progressInfo}>
               <span>Imágenes listas para validar</span>
               <strong className={styles.countOk}>
@@ -251,14 +262,11 @@ export default function SidePanel({
               </strong>
             </div>
 
-            {/* Threads de la imagen actual */}
             <div className={styles.progressInfo}>
-              <span>Correcciones pendientes</span>
-              <strong className={styles.countWarn}>{threadsPending}</strong>
-            </div>
-            <div className={styles.progressInfo}>
-              <span>Correcciones reabiertas</span>
-              <strong className={styles.countWarn}>{threadsReopened}</strong>
+              <span>Correcciones pendientes + reabiertas</span>
+              <strong className={styles.countWarn}>
+                {threadsPending + threadsReopened}
+              </strong>
             </div>
             <div className={styles.progressInfo}>
               <span>Correcciones realizadas</span>

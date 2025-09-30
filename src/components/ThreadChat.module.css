@@ -188,20 +188,35 @@
   width: 100%;
 }
 
-.orange {
-  border-color: var(--orange-border);
-  background: var(--orange-bg);
+/* Variantes de color compatibles con tu patrón (usando fallbacks) */
+.green {
+  border-color: var(--green-border, #274a33);
+  background: var(--green-bg, #1a241e);
 }
+
+.green:hover {
+  background: color-mix(in srgb, var(--green-bg) 97%, white);
+}
+
+.orange {
+  border-color: var(--orange-border, #5a3a14);
+  background: var(--orange-bg, #281f17);
+}
+
+.orange:hover {
+  background: color-mix(in srgb, var(--orange-bg) 97%, white);
+}
+
 
 .red {
-  border-color: var(--red-border);
-  background: var(--red-bg);
+  border-color: var(--red-border, #5a1c1c);
+  background: var(--red-bg, #281616);
 }
 
-.green {
-  border-color: var(--green-border);
-  background: var(--green-bg);
+.red:hover {
+  background: color-mix(in srgb, var(--red-bg) 97%, white);
 }
+
 
 .dotMini {
   width: 12px;

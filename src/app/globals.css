@@ -48,6 +48,10 @@ input {
   font-family: var(--font-power), sans-serif;
 }
 
+button:active {
+  transform: translateY(1px);
+}
+
 strong {
   font-weight: 500;
 }
