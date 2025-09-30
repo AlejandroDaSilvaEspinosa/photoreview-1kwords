@@ -14,7 +14,9 @@ export default function Toaster() {
 
   return (
     <div
-      className={`${s.wrap} ${pausedAll ? s.expanded : ""}`}
+      className={`${toasts.length > 1 && s.wrapWithMultiplesChilds} ${s.wrap} ${
+        pausedAll ? s.expanded : ""
+      }`}
       onMouseEnter={pauseAll}
       onMouseLeave={resumeAll}
       aria-live="polite"

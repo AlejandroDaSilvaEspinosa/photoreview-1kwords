@@ -17,7 +17,7 @@
   --pileOverlapY: 34.5px;
   --pileShiftX: -1px;
   --pileScaleStep: .0;
-  --gapHoverY: 2px;
+  --gapHoverY: 4px;
   --peekY: 12px;
   transition: all 0.3 ease;
 }
@@ -73,15 +73,13 @@
   border-radius: 10px;
 }
 
-.wrap:hover {
-  overflow-y: scroll;
+.wrapWithMultiplesChilds:hover {
+  overflow-y: auto;
   overflow-x: visible;
   padding: 10px;
-  background: #000000d0;
+  background: #000000a9;
   backdrop-filter: blur(6px);
-  box-shadow:
-    0 12px 28px rgba(0, 0, 0, 0.45),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  border-radius: 10px;
 
 }
 
