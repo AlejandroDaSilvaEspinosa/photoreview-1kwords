@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/useToast";
 import s from "./Toaster.module.css";
 import ReactMarkdown from "react-markdown";
 import Image from "next/image";
+import CloseIcon from "@/icons/close.svg";
 
 export default function Toaster() {
   const { toasts, dismiss, pausedAll, pauseAll, resumeAll } = useToast();
