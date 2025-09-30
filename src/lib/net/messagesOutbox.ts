@@ -4,6 +4,7 @@
 import { useMessagesStore } from "@/stores/messages";
 import { emitToast } from "@/hooks/useToast";
 import { MessageMeta } from "@/types/review";
+import CloseIcon from "@/icons/close.svg";
 
 /**
  * Outbox con debounce + batch + retry/backoff:

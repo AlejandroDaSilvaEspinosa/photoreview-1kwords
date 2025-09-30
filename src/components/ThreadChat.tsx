@@ -13,7 +13,7 @@ import { Thread, ThreadMessage, ThreadStatus } from "@/types/review";
 import AutoGrowTextarea from "./AutoGrowTextarea";
 import { useSupabaseUserId } from "@/hooks/useSupabaseUserId";
 import { toastError } from "@/hooks/useToast";
-
+import CloseIcon from "@/icons/close.svg";
 /**
  * ThreadChat
  * - Congela divisor cuando payload está listo (“cache” o “live” en meta.source)
@@ -412,7 +412,7 @@ function ThreadChatInner({
           aria-label="Cerrar hilo"
           title="Cerrar hilo"
         >
-          ×
+          <CloseIcon />
         </button>
       </div>
 

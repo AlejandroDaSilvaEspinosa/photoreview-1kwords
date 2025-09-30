@@ -69,7 +69,7 @@ export default function Toaster() {
               className={s.close}
               onClick={() => dismiss(t.id)}
             >
-              ×
+              <CloseIcon />
             </button>
             <div
               className={s.progress}

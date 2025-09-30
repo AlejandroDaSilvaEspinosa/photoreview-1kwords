@@ -5,6 +5,7 @@ import ImageWithSkeleton from "./ImageWithSkeleton";
 import styles from "./SkuSearch.module.css";
 import type { SkuWithImages } from "@/types/review";
 import SearchIcon from "@/icons/search.svg";
+import CloseIcon from "@/icons/close.svg";
 
 type Props = {
   skus: SkuWithImages[];
@@ -157,7 +158,7 @@ export default function SkuSearch({
             aria-label="Limpiar búsqueda"
             title="Limpiar"
           >
-            ×
+            <CloseIcon />
           </button>
         )}
       </div>

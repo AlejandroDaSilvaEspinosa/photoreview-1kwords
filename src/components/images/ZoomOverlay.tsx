@@ -19,7 +19,7 @@ import {
   toggleThreadStatusLabel,
 } from "@/lib/ui/status";
 
-import SearchIcon from "@/icons/search.svg";
+import CloseIcon from "@/icons/close.svg";
 import EyeOffIncon from "@/icons/eye-off.svg";
 import PinIcon from "@/icons/pin.svg";
 import HandIcon from "@/icons/hand.svg";
@@ -743,10 +743,9 @@ export default function ZoomOverlay({
       style={{ touchAction: "none" }}
     >
       <button className={styles.close} onClick={onClose} aria-label="Cerrar">
-        ×
+        <CloseIcon />
       </button>
 
-      {/* TOOLBOX */}
       <div className={styles.toolbox} aria-label="Herramientas">
         <button
           type="button"
@@ -889,7 +888,10 @@ export default function ZoomOverlay({
             >
               −
             </button>
-            <span className={styles.zoomLabel}>{zoom.toFixed(2)}×</span>
+            <span className={styles.zoomLabel}>
+              {zoom.toFixed(2)}
+              <CloseIcon />
+            </span>
             <button
               onClick={() => setZoom((z) => clamp(z * 1.1, getMinZoom(), 10))}
             >

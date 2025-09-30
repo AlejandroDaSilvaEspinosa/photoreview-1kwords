@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { format } from "timeago.js";
 import styles from "./Notifications.module.css";
 import NotificationIcon from "@/icons/notification.svg";
+import CloseIcon from "@/icons/close.svg";
 
 const PAGE_SIZE = 30;
 
@@ -124,7 +125,7 @@ export default function Notifications({
           <div className={styles.panelHeader}>
             <strong>Notificaciones</strong>
             <button className={styles.closeBtn} onClick={() => setOpen(false)}>
-              ×
+              <CloseIcon />
             </button>
           </div>
 

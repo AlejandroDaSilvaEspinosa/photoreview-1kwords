@@ -43,6 +43,7 @@ import { useStatusesStore } from "@/stores/statuses";
 import SearchIcon from "@/icons/search.svg";
 import EyeOffIncon from "@/icons/eye-off.svg";
 import PinIcon from "@/icons/pin.svg";
+import HomeIcon from "@/icons/home.svg";
 
 /**
  * ImageViewer
@@ -852,7 +853,7 @@ export default function ImageViewer({
             title="Volver"
             aria-label="Volver al listado de SKUs"
           >
-            🏠
+            <HomeIcon />
           </button>
           <h1 className={styles.title}>
             Revisión de SKU: <span className={styles.titleSku}>{sku.sku}</span>
