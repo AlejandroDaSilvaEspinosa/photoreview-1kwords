@@ -307,19 +307,19 @@
 
 /* ===== Tarjeta de progreso (look controles/threads) ===== */
 .reviewSummary {
-  gap: 10px;
+  gap: 4px;
   display: flex;
   flex-direction: column;
   margin-top: 6px;
   padding: 12px;
   background: #151515;
-  color: #ddd;
+  color: #a9a9a9;
   border: 1px solid #2a2a2a;
   border-radius: 12px;
 }
 
 .reviewSummary h4 {
-  color: #ddd;
+  color: #a9a9a9;
   font-size: 14px;
   font-weight: 700;
 }
@@ -328,7 +328,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #e2e2e2;
+  color: #a9a9a9;
   font-size: 13px;
 }
 
@@ -380,4 +380,5 @@
   display: flex;
   gap: 32px;
   align-items: center;
+  margin-bottom: 6px;
 }

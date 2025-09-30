@@ -776,15 +776,15 @@ export default function ImageViewer({
 
   const handleImageClick = async (e: React.MouseEvent) => {
     if (!selectedImage?.name) return;
+    if (tool === "zoom") {
+      openZoomAtEvent(e);
+      return;
+    }
     if (isSkuValidated) return;
     const rect = imgRef.current?.getBoundingClientRect();
     if (!rect) return;
     const xPct = ((e.clientX - rect.left) / rect.width) * 100;
     const yPct = ((e.clientY - rect.top) / rect.height) * 100;
-    if (tool === "zoom") {
-      openZoomAtEvent(e);
-      return;
-    }
     setShowThreads(true);
     await createThreadAt(selectedImage.name, xPct, yPct);
   };

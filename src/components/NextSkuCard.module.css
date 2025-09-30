@@ -106,7 +106,7 @@
 }
 
 .cta:hover {
-    background: #333;
+    background: color-mix(in srgb, var(--green-bg) 97%, white);
 }
 
 .cta:active {
