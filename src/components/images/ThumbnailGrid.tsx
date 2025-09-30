@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import styles from "./ThumbnailGrid.module.css";
 import type { ThreadState, ValidationState, ImageItem } from "@/types/review";
+import ChatIcon from "@/icons/chat.svg";
 
 type Props = {
   images: ImageItem[];
@@ -92,7 +93,9 @@ export default function ThumbnailGrid({
             type="button"
             role="option"
             aria-selected={index === selectedIndex}
-            className={`${styles.card} ${index === selectedIndex ? styles.active : ""}`}
+            className={`${styles.card} ${
+              index === selectedIndex ? styles.active : ""
+            }`}
             onClick={() => onSelect(index)}
             onFocus={() => setFocusIdx(index)}
             title={name}
@@ -122,7 +125,7 @@ export default function ThumbnailGrid({
                 className={`${styles.badge} ${styles.warn}`}
                 aria-label="Tiene comentarios"
               >
-                💬
+                <ChatIcon />
               </span>
             )}
             {isValidated && (

@@ -5,6 +5,7 @@ import styles from "./SkuCard.module.css";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import type { SkuWithImagesAndStatus } from "@/types/review";
 import ProgressList, { ImageStats } from "./ProgressList";
+import ChatIcon from "@/icons/chat.svg";
 
 type Props = {
   sku: SkuWithImagesAndStatus;
@@ -29,7 +30,7 @@ export default function SkuCard({ sku, unread, perImageStats, onOpen }: Props) {
       <div className={styles.thumbWrap}>
         {unread && (
           <span className={styles.unread} title="Mensajes sin leer">
-            💬
+            <ChatIcon />
           </span>
         )}
 
