@@ -17,7 +17,7 @@ import { MessageMeta } from "@/types/review";
 const OUTBOX_VERSION = 4;
 const STORAGE_KEY = `rev_outbox_v${OUTBOX_VERSION}`;
 
-const DEBOUNCE_MS = 1000; // ventana de 1 segundo
+const DEBOUNCE_MS = 500;
 const MAX_BATCH = 24; // tamaño máx del batch
 const MAX_RETRIES = 3; // por item (errores no-red)
 const RETRY_BASE_MS = 900; // base para backoff
