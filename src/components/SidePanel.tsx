@@ -3,11 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import styles from "./SidePanel.module.css";
 import ThreadChat from "./ThreadChat";
-import type {
-  Thread,
-  ThreadStatus,
-  SkuWithImagesAndStatus,
-} from "@/types/review";
+import type { Thread, ThreadStatus } from "@/types/review";
 import { localGet, localSet, toastStorageOnce } from "@/lib/storage";
 
 type SkuStatus =
@@ -15,6 +11,13 @@ type SkuStatus =
   | "needs_correction"
   | "validated"
   | "reopened";
+
+type ThreadCounts = {
+  pending: number;
+  reopened: number;
+  corrected: number;
+  total: number;
+};
 
 type Props = {
   name: string;
@@ -41,9 +44,12 @@ type Props = {
 
   onlineUsers?: { username: string }[];
 
-  /** Métricas del SKU */
+  /** Métricas del SKU (imágenes) */
   imagesReadyToValidate: number; // imágenes finished (listas para validar)
   totalImages: number;
+
+  /** NUEVO: Contadores de hilos en TODO el SKU */
+  skuThreadCounts?: ThreadCounts;
 
   /** Flags/UI */
   loading?: boolean;
@@ -68,6 +74,7 @@ export default function SidePanel({
   onlineUsers = [],
   imagesReadyToValidate,
   totalImages,
+  skuThreadCounts,
   loading = false,
   initialCollapsed = false,
   composeLocked,
@@ -91,34 +98,39 @@ export default function SidePanel({
     }
   }, [collapsed]);
 
-  const selected = useMemo(
-    () =>
-      activeThreadId != null
-        ? threads.find((t) => t.id === activeThreadId) ?? null
-        : null,
-    [activeThreadId, threads]
-  );
-  const threadIndex = useMemo(
-    () =>
-      activeThreadId
-        ? threads.findIndex((t) => t.id === activeThreadId) + 1
-        : 0,
-    [threads, activeThreadId]
-  );
+  const selected =
+    useMemo(
+      () =>
+        activeThreadId != null
+          ? threads.find((t) => t.id === activeThreadId) ?? null
+          : null,
+      [activeThreadId, threads]
+    ) || null;
 
-  // Contadores por estado (de la imagen actual)
-  const threadsPending = useMemo(
-    () => threads.filter((t) => t.status === "pending").length,
-    [threads]
-  );
-  const threadsReopened = useMemo(
-    () => threads.filter((t) => t.status === "reopened").length,
-    [threads]
-  );
-  const threadsCorrected = useMemo(
-    () => threads.filter((t) => t.status === "corrected").length,
-    [threads]
-  );
+  const threadIndex =
+    useMemo(
+      () =>
+        activeThreadId
+          ? threads.findIndex((t) => t.id === activeThreadId) + 1
+          : 0,
+      [threads, activeThreadId]
+    ) || 0;
+
+  // ===== Contadores (preferir TODO el SKU si nos llegan por props) =====
+  const fallbackCounts: ThreadCounts = useMemo(() => {
+    // Fallback a contadores SOLO de la imagen, por compatibilidad
+    const pending = threads.filter((t) => t.status === "pending").length;
+    const reopened = threads.filter((t) => t.status === "reopened").length;
+    const corrected = threads.filter((t) => t.status === "corrected").length;
+    const total = threads.length || pending + reopened + corrected; // por si threads filtra "deleted"
+    return { pending, reopened, corrected, total };
+  }, [threads]);
+
+  const counts: ThreadCounts = skuThreadCounts ?? fallbackCounts;
+
+  const correctedPct = counts.total
+    ? (counts.corrected / counts.total) * 100
+    : 0;
 
   const isValidated = skuStatus === "validated";
   const canValidate = skuStatus === "pending_validation";
@@ -245,12 +257,13 @@ export default function SidePanel({
               <h4>Progreso</h4>
 
               {/* Barra estilizada: corregidas (blanco) vs resto (negro) */}
-              <div className={styles.progressBarWrap}>
+              <div
+                className={styles.progressBarWrap}
+                title={`${Math.round(correctedPct)}% corregido`}
+              >
                 <div
                   className={styles.progressBarFill}
-                  style={{
-                    width: `${(threadsCorrected / threads.length) * 100 || 0}%`,
-                  }}
+                  style={{ width: `${correctedPct || 0}%` }}
                 />
               </div>
             </div>
@@ -265,12 +278,13 @@ export default function SidePanel({
             <div className={styles.progressInfo}>
               <span>Correcciones pendientes + reabiertas</span>
               <strong className={styles.countWarn}>
-                {threadsPending + threadsReopened}
+                {counts.pending + counts.reopened}
               </strong>
             </div>
+
             <div className={styles.progressInfo}>
               <span>Correcciones realizadas</span>
-              <strong className={styles.countOk}>{threadsCorrected}</strong>
+              <strong className={styles.countOk}>{counts.corrected}</strong>
             </div>
           </section>
         </div>

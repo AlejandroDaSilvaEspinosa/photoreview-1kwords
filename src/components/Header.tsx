@@ -6,6 +6,7 @@ import styles from "./Header.module.css";
 import type { SkuWithImagesAndStatus } from "@/types/review";
 import SkuSearch from "./SkuSearch";
 import Notifications from "./Notifications";
+import { useHomeOverview } from "@/hooks/useHomeOverview"; // ⬅️ NUEVO
 
 type NotificationType =
   | "new_message"
@@ -28,6 +29,7 @@ export type NotificationRow = {
   viewed: boolean;
   created_at: string;
 };
+
 interface HeaderProps {
   skus: SkuWithImagesAndStatus[];
   loading: boolean;
@@ -48,9 +50,8 @@ export default function Header({
   notificationsInitial,
 }: HeaderProps) {
   const [open, setOpen] = useState(false);
-  // const [pinned, setPinned] = useState(false);
 
-  // pequeño “peek” inicial
+  // Peek inicial
   useEffect(() => {
     setOpen(true);
     const t = setTimeout(() => setOpen(false), 2500);
@@ -60,31 +61,21 @@ export default function Header({
   const reveal = () => setOpen(true);
   const hide = () => setOpen(false);
 
+  // ⬇️ NUEVO: no leídos por SKU para el buscador
+  const { unread } = useHomeOverview(skus);
+
   return (
     <>
-      {/* zona de activación por hover en el borde superior */}
       <div className={styles.hoverZone} onMouseEnter={reveal} />
-
       <header
         className={`${styles.appHeader} ${open ? styles.open : ""}`}
         onMouseEnter={reveal}
         onMouseLeave={hide}
         aria-expanded={open}
       >
-        {/* rail/handler visual */}
         <div className={styles.peekTab} aria-hidden />
 
-        {/* Izquierda: logo */}
         <div className={styles.left}>
-          {/* <button
-            className={styles.pinBtn}
-            aria-pressed={pinned}
-            title={pinned ? "Desanclar" : "Anclar"}
-            onClick={() => setPinned((v) => !v)}
-          >
-            {pinned ? "📍" : "📌"}
-          </button> */}
-
           <div className={styles.logo}>
             <Image
               src="/1kwords-logo.png"
@@ -97,13 +88,7 @@ export default function Header({
           </div>
         </div>
 
-        {/* Centro: título + buscador */}
         <div className={styles.center}>
-          {/* <div className={styles.heading}>
-            <h2>Revisión de Productos</h2>
-            <p>Selecciona una SKU para comenzar el proceso de revisión.</p>
-          </div> */}
-
           <SkuSearch
             skus={skus}
             placeholder={loading ? "Cargando SKUs…" : "Buscar SKU…"}
@@ -111,11 +96,11 @@ export default function Header({
             maxResults={200}
             minChars={1}
             debounceMs={200}
-            thumbSize={40}
+            thumbSize={64}
+            unreadBySku={unread} // ⬅️ NUEVO
           />
         </div>
 
-        {/* Derecha: cliente + notificaciones */}
         <div className={styles.right}>
           <div className={styles.clientInfo}>
             <h3>{clientName}</h3>

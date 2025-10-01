@@ -10,7 +10,7 @@ import {
 } from "@/stores/notifications";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "timeago.js";
 import styles from "./Notifications.module.css";
 import NotificationIcon from "@/icons/notification.svg";
@@ -46,18 +46,44 @@ export default function Notifications({
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
-  useEffect(() => {
-    if (!open) return;
-    const ids = items.filter((n) => !n.viewed).map((n) => n.id);
-    if (!ids.length) return;
-    markViewedLocal(ids);
-    fetch("/api/notifications", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids }),
-    }).catch(() => {});
-  }, [open, items, markViewedLocal]);
+  // ========= NUEVO: cola de "viewed" pendiente (para parchear al backend en batch)
+  const pendingViewedRef = useRef<Set<number>>(new Set());
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const flushViewed = useCallback(async () => {
+    const ids = Array.from(pendingViewedRef.current);
+    if (!ids.length) return;
+    pendingViewedRef.current.clear();
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+    } catch {
+      // Silenciar; en próxima interacción se volverá a intentar
+    }
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+    // pequeño debounce para agrupar varios hovers/clicks
+    flushTimerRef.current = setTimeout(flushViewed, 600);
+  }, [flushViewed]);
+
+  // marcar un item como visto en hover/click
+  const markOneViewed = useCallback(
+    (id: number) => {
+      if (!pendingViewedRef.current.has(id)) {
+        pendingViewedRef.current.add(id);
+        markViewedLocal([id]);
+        scheduleFlush();
+      }
+    },
+    [markViewedLocal, scheduleFlush]
+  );
+
+  // ========= CARGA PEREZOSA
   const loadMore = async () => {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
@@ -96,22 +122,48 @@ export default function Notifications({
   const pathname = usePathname();
 
   const openTarget = (n: NotificationRow) => {
+    // Asegura marcar vista al interactuar
+    if (!n.viewed) markOneViewed(n.id);
+
     const pres = presentNotification(n);
     if (pres.deeplink) {
       router.replace(`${pathname}${pres.deeplink}`, { scroll: false });
-      setOpen(false);
+      closePanel(); // cerrar tras navegar
       return;
     }
     if (n.sku) onOpenSku(n.sku);
-    setOpen(false);
+    closePanel();
   };
+
+  // ========= ABRIR/CERRAR CON LIMPIEZA
+  const openPanel = () => setOpen(true);
+
+  const closePanel = useCallback(() => {
+    // 1) Marca como vistas todas las restantes que sigan sin "viewed"
+    const ids = items.filter((n) => !n.viewed).map((n) => n.id);
+    if (ids.length) {
+      markViewedLocal(ids);
+      ids.forEach((id) => pendingViewedRef.current.add(id));
+    }
+    // 2) Envía inmediatamente (sin esperar al debounce)
+    flushViewed();
+    // 3) Cierra
+    setOpen(false);
+  }, [items, markViewedLocal, flushViewed]);
+
+  // Evita fugas de timer
+  useEffect(() => {
+    return () => {
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+    };
+  }, []);
 
   return (
     <div className={styles.wrap}>
       <button
         className={styles.bellBtn}
         aria-label="Notificaciones"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? closePanel() : openPanel())}
       >
         <NotificationIcon /> {hasBadge && <span className={styles.badge} />}
       </button>
@@ -124,7 +176,7 @@ export default function Notifications({
         >
           <div className={styles.panelHeader}>
             <strong>Notificaciones</strong>
-            <button className={styles.closeBtn} onClick={() => setOpen(false)}>
+            <button className={styles.closeBtn} onClick={closePanel}>
               <CloseIcon />
             </button>
           </div>
@@ -140,6 +192,9 @@ export default function Notifications({
                 <div
                   key={n.id}
                   className={styles.item}
+                  onMouseEnter={() => {
+                    if (!n.viewed) markOneViewed(n.id);
+                  }}
                   onClick={() => openTarget(n)}
                 >
                   {pres.thumbUrl ? (
@@ -181,6 +236,14 @@ export default function Notifications({
                       </div>
                     )}
                   </div>
+
+                  {/* Punto rojo (no vista) */}
+                  {!n.viewed && (
+                    <span
+                      className={styles.unviewedDot}
+                      aria-label="Notificación no vista"
+                    />
+                  )}
                 </div>
               );
             })}

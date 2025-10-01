@@ -3,23 +3,34 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import styles from "./ThumbnailGrid.module.css";
-import type { ThreadState, ValidationState, ImageItem } from "@/types/review";
+import type { ThreadState, ImageItem } from "@/types/review";
 import ChatIcon from "@/icons/chat.svg";
+
+type ImgStatus = "finished" | "needs_correction";
 
 type Props = {
   images: ImageItem[];
   selectedIndex: number;
   onSelect: (index: number) => void;
+  /** Threads por imagen (sigue igual por compatibilidad, no se usa para contar no leídos). */
   threads: ThreadState;
-  validatedImages: ValidationState;
+
+  /** NUEVO: map nombreImagen -> tiene mensajes no leídos (no system y no tuyos, sin read_at). */
+  unreadByImage?: Record<string, boolean>;
+
+  /** NUEVO (opcional): map nombreImagen -> estado ("finished" | "needs_correction").
+   * Si no se provee, se intentará usar image.status.
+   */
+  imageStatusByName?: Record<string, ImgStatus>;
 };
 
 export default function ThumbnailGrid({
   images,
   selectedIndex,
   onSelect,
-  threads,
-  validatedImages,
+  threads, // se mantiene por compatibilidad (no se usa para la badge de chat)
+  unreadByImage,
+  imageStatusByName,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const ids = useMemo(() => images.map((_, i) => `thumb-${i}`), [images]);
@@ -81,10 +92,18 @@ export default function ThumbnailGrid({
     >
       {images.map((image, index) => {
         const name = image.name ?? "";
-        const hasNotes =
-          !!name && (threads[name]?.length || 0) > 0 && !validatedImages[name];
-        const isValidated = !!validatedImages[name];
-        const baseName = name.split(".")[0] || name;
+        const baseName = (name.split(".")[0] || name) ?? "";
+
+        // --- Nuevo: badge de chat sólo si hay pendientes reales por imagen
+        const showUnread = !!(name && unreadByImage && unreadByImage[name]);
+
+        // --- Nuevo: dot de estado (verde = finished, rojo = needs_correction)
+        const statusFromMap = imageStatusByName?.[name];
+        const statusFromItem = (image as any)?.status as ImgStatus | undefined;
+        const status: ImgStatus | undefined = statusFromMap || statusFromItem;
+
+        const showDot = status === "finished" || status === "needs_correction";
+        const isFinished = status === "finished";
 
         return (
           <button
@@ -119,21 +138,23 @@ export default function ThumbnailGrid({
               </span>
             </div>
 
-            {/* Badges (coherentes con ThreadChat: verde validado, ámbar notas) */}
-            {hasNotes && (
+            {/* Estado (dot arriba-derecha): verde si finished, rojo si needs_correction */}
+            {showDot && (
               <span
-                className={`${styles.badge} ${styles.warn}`}
-                aria-label="Tiene comentarios"
-              >
-                <ChatIcon />
-              </span>
+                className={`${styles.stateDot} ${
+                  isFinished ? styles.dotGreen : styles.dotRed
+                }`}
+                aria-label={
+                  isFinished ? "Imagen terminada" : "Necesita correcciones"
+                }
+                title={isFinished ? "Terminada" : "Necesita correcciones"}
+              />
             )}
-            {isValidated && (
-              <span
-                className={`${styles.badge} ${styles.ok}`}
-                aria-label="Validada"
-              >
-                ✓
+
+            {/* Badge de chat: se desplaza si hay dot para no solapar */}
+            {showUnread && (
+              <span className={styles.chatBadge} title="Mensajes sin leer">
+                <ChatIcon />
               </span>
             )}
           </button>

@@ -1,20 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import ImageWithSkeleton from "./ImageWithSkeleton";
 import styles from "./SkuSearch.module.css";
-import type { SkuWithImages } from "@/types/review";
+import type { SkuWithImagesAndStatus, SkuStatus } from "@/types/review";
 import SearchIcon from "@/icons/search.svg";
 import CloseIcon from "@/icons/close.svg";
+import ChatIcon from "@/icons/chat.svg"; // ⬅️ NUEVO
 
 type Props = {
-  skus: SkuWithImages[];
-  onSelect: (item: SkuWithImages) => void;
+  skus: SkuWithImagesAndStatus[];
+  onSelect: (item: SkuWithImagesAndStatus) => void;
   placeholder?: string;
   maxResults?: number;
   minChars?: number;
   debounceMs?: number;
   thumbSize?: number;
+  /** mapa sku -> tiene mensajes sin leer */
+  unreadBySku?: Record<string, boolean>; // ⬅️ NUEVO
+};
+
+const STATUS_LABEL: Record<SkuStatus, string> = {
+  pending_validation: "Pendiente de validación",
+  needs_correction: "Con correcciones",
+  validated: "Validado",
+  reopened: "Reabierto",
 };
 
 export default function SkuSearch({
@@ -24,7 +34,8 @@ export default function SkuSearch({
   maxResults = 200,
   minChars = 1,
   debounceMs = 200,
-  thumbSize = 40,
+  thumbSize = 64,
+  unreadBySku,
 }: Props) {
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -32,9 +43,8 @@ export default function SkuSearch({
   const [hi, setHi] = useState(-1);
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLUListElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  // debounce
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query), debounceMs);
     return () => clearTimeout(t);
@@ -46,7 +56,7 @@ export default function SkuSearch({
     if (!meetsMin) return [];
     const q = debounced.trim().toLowerCase();
     if (!q) return [];
-    const out: SkuWithImages[] = [];
+    const out: SkuWithImagesAndStatus[] = [];
     for (let i = 0; i < skus.length && out.length < maxResults; i++) {
       const it = skus[i];
       if (it.sku.toLowerCase().includes(q)) out.push(it);
@@ -54,7 +64,6 @@ export default function SkuSearch({
     return out;
   }, [skus, debounced, maxResults, meetsMin]);
 
-  // cerrar en blur fuera
   const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
     const root = e.currentTarget;
     const next = (e.relatedTarget as Node | null) ?? null;
@@ -72,7 +81,7 @@ export default function SkuSearch({
     });
   };
 
-  const commit = (item?: SkuWithImages) => {
+  const commit = (item?: SkuWithImagesAndStatus) => {
     if (!item) return;
     onSelect(item);
     setQuery(item.sku);
@@ -103,16 +112,57 @@ export default function SkuSearch({
     }
   };
 
-  // scroll item activo
   useEffect(() => {
-    if (hi < 0 || !listRef.current) return;
-    const el = listRef.current.querySelectorAll("li")[hi] as
-      | HTMLLIElement
-      | undefined;
+    if (hi < 0 || !panelRef.current) return;
+    const list = panelRef.current.querySelector(`[role="listbox"]`);
+    const el =
+      (list?.querySelectorAll('[role="option"]')?.[hi] as HTMLElement) || null;
     el?.scrollIntoView({ block: "nearest" });
   }, [hi]);
 
   const hasQuery = query.trim().length > 0;
+
+  const renderMatch = useCallback(
+    (text: string) => {
+      const q = debounced.trim();
+      if (!q) return <>{text}</>;
+      const lower = text.toLowerCase();
+      const needle = q.toLowerCase();
+      const nodes: React.ReactNode[] = [];
+      let i = 0;
+      while (i < text.length) {
+        const idx = lower.indexOf(needle, i);
+        if (idx === -1) {
+          nodes.push(<span key={i}>{text.slice(i)}</span>);
+          break;
+        }
+        if (idx > i) nodes.push(<span key={i}>{text.slice(i, idx)}</span>);
+        nodes.push(
+          <span key={`m-${idx}`} className={styles.match}>
+            {text.slice(idx, idx + q.length)}
+          </span>
+        );
+        i = idx + q.length;
+      }
+      return <>{nodes}</>;
+    },
+    [debounced]
+  );
+
+  const statusClass = (s: SkuStatus) => {
+    switch (s) {
+      case "validated":
+        return styles.stValidated;
+      case "needs_correction":
+        return styles.stNeedsFix;
+      case "pending_validation":
+        return styles.stPending;
+      case "reopened":
+        return styles.stReopened;
+      default:
+        return "";
+    }
+  };
 
   return (
     <div
@@ -121,7 +171,6 @@ export default function SkuSearch({
       role="combobox"
       aria-expanded={open}
       aria-haspopup="listbox"
-      aria-owns="sku-search-listbox"
     >
       <div className={styles.inputWrap}>
         <span className={styles.icon} aria-hidden>
@@ -141,8 +190,6 @@ export default function SkuSearch({
           }}
           onKeyDown={onKeyDown}
           aria-autocomplete="list"
-          aria-controls="sku-search-listbox"
-          aria-activedescendant={hi >= 0 ? `sku-option-${hi}` : undefined}
         />
         {hasQuery && (
           <button
@@ -164,18 +211,23 @@ export default function SkuSearch({
       </div>
 
       {open && (
-        <>
-          {filtered.length > 0 ? (
-            <ul
-              ref={listRef}
-              id="sku-search-listbox"
-              role="listbox"
-              className={styles.menu}
-            >
-              {filtered.map((item, idx) => {
+        <div className={styles.panel} ref={panelRef}>
+          <div role="listbox" className={styles.list} id="sku-search-listbox">
+            {filtered.length === 0 ? (
+              <div className={styles.empty}>
+                {meetsMin
+                  ? "Sin resultados"
+                  : `Escribe al menos ${minChars} carácter(es)…`}
+              </div>
+            ) : (
+              filtered.map((item, idx) => {
                 const active = idx === hi;
+                const total = item.counts?.total ?? item.images?.length ?? 0;
+                const needsFix = item.counts?.needs_correction ?? 0;
+                const hasUnread = unreadBySku?.[item.sku];
+
                 return (
-                  <li
+                  <div
                     key={`${item.sku}-${idx}`}
                     id={`sku-option-${idx}`}
                     role="option"
@@ -187,28 +239,60 @@ export default function SkuSearch({
                     }}
                     onMouseEnter={() => setHi(idx)}
                   >
-                    <ImageWithSkeleton
-                      src={item.images[0]?.thumbnailUrl}
-                      alt={item.sku}
-                      width={thumbSize}
-                      height={thumbSize}
-                      className={styles.thumbnail}
-                      sizes={`${thumbSize}px`}
-                      quality={100}
-                    />
-                    <span className={styles.label}>{item.sku}</span>
-                  </li>
+                    <div className={styles.thumbWrap}>
+                      <ImageWithSkeleton
+                        src={item.images?.[0]?.thumbnailUrl}
+                        alt={item.sku}
+                        width={thumbSize}
+                        height={thumbSize}
+                        className={styles.thumb}
+                        sizes={`${thumbSize}px`}
+                        quality={100}
+                      />
+                    </div>
+
+                    <div className={styles.itemContent}>
+                      <div className={styles.itemTop}>
+                        <span className={styles.kind}>
+                          SKU: {renderMatch(item.sku)}
+                        </span>
+
+                        <span
+                          className={`${styles.statusPill} ${statusClass(
+                            item.status
+                          )}`}
+                          title={STATUS_LABEL[item.status]}
+                        >
+                          {STATUS_LABEL[item.status]}
+                        </span>
+                      </div>
+
+                      <div className={styles.line}>
+                        <span className={styles.meta}>
+                          Número imágenes: <strong>{total}</strong>
+                          {needsFix > 0 && (
+                            <span className={styles.corrections}>
+                              {" "}
+                              · {needsFix} con correcciones
+                            </span>
+                          )}
+                        </span>
+                        {hasUnread && (
+                          <span
+                            className={styles.chatBadge}
+                            title="Mensajes sin leer"
+                          >
+                            <ChatIcon />
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 );
-              })}
-            </ul>
-          ) : (
-            <div className={styles.empty}>
-              {meetsMin
-                ? "Sin resultados"
-                : `Escribe al menos ${minChars} carácter(es)…`}
-            </div>
-          )}
-        </>
+              })
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

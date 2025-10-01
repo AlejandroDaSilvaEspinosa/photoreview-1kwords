@@ -180,3 +180,23 @@
   justify-content: flex-start;
   gap: 2px;
 }
+
+/* Asegúrate de que .item sea posicionamiento relativo
+   para poder ubicar el punto rojo en absoluta dentro del ítem */
+.item {
+  position: relative;
+}
+
+/* Punto rojo para “no vista” */
+.unviewedDot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  /* box-shadow: 0 0 0 2px var(--panel-bg, #1a1a1a); */
+  pointer-events: none;
+  background: #ff2d55;
+  border-radius: 9999px;
+  position: absolute;
+  bottom: 12px;
+  right: 10px;
+}

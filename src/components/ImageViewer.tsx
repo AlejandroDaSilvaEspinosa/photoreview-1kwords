@@ -51,13 +51,7 @@ import PinIcon from "@/icons/pin.svg";
 import HomeIcon from "@/icons/home.svg";
 import ChatIcon from "@/icons/chat.svg";
 
-/**
- * ImageViewer
- * - Carga caché de threads+mensajes → "cache"
- * - Fetch de threads+mensajes → "live" (por hilo)
- * - Realtime INSERT → ascenso a "live"
- * - Handshake read con rev:thread-unread-ready
- */
+/** ===== Utils y constantes ===== */
 
 const colorByStatus = (s: ThreadStatus) =>
   s === "corrected" ? "#0FA958" : s === "reopened" ? "#FFB000" : "#FF0040";
@@ -73,6 +67,13 @@ const EMPTY_ARR: [] = [];
 
 type HydratedSource = "cache" | "live";
 
+type ThreadCounts = {
+  pending: number;
+  reopened: number;
+  corrected: number;
+  total: number;
+};
+
 interface ImageViewerProps {
   sku: SkuWithImagesAndStatus;
   username: string;
@@ -85,7 +86,7 @@ interface ImageViewerProps {
   selectedThreadId?: number | null;
   onSelectThread?: (id: number | null) => void;
 
-  // NUEVO: navegación a siguiente SKU
+  // Navegación a siguiente SKU
   nextSkuCandidate?: SkuWithImagesAndStatus | null;
   onGoToSku?: (skuCode: string) => void;
 }
@@ -102,6 +103,8 @@ export default function ImageViewer({
   onGoToSku,
 }: ImageViewerProps) {
   const { images } = sku;
+
+  // Realtime por SKU
   useWireSkuRealtime(sku.sku);
 
   // ======= estado para modal de validación
@@ -110,7 +113,6 @@ export default function ImageViewer({
   // ======= SKU status + locks
   const skuStatus = sku.status; // "pending_validation" | "needs_correction" | "validated" | "reopened"
   const isSkuValidated = skuStatus === "validated";
-  // const canValidateSku = skuStatus === "pending_validation";
 
   const imagesReadyToValidate = sku.counts?.finished ?? 0;
   const totalImages = images.length;
@@ -148,9 +150,13 @@ export default function ImageViewer({
     const idx = images.findIndex((i) => i.name === currentImageName);
     return idx >= 0 ? idx : 0;
   }, [currentImageName, images]);
+
   const selectedImage = images[selectedImageIndex] ?? null;
 
-  // ===== Stores
+  // ===== Refs/Stores/UI state
+  const { wrapperRef, imgRef, box: imgBox, update } = useImageGeometry();
+  const onlineUsers = usePresence(sku.sku, username);
+
   const activeThreadId = useThreadsStore((s) => s.activeThreadId);
   const setActiveThreadId = useThreadsStore((s) => s.setActiveThreadId);
 
@@ -161,8 +167,6 @@ export default function ImageViewer({
   const [tool, setTool] = useState<"zoom" | "pin">("zoom");
   const [showThreads, setShowThreads] = useState(true);
 
-  const { wrapperRef, imgRef, box: imgBox, update } = useImageGeometry();
-  const onlineUsers = usePresence(sku.sku, username);
   const [zoomOverlay, setZoomOverlay] = useState<null | {
     x: number;
     y: number;
@@ -210,20 +214,21 @@ export default function ImageViewer({
   const rollbackCreate = useThreadsStore((s) => s.rollbackCreate);
   const pendingStatusMap = useThreadsStore((s) => s.pendingStatus);
 
-  // ===== Fuente de hidratación por hilo
+  // Fuente de hidratación por hilo
   const [sourceByTid, setSourceByTid] = useState<Map<number, HydratedSource>>(
     new Map()
   );
   const markSource = useCallback((tid: number, src: HydratedSource) => {
     setSourceByTid((prev) => {
       const cur = prev.get(tid);
-      if (cur === "live") return prev;
-      if (cur === src) return prev;
+      if (cur === "live" || cur === src) return prev;
       const m = new Map(prev);
       m.set(tid, src);
       return m;
     });
   }, []);
+
+  // Escucha eventos DOM para elevar a "live" y marcar leído si activo
   useEffect(() => {
     const onLive = (e: any) => {
       const tid = e?.detail?.tid as number | undefined;
@@ -232,16 +237,11 @@ export default function ImageViewer({
         const cur = prev.get(tid);
         if (cur === "live") return prev;
         const m = new Map(prev);
-        if (tid != resolvedActiveThreadId) m.set(tid, "live");
+        if (tid !== resolvedActiveThreadId) m.set(tid, "live");
         else m.set(tid, "cache");
         return m;
       });
     };
-    window.addEventListener("rev:thread-live", onLive);
-    return () => window.removeEventListener("rev:thread-live", onLive);
-  }, []);
-
-  useEffect(() => {
     const onUnreadReady = (e: any) => {
       const tid = e?.detail?.tid as number | undefined;
       if (!tid) return;
@@ -252,12 +252,15 @@ export default function ImageViewer({
         );
       }
     };
+    window.addEventListener("rev:thread-live", onLive);
     window.addEventListener("rev:thread-unread-ready", onUnreadReady);
-    return () =>
+    return () => {
+      window.removeEventListener("rev:thread-live", onLive);
       window.removeEventListener("rev:thread-unread-ready", onUnreadReady);
+    };
   }, []);
 
-  // ========================== HIDRATACIÓN (cache + live)
+  /** ==================== HIDRATACIÓN (cache + live) ==================== */
   useEffect(() => {
     let cancelled = false;
     const ac = new AbortController();
@@ -418,7 +421,7 @@ export default function ImageViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sku.sku, images.map((i) => i.name).join("|")]);
 
-  // ========================== Selección por URL (?thread=ID)
+  /** ==================== Selección por URL (?thread=ID) ==================== */
   useEffect(() => {
     if (suppressFollowThreadOnceRef.current) {
       suppressFollowThreadOnceRef.current = false;
@@ -471,7 +474,7 @@ export default function ImageViewer({
     threadsByNeededImages,
   ]);
 
-  // ========================== Derivados para ThreadChat
+  /** ==================== Derivados para ThreadChat ==================== */
   const threadsInImage: Thread[] = useMemo(() => {
     if (!selectedImage?.name) return [];
     return (threadsRaw || [])
@@ -519,7 +522,7 @@ export default function ImageViewer({
     return null;
   }, [threadsRaw, selectedImage, activeThreadId, activeKey]);
 
-  // ======== Acciones de estado del SKU ========
+  /** ==================== Acciones de estado del SKU ==================== */
   const upsertSkuStatus = useStatusesStore((s) => s.upsertSku);
 
   const handleValidateSku = useCallback(async () => {
@@ -573,6 +576,7 @@ export default function ImageViewer({
     }
   }, [sku.sku, sku.counts.total, sku.counts.needs_correction, upsertSkuStatus]);
 
+  /** ==================== Acciones de hilos ==================== */
   const createThreadAt = useCallback(
     async (imgName: string, x: number, y: number) => {
       if (isSkuValidated) {
@@ -586,7 +590,6 @@ export default function ImageViewer({
       const rx = roundTo(x, 3);
       const ry = roundTo(y, 3);
       suppressFollowThreadOnceRef.current = true;
-      // startTransition(() => onSelectThread?.(null));
 
       const tempId = createThreadOptimistic(imgName, rx, ry);
       setCreatingThreadId(tempId);
@@ -707,7 +710,7 @@ export default function ImageViewer({
       try {
         enqueueSendSystemMessage(threadId, tempText);
       } catch {
-        //TODO: TOAST
+        // opcional: toast
       }
 
       try {
@@ -748,7 +751,7 @@ export default function ImageViewer({
     [setThreadStatus, resolvedActiveThreadId, onSelectThread, isSkuValidated]
   );
 
-  // ===== UI helpers
+  /** ==================== UI helpers ==================== */
   const openZoomAtEvent = (e: React.MouseEvent) => {
     const r =
       (e.currentTarget as HTMLElement).getBoundingClientRect?.() ||
@@ -798,7 +801,7 @@ export default function ImageViewer({
   const parentCursor =
     tool === "pin" && !isSkuValidated ? "crosshair" : "zoom-in";
 
-  // ===== Atajos
+  /** ==================== Atajos ==================== */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
@@ -833,22 +836,39 @@ export default function ImageViewer({
     return () => window.removeEventListener("keydown", onKey);
   }, [images.length, selectedImageIndex, zoomOverlay, isSkuValidated]);
 
-  // ===== Contadores para SidePanel
-  const skuImagesReadyToValidate = sku.counts.finished; // imágenes sin hilos abiertos (listas)
-  const threadStats = useMemo(() => {
+  /** ==================== Contadores para todo el SKU ==================== */
+  const threadStats: ThreadCounts = useMemo(() => {
     let pending = 0,
       reopened = 0,
       corrected = 0;
+
     for (const key of Object.keys(threadsByNeededImages)) {
-      for (const t of (threadsByNeededImages as any)[key] as Thread[]) {
+      const list = (threadsByNeededImages as any)[key] as Thread[];
+      for (const t of list) {
+        if (t.status === "deleted") continue; // excluir borrados del cómputo
         if (t.status === "pending") pending++;
         else if (t.status === "reopened") reopened++;
         else if (t.status === "corrected") corrected++;
       }
     }
-    return { pending, reopened, corrected };
+
+    const total = pending + reopened + corrected;
+    return { pending, reopened, corrected, total };
   }, [threadsByNeededImages]);
 
+  /** ==================== Unread por imagen (no system, no míos, sin read_at) ==================== */
+  const unreadByImage = useMemo(() => {
+    const out: Record<string, boolean> = {};
+    for (const img of images) {
+      const arr = threadsByNeededImages[img.name] || EMPTY_ARR;
+      out[img.name] = (arr as Thread[]).some(
+        (t) => t.status !== "deleted" && hasUnreadInThread(t.id)
+      );
+    }
+    return out;
+  }, [images, threadsByNeededImages, msgsByThread]);
+
+  /** ==================== Render ==================== */
   return (
     <div className={styles.viewerContainer}>
       <div className={styles.mainViewer}>
@@ -939,7 +959,6 @@ export default function ImageViewer({
             )}
 
             <ImageWithSkeleton
-              // priority
               ref={imgRef}
               src={selectedImage?.url}
               onClick={handleImageClick}
@@ -963,7 +982,7 @@ export default function ImageViewer({
                 const leftPx = imgBox.offsetLeft + (th.x / 100) * imgBox.width;
                 const bg = colorByStatus(th.status);
                 const isActive = activeThreadId === th.id;
-                const hasUnread = hasUnreadInThread(th.id); // nuevo
+                const hasUnread = hasUnreadInThread(th.id);
 
                 return (
                   <div
@@ -1035,7 +1054,7 @@ export default function ImageViewer({
                 })),
               ])
             )}
-            validatedImages={{}}
+            unreadByImage={unreadByImage}
           />
 
           {nextSkuCandidate && nextSkuCandidate.sku !== sku.sku && (
@@ -1047,6 +1066,8 @@ export default function ImageViewer({
           )}
         </div>
       </div>
+
+      {/* ===== SidePanel con contadores de TODO el SKU ===== */}
       <SidePanel
         name={selectedImage?.name || ""}
         skuStatus={skuStatus}
@@ -1103,7 +1124,9 @@ export default function ImageViewer({
         }
         imagesReadyToValidate={imagesReadyToValidate}
         totalImages={totalImages}
+        skuThreadCounts={threadStats}
       />
+
       {/* Modal de éxito tras validar */}
       <Modal
         open={validatedModalOpen}
@@ -1125,6 +1148,7 @@ export default function ImageViewer({
           <p>No hay más SKUs pendientes en tu selección.</p>
         )}
       </Modal>
+
       {zoomOverlay && selectedImage?.url && (
         <ZoomOverlay
           src={selectedImage.bigImgUrl || selectedImage.url}
@@ -1155,7 +1179,9 @@ export default function ImageViewer({
               if (selectedImage?.name)
                 toggleThreadStatus(selectedImage.name, id, status);
             } catch (e) {
-              toastError(e, { title: "No se pudo cambiar el estado del hilo" });
+              toastError(e, {
+                title: "No se pudo cambiar el estado del hilo",
+              });
             }
           }}
           onCreateThreadAt={(x, y) => {
