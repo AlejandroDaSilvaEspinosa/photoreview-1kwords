@@ -7,24 +7,24 @@ export type Presentation = {
   variant: "info" | "success" | "warning" | "error";
   actionLabel?: string;
   deeplink?: string;
-  thumbUrl?: string; // ⬅️ NUEVO
+  thumbUrl?: string;
 };
 
 export function buildDeeplink(n: NotificationRow): string | undefined {
   if (n.thread_id && n.sku && n.image_name) {
     const q = new URLSearchParams({
-      sku: n.sku,
-      image: n.image_name,
+      sku: n.sku!,
+      image: n.image_name!,
       thread: String(n.thread_id),
     });
     return `?${q.toString()}`;
   }
   if (n.type === "image_status_changed" && n.sku && n.image_name) {
-    const q = new URLSearchParams({ sku: n.sku, image: n.image_name });
+    const q = new URLSearchParams({ sku: n.sku!, image: n.image_name! });
     return `?${q.toString()}`;
   }
   if (n.type === "sku_status_changed" && n.sku) {
-    const q = new URLSearchParams({ sku: n.sku });
+    const q = new URLSearchParams({ sku: n.sku! });
     return `?${q.toString()}`;
   }
   return undefined;
@@ -51,7 +51,11 @@ export function presentNotification(n: NotificationRow): Presentation {
 
   if (n.type === "new_message") {
     const imgName = n.image_name || "";
-    const title = imgName ? `Nuevo mensaje en ${imgName}` : "nuevo mensaje";
+    const fallbackTitle = imgName
+      ? `Nuevo mensaje en ${imgName}`
+      : "Nuevo mensaje";
+    const title = n.title?.trim() || fallbackTitle;
+
     const author = n.author_username ? `@${n.author_username}` : "";
     const text = (n.excerpt ?? n.message ?? "").trim();
     const description = author ? `${author}: ${text}` : text;
@@ -75,11 +79,16 @@ export function presentNotification(n: NotificationRow): Presentation {
   };
 
   return {
-    title: DEFAULT_TITLE[n.type] ?? "Notificación",
+    title: n.title?.trim() || DEFAULT_TITLE[n.type] || "Notificación",
     description: (n.message ?? "").trim(),
     variant: VARIANT[n.type] ?? "info",
-    actionLabel:
-      n.image_name && n.sku ? "Abrir imagen" : n.sku ? "Abrir SKU" : undefined,
+    actionLabel: n.thread_id
+      ? "Abrir hilo"
+      : n.image_name && n.sku
+      ? "Abrir imagen"
+      : n.sku
+      ? "Abrir SKU"
+      : undefined,
     deeplink,
     thumbUrl,
   };

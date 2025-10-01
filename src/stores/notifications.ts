@@ -26,6 +26,7 @@ export type NotificationRow = {
   excerpt?: string | null;
   viewed: boolean;
   created_at: string;
+  title?: string | null;
 };
 
 type State = {
@@ -66,7 +67,7 @@ const MAX_ITEMS = 1000;
 
 const cache = createVersionedCache<{ rows: NotificationRow[]; unseen: number }>(
   "rev_notifs",
-  3,
+  3
 );
 
 export const useNotificationsStore = create<State & Actions>()(
@@ -170,7 +171,7 @@ export const useNotificationsStore = create<State & Actions>()(
       cache.save({ rows: [], unseen: 0 });
       return { items: [], unseen: 0 };
     },
-  })),
+  }))
 );
 
 export const notificationsCache = {
