@@ -1,17 +1,15 @@
 // src/hooks/useHomeOverview.ts
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import type { SkuWithImagesAndStatus, ThreadStatus } from "@/types/review";
 import { toastError } from "@/hooks/useToast";
 
-/** Estados contables (excluye 'deleted') */
 type CountableStatus = Exclude<ThreadStatus, "deleted">;
 
-/** Stats por imagen */
 export type ImageStats = { total: number } & Record<CountableStatus, number>;
-export type StatsBySku = Record<string, Record<string, ImageStats>>; // sku -> image_name -> stats
+export type StatsBySku = Record<string, Record<string, ImageStats>>;
 export type UnreadBySku = Record<string, boolean>;
 
 const emptyStats = (): ImageStats => ({
@@ -30,23 +28,27 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
     [skus]
   );
 
+  // Un único cliente por hook
+  const sb = useMemo(() => supabaseBrowser(), []);
+
   const [stats, setStats] = useState<StatsBySku>({});
   const [unread, setUnread] = useState<UnreadBySku>({});
   const [selfId, setSelfId] = useState<string | null>(null);
 
+  // Cache local para evitar N+1 lookups
+  const msgSkuCache = useRef<Map<number, string>>(new Map());
+
   // --- auth uid ---
   useEffect(() => {
     let cancelled = false;
-    supabaseBrowser()
-      .auth.getUser()
-      .then(({ data }) => {
-        if (!cancelled) setSelfId(data.user?.id ?? null);
-      })
+    sb.auth
+      .getUser()
+      .then(({ data }) => !cancelled && setSelfId(data.user?.id ?? null))
       .catch((e) => toastError(e, { title: "No se pudo recuperar la sesión" }));
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sb]);
 
   // --- carga inicial: estadísticas por imagen ---
   useEffect(() => {
@@ -55,7 +57,6 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
 
     (async () => {
       try {
-        const sb = supabaseBrowser();
         const { data, error } = await sb
           .from("review_threads")
           .select("sku,image_name,status")
@@ -86,58 +87,31 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
     return () => {
       alive = false;
     };
-  }, [skuList]);
+  }, [sb, skuList]);
 
-  // --- carga inicial: no leídos por SKU ---
+  // --- carga inicial: no leídos por SKU (RPC server-side) ---
   useEffect(() => {
     if (!skuList.length || !selfId) return;
     let alive = true;
 
     (async () => {
       try {
-        const sb = supabaseBrowser();
-
-        // Mensajes (de otros) por los SKUs visibles + left join de recibos del usuario
-        const { data, error } = await sb
-          .from("review_messages")
-          .select(
-            `
-            id,
-            created_by,
-            review_threads!inner(sku),
-            review_message_receipts!left(
-              user_id,
-              read_at
-            )
-          `
-          )
-          .in("review_threads.sku", skuList as string[]);
+        const { data, error } = await sb.rpc("unread_by_sku", {
+          p_user_id: selfId,
+          p_skus: skuList as string[],
+        });
 
         if (!alive) return;
         if (error) throw error;
 
-        // Cálculo conservador: si el mensaje no es mío y NO hay read_at para este usuario
-        // (ya sea porque no hay receipt o porque está a null) => hay no leídos en ese SKU.
-        const anyUnread: UnreadBySku = {};
-        for (const row of (data ?? []) as any[]) {
-          const sku = row?.review_threads?.sku as string | undefined;
-          if (!sku) continue;
-          if (
-            row.created_by === selfId ||
-            row.review_message_receipts.length === 0
-          )
-            continue;
-
-          const receipts = (row.review_message_receipts ?? []) as {
-            user_id: string;
-            read_at: string | null;
-          }[];
-
-          const mineRec = receipts.find((r) => r.user_id === selfId);
-          const isUnread = !mineRec || !mineRec.read_at;
-          if (isUnread) anyUnread[sku] = true;
+        const next: UnreadBySku = {};
+        for (const row of (data ?? []) as {
+          sku: string;
+          unread_count: number;
+        }[]) {
+          next[row.sku] = (row.unread_count ?? 0) > 0;
         }
-        setUnread(anyUnread);
+        setUnread(next);
       } catch (e) {
         toastError(e, {
           title: "No se pudieron cargar los mensajes no leídos",
@@ -148,18 +122,17 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
     return () => {
       alive = false;
     };
-  }, [skuList, selfId]);
+  }, [sb, skuList, selfId]);
 
-  // --- realtime: threads + receipts ---
+  // --- realtime: threads + receipts + mensajes ---
   useEffect(() => {
     if (!skuList.length) return;
 
-    const sb = supabaseBrowser();
     const ch = sb.channel("home-overview", {
       config: { broadcast: { ack: true } },
     });
 
-    // THREADS → actualizar barras por imagen
+    // THREADS → actualizar barras por imagen (inmutable)
     ch.on(
       "postgres_changes",
       { event: "*", schema: "public", table: "review_threads" },
@@ -177,13 +150,15 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
 
           setStats((prev) => {
             const next: StatsBySku = { ...prev };
-            const byImg = (next[row.sku!] ||= {});
-            const st = (byImg[row.image_name!] ||= emptyStats());
+            const prevByImg = next[row.sku!] ?? {};
+            const byImg: Record<string, ImageStats> = { ...prevByImg };
+            const prevSt = byImg[row.image_name!] ?? emptyStats();
+            const st: ImageStats = { ...prevSt };
 
             if (evt === "INSERT") {
               if (isCountable(row.status)) {
                 st[row.status] = (st[row.status] ?? 0) + 1;
-                st.total += 1;
+                st.total = (st.total ?? 0) + 1;
               }
             } else if (evt === "UPDATE") {
               const oldStatus = (p as any).old?.status as
@@ -202,8 +177,11 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
                 | undefined;
               if (isCountable(delStatus))
                 st[delStatus] = Math.max(0, (st[delStatus] ?? 0) - 1);
-              st.total = Math.max(0, st.total - 1);
+              st.total = Math.max(0, (st.total ?? 0) - 1);
             }
+
+            byImg[row.image_name!] = st;
+            next[row.sku!] = byImg;
             return next;
           });
         } catch (e) {
@@ -212,7 +190,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
       }
     );
 
-    // RECEIPTS → actualizar bandera de no leídos
+    // RECEIPTS → recomputa sólo el SKU afectado
     ch.on(
       "postgres_changes",
       { event: "*", schema: "public", table: "review_message_receipts" },
@@ -225,49 +203,79 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
           };
           if (!merged.message_id || !selfId) return;
 
-          // Recupera el SKU del mensaje afectado y comprueba si tiene receipt leído
-          const { data, error } = await supabaseBrowser()
-            .from("review_messages")
-            .select(
-              `
-              id,
-              review_threads!inner(sku),
-              review_message_receipts!left(user_id, read_at)
-            `
-            )
-            .eq("id", merged.message_id)
-            .limit(1)
-            .maybeSingle();
+          let sku = msgSkuCache.current.get(merged.message_id);
+          if (!sku) {
+            const { data, error } = await sb
+              .from("review_messages")
+              .select(`id, review_threads!inner(sku)`)
+              .eq("id", merged.message_id)
+              .limit(1)
+              .maybeSingle();
+            if (error || !data?.review_threads?.sku) return;
+            sku = data.review_threads.sku as string;
+            msgSkuCache.current.set(merged.message_id, sku);
+          }
 
-          if (error || !data?.review_threads?.sku) return;
-          const sku = data.review_threads.sku as string;
+          if (!skuList.includes(sku)) return;
 
-          // ¿Sigue habiendo mensajes no leídos para ese SKU?
-          const receipts = (data.review_message_receipts ?? []) as {
-            user_id: string;
-            read_at: string | null;
-          }[];
-          const mineRec = receipts.find((r) => r.user_id === selfId);
-          const stillUnread = !mineRec || !mineRec.read_at;
+          const { data, error } = await sb.rpc("unread_by_sku", {
+            p_user_id: selfId,
+            p_skus: [sku],
+          });
+          if (error) return;
 
-          setUnread((prev) => ({ ...prev, [sku]: stillUnread }));
+          const unreadCount = (data?.[0]?.unread_count ?? 0) as number;
+          setUnread((prev) => ({ ...prev, [sku!]: unreadCount > 0 }));
         } catch (e) {
           toastError(e, { title: "Error actualizando lectura de mensajes" });
         }
       }
     );
 
-    ch.subscribe((status) => {
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        // Silencioso: el resto de hooks se reintentan; mostramos toast si quieres ruido
-        // emitToast({ variant: "warning", title: "Conexión inestable", description: "Reconectando…" })
-      }
-    });
+    // MENSAJES NUEVOS → refrescar sólo ese SKU (RPC excluye system/propios)
+    ch.on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "review_messages" },
+      async (p) => {
+        try {
+          if (!selfId) return;
+          const msg = (p as any).new as { id: number; created_by: string };
+          if (!msg?.id) return;
 
+          let sku = msgSkuCache.current.get(msg.id);
+          if (!sku) {
+            const { data, error } = await sb
+              .from("review_messages")
+              .select(`id, review_threads!inner(sku)`)
+              .eq("id", msg.id)
+              .limit(1)
+              .maybeSingle();
+            if (error || !data?.review_threads?.sku) return;
+            sku = data.review_threads.sku as string;
+            msgSkuCache.current.set(msg.id, sku);
+          }
+
+          if (!skuList.includes(sku)) return;
+
+          const { data, error } = await sb.rpc("unread_by_sku", {
+            p_user_id: selfId,
+            p_skus: [sku],
+          });
+          if (error) return;
+
+          const unreadCount = (data?.[0]?.unread_count ?? 0) as number;
+          setUnread((prev) => ({ ...prev, [sku!]: unreadCount > 0 }));
+        } catch (e) {
+          toastError(e, { title: "Error al refrescar mensajes no leídos" });
+        }
+      }
+    );
+
+    ch.subscribe();
     return () => {
-      supabaseBrowser().removeChannel(ch);
+      sb.removeChannel(ch);
     };
-  }, [skuList, selfId]);
+  }, [sb, skuList, selfId]);
 
   return { stats, unread };
 }

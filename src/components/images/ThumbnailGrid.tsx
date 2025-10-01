@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import styles from "./ThumbnailGrid.module.css";
-import type { ThreadState, ImageItem } from "@/types/review";
+import type { ThreadState, ImageItem, ThreadStatus } from "@/types/review";
 import ChatIcon from "@/icons/chat.svg";
 
 type ImgStatus = "finished" | "needs_correction";
@@ -12,14 +12,15 @@ type Props = {
   images: ImageItem[];
   selectedIndex: number;
   onSelect: (index: number) => void;
-  /** Threads por imagen (sigue igual por compatibilidad, no se usa para contar no leídos). */
+
+  /** Threads por imagen (se usa para calcular dot y no leídos). */
   threads: ThreadState;
 
-  /** NUEVO: map nombreImagen -> tiene mensajes no leídos (no system y no tuyos, sin read_at). */
+  /** nombreImagen -> hay mensajes no leídos (no system, no míos, sin read_at) */
   unreadByImage?: Record<string, boolean>;
 
-  /** NUEVO (opcional): map nombreImagen -> estado ("finished" | "needs_correction").
-   * Si no se provee, se intentará usar image.status.
+  /** (Opcional) nombreImagen -> estado ("finished" | "needs_correction").
+   * Se usa SOLO como pista si aún no hay threads hidratados.
    */
   imageStatusByName?: Record<string, ImgStatus>;
 };
@@ -28,13 +29,12 @@ export default function ThumbnailGrid({
   images,
   selectedIndex,
   onSelect,
-  threads, // se mantiene por compatibilidad (no se usa para la badge de chat)
+  threads,
   unreadByImage,
   imageStatusByName,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const ids = useMemo(() => images.map((_, i) => `thumb-${i}`), [images]);
-  const [focusIdx, setFocusIdx] = useState<number>(-1);
 
   // Auto-scroll suave al elemento seleccionado
   useEffect(() => {
@@ -48,36 +48,56 @@ export default function ThumbnailGrid({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!images.length) return;
-    const prevent = () => e.preventDefault();
+
+    // Evita que también lo capture el listener global del ImageViewer
+    e.stopPropagation();
+
+    if (e.repeat) {
+      e.preventDefault();
+      return;
+    }
+
     let next = selectedIndex;
+    const clamp = (n: number) => Math.max(0, Math.min(images.length - 1, n));
 
     switch (e.key) {
       case "ArrowRight":
-        prevent();
-        next = Math.min(selectedIndex + 1, images.length - 1);
+        e.preventDefault();
+        next = clamp(selectedIndex + 1);
         break;
       case "ArrowLeft":
-        prevent();
-        next = Math.max(selectedIndex - 1, 0);
+        e.preventDefault();
+        next = clamp(selectedIndex - 1);
         break;
       case "Home":
-        prevent();
+        e.preventDefault();
         next = 0;
         break;
       case "End":
-        prevent();
+        e.preventDefault();
         next = images.length - 1;
         break;
       case "Enter":
       case " ":
-        prevent();
-        onSelect(selectedIndex);
-        return;
+        e.preventDefault();
+        next = selectedIndex;
+        break;
       default:
         return;
     }
     onSelect(next);
-    setFocusIdx(next);
+  };
+
+  // Estado REAL desde threads si ya están hidratados (ignora borrados)
+  const statusFromThreads = (name: string): ImgStatus | undefined => {
+    const list =
+      (threads[name] as Array<{ status: ThreadStatus }> | undefined) ??
+      undefined;
+    if (!Array.isArray(list)) return undefined;
+    const hasOpen = list.some(
+      (t) => t.status === "pending" || t.status === "reopened"
+    );
+    return hasOpen ? "needs_correction" : "finished";
   };
 
   return (
@@ -94,16 +114,20 @@ export default function ThumbnailGrid({
         const name = image.name ?? "";
         const baseName = (name.split(".")[0] || name) ?? "";
 
-        // --- Nuevo: badge de chat sólo si hay pendientes reales por imagen
+        // 1) Intentar derivar desde threads (reactivo)
+        const fromThreads = statusFromThreads(name);
+
+        // 2) Si aún no hay threads, usar pista (no reactiva) de props/imagen
+        const hint =
+          imageStatusByName?.[name] ||
+          ((image as any)?.status as ImgStatus | undefined);
+
+        // 3) Prioridad: threads -> pista -> finished
+        const finalStatus: ImgStatus = fromThreads ?? hint ?? "finished";
+        const isFinished = finalStatus === "finished";
+
+        // Chat pendiente por imagen (no leídos reales)
         const showUnread = !!(name && unreadByImage && unreadByImage[name]);
-
-        // --- Nuevo: dot de estado (verde = finished, rojo = needs_correction)
-        const statusFromMap = imageStatusByName?.[name];
-        const statusFromItem = (image as any)?.status as ImgStatus | undefined;
-        const status: ImgStatus | undefined = statusFromMap || statusFromItem;
-
-        const showDot = status === "finished" || status === "needs_correction";
-        const isFinished = status === "finished";
 
         return (
           <button
@@ -115,8 +139,22 @@ export default function ThumbnailGrid({
             className={`${styles.card} ${
               index === selectedIndex ? styles.active : ""
             }`}
-            onClick={() => onSelect(index)}
-            onFocus={() => setFocusIdx(index)}
+            tabIndex={-1}
+            onMouseDown={(e) => {
+              // Evita que el botón robe el foco; mantenemos foco en el contenedor
+              e.preventDefault();
+              (e.currentTarget.parentElement as HTMLElement | null)?.focus({
+                preventScroll: true,
+              });
+            }}
+            onClick={() => {
+              onSelect(index);
+              requestAnimationFrame(() => {
+                (wrapRef.current as HTMLDivElement | null)?.focus({
+                  preventScroll: true,
+                });
+              });
+            }}
             title={name}
           >
             <ImageWithSkeleton
@@ -139,19 +177,17 @@ export default function ThumbnailGrid({
             </div>
 
             {/* Estado (dot arriba-derecha): verde si finished, rojo si needs_correction */}
-            {showDot && (
-              <span
-                className={`${styles.stateDot} ${
-                  isFinished ? styles.dotGreen : styles.dotRed
-                }`}
-                aria-label={
-                  isFinished ? "Imagen terminada" : "Necesita correcciones"
-                }
-                title={isFinished ? "Terminada" : "Necesita correcciones"}
-              />
-            )}
+            <span
+              className={`${styles.stateDot} ${
+                isFinished ? styles.dotGreen : styles.dotRed
+              }`}
+              aria-label={
+                isFinished ? "Imagen terminada" : "Necesita correcciones"
+              }
+              title={isFinished ? "Terminada" : "Necesita correcciones"}
+            />
 
-            {/* Badge de chat: se desplaza si hay dot para no solapar */}
+            {/* Badge de chat */}
             {showUnread && (
               <span className={styles.chatBadge} title="Mensajes sin leer">
                 <ChatIcon />

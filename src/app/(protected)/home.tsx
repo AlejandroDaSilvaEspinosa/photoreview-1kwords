@@ -88,6 +88,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
     hydrateImages(effectiveSkus);
   }, [effectiveSkus, hydrateImages]);
 
+  // ÚNICA fuente de verdad: stats + unread
   const { stats, unread } = useHomeOverview(effectiveSkus);
 
   const [notifPrefetch, setNotifPrefetch] = useState<Prefetched>(null);
@@ -273,6 +274,7 @@ export default function Home({ username, skus, clientInfo }: Props) {
         selectSku={selectSku}
         onOpenSku={onOpenSku}
         notificationsInitial={notifPrefetch}
+        unreadBySku={unread}
       />
 
       <div className={styles.content}>
@@ -325,7 +327,10 @@ export default function Home({ username, skus, clientInfo }: Props) {
                           key={sku.sku}
                           sku={sku}
                           unread={!!unread[sku.sku]}
-                          perImageStats={stats[sku.sku] || {}}
+                          /** refer. nueva para forzar re-render si memoizado */
+                          perImageStats={
+                            stats[sku.sku] ? { ...stats[sku.sku] } : {}
+                          }
                           onOpen={() => selectSku(sku)}
                         />
                       ))}

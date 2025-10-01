@@ -868,6 +868,15 @@ export default function ImageViewer({
     return out;
   }, [images, threadsByNeededImages, msgsByThread]);
 
+  const imageStatusByName = useMemo(() => {
+    const out: Record<string, "finished" | "needs_correction"> = {};
+    for (const img of images) {
+      const s = (img as any)?.status;
+      if (s === "finished" || s === "needs_correction") out[img.name] = s;
+    }
+    return out;
+  }, [images]);
+
   /** ==================== Render ==================== */
   return (
     <div className={styles.viewerContainer}>
@@ -1055,6 +1064,7 @@ export default function ImageViewer({
               ])
             )}
             unreadByImage={unreadByImage}
+            imageStatusByName={imageStatusByName}
           />
 
           {nextSkuCandidate && nextSkuCandidate.sku !== sku.sku && (

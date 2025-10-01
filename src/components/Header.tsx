@@ -1,3 +1,4 @@
+// src/components/Header.tsx
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -6,7 +7,6 @@ import styles from "./Header.module.css";
 import type { SkuWithImagesAndStatus } from "@/types/review";
 import SkuSearch from "./SkuSearch";
 import Notifications from "./Notifications";
-import { useHomeOverview } from "@/hooks/useHomeOverview"; // ⬅️ NUEVO
 
 type NotificationType =
   | "new_message"
@@ -38,6 +38,8 @@ interface HeaderProps {
   selectSku: (sku: SkuWithImagesAndStatus | null) => void;
   onOpenSku: (sku: string) => void;
   notificationsInitial?: { items: NotificationRow[]; unseen: number } | null;
+  /** mapa sku -> tiene mensajes sin leer (inyectado desde Home) */
+  unreadBySku: Record<string, boolean>;
 }
 
 export default function Header({
@@ -48,6 +50,7 @@ export default function Header({
   selectSku,
   onOpenSku,
   notificationsInitial,
+  unreadBySku,
 }: HeaderProps) {
   const [open, setOpen] = useState(false);
 
@@ -60,9 +63,6 @@ export default function Header({
 
   const reveal = () => setOpen(true);
   const hide = () => setOpen(false);
-
-  // ⬇️ NUEVO: no leídos por SKU para el buscador
-  const { unread } = useHomeOverview(skus);
 
   return (
     <>
@@ -97,7 +97,7 @@ export default function Header({
             minChars={1}
             debounceMs={200}
             thumbSize={64}
-            unreadBySku={unread} // ⬅️ NUEVO
+            unreadBySku={unreadBySku} // ← usa lo recibido
           />
         </div>
 

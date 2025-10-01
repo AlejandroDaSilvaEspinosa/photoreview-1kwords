@@ -55,7 +55,10 @@ export default function SkuCard({ sku, unread, perImageStats, onOpen }: Props) {
 
       <span className={styles.openHint}>SKU: {sku.sku}</span>
 
-      {needFix > 0 && <ProgressList statsByImage={perImageStats} />}
+      {needFix > 0 && (
+        // pasa referencia nueva para forzar re-render en memoizados
+        <ProgressList statsByImage={{ ...perImageStats }} />
+      )}
     </button>
   );
 }

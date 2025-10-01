@@ -1,3 +1,4 @@
+// src/components/SkuSearch.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
@@ -6,7 +7,7 @@ import styles from "./SkuSearch.module.css";
 import type { SkuWithImagesAndStatus, SkuStatus } from "@/types/review";
 import SearchIcon from "@/icons/search.svg";
 import CloseIcon from "@/icons/close.svg";
-import ChatIcon from "@/icons/chat.svg"; // ⬅️ NUEVO
+import ChatIcon from "@/icons/chat.svg";
 
 type Props = {
   skus: SkuWithImagesAndStatus[];
@@ -16,8 +17,8 @@ type Props = {
   minChars?: number;
   debounceMs?: number;
   thumbSize?: number;
-  /** mapa sku -> tiene mensajes sin leer */
-  unreadBySku?: Record<string, boolean>; // ⬅️ NUEVO
+  /** mapa sku -> tiene mensajes sin leer (prop desde Header) */
+  unreadBySku?: Record<string, boolean>;
 };
 
 const STATUS_LABEL: Record<SkuStatus, string> = {
