@@ -60,6 +60,22 @@ const mid = (ax: number, ay: number, bx: number, by: number) => ({
   y: (ay + by) / 2,
 });
 
+type GestureState = {
+  mode: "none" | "pan" | "pinch";
+  startX: number;
+  startY: number;
+  startCxPx: number;
+  startCyPx: number;
+  startZoom: number;
+  startDist: number;
+  xImg0: number;
+  yImg0: number;
+  tapX: number;
+  tapY: number;
+  moved: boolean;
+  didPinch: boolean;
+};
+
 export default function ZoomOverlay({
   src,
   threads,
@@ -109,27 +125,13 @@ export default function ZoomOverlay({
   } | null>(null);
   const movedRef = useRef(false);
 
-  // Doble-tap & pinch control
+  // Doble-tap & pinch control  (🔧 mutable, SIN Object.freeze)
   const tapRef = useRef<{ t: number; x: number; y: number }>({
     t: 0,
     x: 0,
     y: 0,
   });
-  const gestureRef = useRef<{
-    mode: "none" | "pan" | "pinch";
-    startX: number;
-    startY: number;
-    startCxPx: number;
-    startCyPx: number;
-    startZoom: number;
-    startDist: number;
-    xImg0: number;
-    yImg0: number;
-    tapX: number;
-    tapY: number;
-    moved: boolean;
-    didPinch: boolean;
-  }>({
+  const gestureRef = useRef<GestureState>({
     mode: "none",
     startX: 0,
     startY: 0,
@@ -161,7 +163,7 @@ export default function ZoomOverlay({
 
   // ===== minimapa flotante (solo narrow) - posición, drag y colapsado =====
   const floatRef = useRef<HTMLDivElement>(null);
-  const handleRef = useRef<HTMLDivElement>(null); // barra draggable
+  const handleRef = useRef<HTMLDivElement>(null);
   const [miniPos, setMiniPos] = useState<{ x: number; y: number }>({
     x: 12,
     y: 12,
@@ -185,33 +187,57 @@ export default function ZoomOverlay({
 
     const fr = floatRef.current?.getBoundingClientRect();
     const mw = fr?.width ?? 240;
-
     const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
-
-    // En expandido: altura = barra + cuadrado (width == height por aspect-ratio: 1)
     const mh = collapsed ? handleH : handleH + mw;
 
-    const PAD = 12;
+    const PAD = 8;
     const x = PAD;
     const y = Math.max(PAD, oh - mh - PAD);
 
     setMiniPos({ x, y });
     miniDrag.current.ox = x;
     miniDrag.current.oy = y;
+    setMiniPosInit(true);
   }, []);
 
-  // Colocar inicialmente en esquina INFERIOR IZQUIERDA (expandid@)
+  // Colocar inicialmente en esquina INFERIOR IZQUIERDA (expandido)
   useEffect(() => {
     if (!isNarrow || miniPosInit) return;
-
     const placeBL = () => snapMiniToBottomLeft(false);
     requestAnimationFrame(placeBL);
     const t = setTimeout(placeBL, 300);
     return () => clearTimeout(t);
   }, [isNarrow, miniPosInit, snapMiniToBottomLeft]);
 
+  // Re-anclar al redimensionar cuando está minimizado (y clamping general)
+  useEffect(() => {
+    const onResize = () => {
+      if (!isNarrow) return;
+      if (miniCollapsed) {
+        snapMiniToBottomLeft(true);
+      } else {
+        const crect = wrapRef.current?.getBoundingClientRect();
+        const ow = crect?.width ?? window.innerWidth;
+        const oh = crect?.height ?? window.innerHeight;
+
+        const fr = floatRef.current?.getBoundingClientRect();
+        const mw = fr?.width ?? 240;
+        const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
+        const mh = handleH + mw;
+
+        setMiniPos((p) => ({
+          x: clamp(p.x, 0, Math.max(0, ow - mw)),
+          y: clamp(p.y, 0, Math.max(0, oh - mh)),
+        }));
+      }
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [isNarrow, miniCollapsed, snapMiniToBottomLeft]);
+
   const beginMiniDrag = useCallback(
     (clientX: number, clientY: number) => {
+      if (miniCollapsed) return; // 🔒 No draggable cuando está minimizado
       miniDrag.current.sx = clientX;
       miniDrag.current.sy = clientY;
       miniDrag.current.ox = miniPos.x;
@@ -219,12 +245,12 @@ export default function ZoomOverlay({
       miniDrag.current.dragging = true;
       setMiniPosInit(true);
     },
-    [miniPos.x, miniPos.y]
+    [miniPos.x, miniPos.y, miniCollapsed]
   );
 
   const doMiniDrag = useCallback(
     (clientX: number, clientY: number) => {
-      if (!miniDrag.current.dragging) return;
+      if (!miniDrag.current.dragging || miniCollapsed) return;
       const crect = wrapRef.current?.getBoundingClientRect();
       const ow = crect?.width ?? window.innerWidth;
       const oh = crect?.height ?? window.innerHeight;
@@ -232,7 +258,7 @@ export default function ZoomOverlay({
       const fr = floatRef.current?.getBoundingClientRect();
       const mw = fr?.width ?? 240;
       const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
-      const mh = miniCollapsed ? handleH : handleH + mw;
+      const mh = handleH + mw; // expandido al arrastrar
 
       const dx = clientX - miniDrag.current.sx;
       const dy = clientY - miniDrag.current.sy;
@@ -272,7 +298,7 @@ export default function ZoomOverlay({
     };
   }, [doMiniDrag, endMiniDrag]);
 
-  // re-render en resize
+  // re-render en resize (viewport imagen)
   const [, force] = useState(0);
   useEffect(() => {
     const ro = new ResizeObserver(() => force((n) => n + 1));
@@ -520,7 +546,7 @@ export default function ZoomOverlay({
     if (!miniRef.current || !imgW || !imgH) return;
     const rect = miniRef.current.getBoundingClientRect();
     const mw = rect.width;
-    const mh = rect.height; // <-- corregido
+    const mh = rect.height;
     const s = Math.min(mw / imgW, mh / imgH);
     const dW = imgW * s;
     const dH = imgH * s;
@@ -1026,9 +1052,12 @@ export default function ZoomOverlay({
             onTouchStart={(e) => e.stopPropagation()}
           >
             <div
-              className={styles.miniDragHandle}
+              className={`${styles.miniDragHandle} ${
+                miniCollapsed ? styles.miniDragHandleDisabled : ""
+              }`}
               ref={handleRef}
               onMouseDown={(e) => {
+                if (miniCollapsed) return; // 🔒 no drag en colapsado
                 const target = e.target as HTMLElement;
                 if (target.closest(`.${styles.miniHandleBtn}`)) return;
                 e.preventDefault();
@@ -1036,6 +1065,7 @@ export default function ZoomOverlay({
                 beginMiniDrag(e.clientX, e.clientY);
               }}
               onTouchStart={(e) => {
+                if (miniCollapsed) return; // 🔒 no drag en colapsado
                 const t = e.touches[0];
                 if (!t) return;
                 e.preventDefault();
@@ -1065,12 +1095,11 @@ export default function ZoomOverlay({
                   e.stopPropagation();
                   const next = !miniCollapsed;
                   setMiniCollapsed(next);
-                  // Recolocar inmediatamente según estado destino
                   if (next) {
-                    // Colapsado → barra a esquina inferior izquierda
+                    // Colapsar → barra a esquina inferior izquierda y sin drag
                     snapMiniToBottomLeft(true);
                   } else {
-                    // Expandido → cuadrado + barra en esquina inferior izquierda
+                    // Expandir → vuelve desplegado a esquina inferior izquierda
                     snapMiniToBottomLeft(false);
                     requestAnimationFrame(() => measureMini());
                   }
@@ -1275,8 +1304,8 @@ export default function ZoomOverlay({
 
       {/* Hint */}
       <div className={styles.shortcutHint} aria-hidden>
-        🖐️ mover · <b>Pin</b> anotar · <b>T</b> hilos on/off · rueda/gestos para
-        zoom · doble-tap (móvil) · <b>Esc</b> cerrar
+        <HandIcon /> mover · <b>Pin</b> anotar · <b>T</b> hilos on/off ·
+        rueda/gestos para zoom · doble-tap (móvil) · <b>Esc</b> cerrar
       </div>
     </div>
   );
