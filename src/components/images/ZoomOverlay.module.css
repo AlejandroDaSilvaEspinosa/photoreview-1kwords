@@ -329,7 +329,7 @@
   .overlay {
     display: flex;
     flex-direction: column;
-    padding: 10px;
+    padding: 0px;
     gap: 10px;
   }
 
@@ -451,12 +451,12 @@
 
 /* Drawer de chat (solo narrow) */
 .chatDrawer {
+  z-index: 99999999;
   position: fixed;
   inset: 0 0 0 auto;
   width: min(92vw, 480px);
   background: var(--surface-2, #151515);
   border-left: 1px solid var(--border-1, #2a2a2a);
-  z-index: 7;
   display: flex;
   flex-direction: column;
   box-shadow: -12px 0 30px rgba(0, 0, 0, 0.45);
@@ -522,7 +522,7 @@
 /* Ajustes extra small */
 @media (max-width: 638px) {
   .overlay {
-    padding: 5px;
+    padding: 0px;
     gap: 5px;
   }
 
