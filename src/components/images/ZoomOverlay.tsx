@@ -1,4 +1,3 @@
-// src/components/images/ZoomOverlay.tsx
 "use client";
 
 import React, {
@@ -23,6 +22,9 @@ import CloseIcon from "@/icons/close.svg";
 import EyeOffIncon from "@/icons/eye-off.svg";
 import PinIcon from "@/icons/pin.svg";
 import HandIcon from "@/icons/hand.svg";
+import FitToScreenIcon from "@/icons/fit-screen.svg";
+import PlusIcon from "@/icons/plus.svg";
+import MinusIcon from "@/icons/minus.svg";
 
 type Props = {
   src: string;
@@ -71,6 +73,17 @@ export default function ZoomOverlay({
   initial,
   hideThreads,
 }: Props) {
+  // ===== responsive: ≤1050 => minimapa flotante + chat drawer =====
+  const [isNarrow, setIsNarrow] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+
+  useEffect(() => {
+    const update = () => setIsNarrow(window.innerWidth <= 1050);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
   // Tamaño real de la imagen
   const [imgW, setImgW] = useState(0);
   const [imgH, setImgH] = useState(0);
@@ -85,6 +98,7 @@ export default function ZoomOverlay({
   const [tool, setTool] = useState<ToolMode>("pan");
   const [isDragging, setIsDragging] = useState(false);
 
+  const overlayRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     x: number;
@@ -133,7 +147,7 @@ export default function ZoomOverlay({
   // rAF throttle para pinch
   const pinchRAF = useRef<number | null>(null);
 
-  // minimapa
+  // minimapa (ambas vistas)
   const miniRef = useRef<HTMLDivElement>(null);
   const [miniDims, setMiniDims] = useState({
     mw: 1,
@@ -144,7 +158,127 @@ export default function ZoomOverlay({
     offY: 0,
   });
 
-  // re-render en resize
+  // ===== minimapa flotante (solo narrow) - posicion y drag =====
+  const floatRef = useRef<HTMLDivElement>(null);
+  const [miniPos, setMiniPos] = useState<{ x: number; y: number }>({
+    x: 12,
+    y: 12,
+  });
+  const [miniPosInit, setMiniPosInit] = useState(false); // evita re-colocar tras drag
+  const miniDrag = useRef<{
+    sx: number;
+    sy: number;
+    ox: number;
+    oy: number;
+    dragging: boolean;
+  }>({
+    sx: 0,
+    sy: 0,
+    ox: 12,
+    oy: 12,
+    dragging: false,
+  });
+
+  // Colocar inicialmente en esquina INFERIOR DERECHA (evitando el FAB)
+  useEffect(() => {
+    if (!isNarrow) return;
+    if (miniPosInit) return;
+
+    const MARGIN = 12;
+    const SAFE_BOTTOM = 80; // reserva para FAB/gestos
+    const SAFE_RIGHT = 12;
+
+    const placeBR = () => {
+      const orect = overlayRef.current?.getBoundingClientRect();
+      const ow = orect?.width ?? window.innerWidth;
+      const oh = orect?.height ?? window.innerHeight;
+
+      // si aún no hay medidas reales, asumimos tamaño razonable
+      const rect = floatRef.current?.getBoundingClientRect();
+      const mw = rect && rect.width > 40 ? rect.width : 240;
+      const mh = rect && rect.height > 40 ? rect.height : 180;
+
+      const x = clamp(
+        ow - mw - SAFE_RIGHT,
+        MARGIN,
+        Math.max(MARGIN, ow - mw - SAFE_RIGHT)
+      );
+      const y = clamp(
+        oh - mh - SAFE_BOTTOM,
+        MARGIN,
+        Math.max(MARGIN, oh - mh - SAFE_BOTTOM)
+      );
+
+      setMiniPos({ x, y });
+      miniDrag.current.ox = x;
+      miniDrag.current.oy = y;
+      setMiniPosInit(true);
+    };
+
+    // coloca después del primer render y también tras layout
+    requestAnimationFrame(placeBR);
+    // y reintenta tras 300ms por si se cargó la imagen del mini y cambió altura
+    const t = setTimeout(placeBR, 300);
+    return () => clearTimeout(t);
+  }, [isNarrow, miniPosInit]);
+
+  const beginMiniDrag = useCallback(
+    (clientX: number, clientY: number) => {
+      miniDrag.current.sx = clientX;
+      miniDrag.current.sy = clientY;
+      miniDrag.current.ox = miniPos.x;
+      miniDrag.current.oy = miniPos.y;
+      miniDrag.current.dragging = true;
+    },
+    [miniPos.x, miniPos.y]
+  );
+
+  const doMiniDrag = useCallback((clientX: number, clientY: number) => {
+    if (!miniDrag.current.dragging) return;
+    const rect = overlayRef.current?.getBoundingClientRect();
+    const ow = rect?.width ?? window.innerWidth;
+    const oh = rect?.height ?? window.innerHeight;
+
+    const mw = floatRef.current?.getBoundingClientRect().width ?? 240;
+    const mh = floatRef.current?.getBoundingClientRect().height ?? 160;
+
+    const dx = clientX - miniDrag.current.sx;
+    const dy = clientY - miniDrag.current.sy;
+
+    const nx = clamp(miniDrag.current.ox + dx, 8, Math.max(8, ow - mw - 8));
+    const ny = clamp(miniDrag.current.oy + dy, 8, Math.max(8, oh - mh - 8));
+    setMiniPos({ x: nx, y: ny });
+  }, []);
+
+  const endMiniDrag = useCallback(() => {
+    miniDrag.current.dragging = false;
+  }, []);
+
+  // listeners globales para drag (mouse + touch)
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => doMiniDrag(e.clientX, e.clientY);
+    const onUp = () => endMiniDrag();
+    const onTouchMove = (e: TouchEvent) => {
+      if (!miniDrag.current.dragging) return;
+      const t = e.touches[0];
+      if (t) doMiniDrag(t.clientX, t.clientY);
+    };
+    const onTouchEnd = () => endMiniDrag();
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onTouchEnd);
+
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [doMiniDrag, endMiniDrag]);
+
+  // re-render en resize (p/ medidas viewport & mini)
   const [, force] = useState(0);
   useEffect(() => {
     const ro = new ResizeObserver(() => force((n) => n + 1));
@@ -176,12 +310,11 @@ export default function ZoomOverlay({
     return Math.min(view.vw / imgW, view.vh / imgH);
   }, [imgW, imgH, view.vw, view.vh]);
 
-  // zoom que permite pan en ambos ejes (ligeramente > fit)
   const getPanEnabledZoom = useCallback(() => {
     if (!imgW || !imgH || !view.vw || !view.vh) return 1;
     const rw = view.vw / imgW;
     const rh = view.vh / imgH;
-    return Math.max(rw, rh) * 1.06; // holgura
+    return Math.max(rw, rh) * 1.06;
   }, [imgW, imgH, view.vw, view.vh]);
 
   // centro en px
@@ -197,8 +330,6 @@ export default function ZoomOverlay({
   const viewHPercent = (view.vh / (imgH * zoom)) * 100;
 
   // ==== helpers de clamping ====
-
-  // clamp del centro en PX para un zoom dado, devuelve %
   const clampCenterPxFor = useCallback(
     (cxPxNew: number, cyPxNew: number, z: number) => {
       if (!imgW || !imgH || !view.vw || !view.vh) return { cx: 50, cy: 50 };
@@ -219,7 +350,6 @@ export default function ZoomOverlay({
     [imgW, imgH, view.vw, view.vh]
   );
 
-  // centrar con ancla y “pegar a bordes” si es esquina
   const centerEdgeAware = useCallback(
     (fx: number, fy: number, z: number, ax = 0.5, ay = 0.5) => {
       if (!imgW || !imgH || !view.vw || !view.vh) return { cx: 50, cy: 50 };
@@ -309,7 +439,6 @@ export default function ZoomOverlay({
       const nextZ = clamp(zoom * factor, minZ, maxZ);
 
       if (nextZ >= zoom) {
-        // zoom IN: pivota en el ratón
         const xImg = (localX - tx) / zoom;
         const yImg = (localY - ty) / zoom;
         const cxPxNext = view.vw / (2 * nextZ) + xImg - localX / nextZ;
@@ -319,7 +448,6 @@ export default function ZoomOverlay({
         setCx(cx);
         setCy(cy);
       } else {
-        // zoom OUT: ignora ratón, conserva encuadre
         const cxPxNow = (cx / 100) * imgW;
         const cyPxNow = (cy / 100) * imgH;
         const { cx: cx2, cy: cy2 } = clampCenterPxFor(cxPxNow, cyPxNow, nextZ);
@@ -390,9 +518,10 @@ export default function ZoomOverlay({
     const yPct = clamp((yImgPx / imgH) * 100, 0, 100);
     setHideThreads(true);
     onCreateThreadAt(xPct, yPct);
+    if (isNarrow) setShowChat(true);
   };
 
-  // ====== minimapa ======
+  // ====== minimapa (medidas) ======
   const measureMini = useCallback(() => {
     if (!miniRef.current || !imgW || !imgH) return;
     const rect = miniRef.current.getBoundingClientRect();
@@ -408,7 +537,7 @@ export default function ZoomOverlay({
 
   useEffect(() => {
     measureMini();
-  }, [measureMini, view.vw, view.vh]);
+  }, [measureMini, view.vw, view.vh, isNarrow]);
 
   useEffect(() => {
     const ro = new ResizeObserver(() => measureMini());
@@ -436,15 +565,17 @@ export default function ZoomOverlay({
 
   const onMiniClickOrDrag = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation(); // 🔒 bloquear eventos al visor
       moveViewportToMiniPos(e.clientX, e.clientY);
     },
     [moveViewportToMiniPos]
   );
 
-  // ✅ minimapa táctil (1 dedo)
   const onMiniTouchStart = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
       e.preventDefault();
+      e.stopPropagation(); // 🔒 bloquear eventos al visor
       const t = e.touches[0];
       if (!t) return;
       moveViewportToMiniPos(t.clientX, t.clientY);
@@ -455,6 +586,7 @@ export default function ZoomOverlay({
   const onMiniTouchMove = useCallback(
     (e: React.TouchEvent<HTMLDivElement>) => {
       e.preventDefault();
+      e.stopPropagation(); // 🔒 bloquear eventos al visor
       const t = e.touches[0];
       if (!t) return;
       moveViewportToMiniPos(t.clientX, t.clientY);
@@ -503,7 +635,7 @@ export default function ZoomOverlay({
   // ====== MOBILE: touch gestures ======
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {
-      e.preventDefault(); // evita gestos nativos (junto con touch-action:none)
+      e.preventDefault();
       const rect = wrapRef.current?.getBoundingClientRect();
       if (!rect || !imgW || !imgH) return;
 
@@ -573,7 +705,6 @@ export default function ZoomOverlay({
           gestureRef.current.moved = true;
         }
       } else if (gestureRef.current.mode === "pinch" && e.touches.length >= 2) {
-        // Throttle a rAF para evitar jitter
         if (pinchRAF.current != null) return;
         pinchRAF.current = requestAnimationFrame(() => {
           pinchRAF.current = null;
@@ -620,10 +751,8 @@ export default function ZoomOverlay({
 
   const onTouchEnd = useCallback(
     (e: React.TouchEvent) => {
-      // Si aún quedan dedos en pantalla, no cerramos gesto
       if (e.touches.length > 0) return;
 
-      // Doble-tap: solo si NO hubo pinch en este gesto
       const now = performance.now();
       const last = tapRef.current;
       const x = gestureRef.current.tapX;
@@ -640,7 +769,6 @@ export default function ZoomOverlay({
           const threshold = panZoom * 1.5;
 
           if (zoom >= threshold) {
-            // Zoom OUT (toggle): vuelve a una vista cómoda para panear
             const nextZ = panZoom;
             const cxPxNow = (cx / 100) * imgW;
             const cyPxNow = (cy / 100) * imgH;
@@ -653,7 +781,6 @@ export default function ZoomOverlay({
             setCx(cx2);
             setCy(cy2);
           } else {
-            // Zoom IN (toggle): acerca alrededor del tap
             const localX = x;
             const localY = y;
             const xImg = (localX - tx) / zoom;
@@ -677,14 +804,13 @@ export default function ZoomOverlay({
         }
       }
 
-      // actualizar memoria de tap y resetear estado de gesto
       tapRef.current = {
         t: now,
         x: gestureRef.current.tapX,
         y: gestureRef.current.tapY,
       };
       gestureRef.current.mode = "none";
-      gestureRef.current.didPinch = false; // permite doble-tap en el siguiente gesto
+      gestureRef.current.didPinch = false;
       if (pinchRAF.current) {
         cancelAnimationFrame(pinchRAF.current);
         pinchRAF.current = null;
@@ -726,6 +852,7 @@ export default function ZoomOverlay({
     const py = (t.y / 100) * imgH;
     setCenterToPx(px, py);
     onFocusThread(t.id);
+    if (isNarrow) setShowChat(true);
   };
 
   const [cursor, setCursor] = useState("");
@@ -740,12 +867,16 @@ export default function ZoomOverlay({
       className={styles.overlay}
       role="dialog"
       aria-label="Zoom"
+      ref={overlayRef}
       style={{ touchAction: "none" }}
+      onMouseDown={(e) => e.stopPropagation()} // seguridad extra
+      onTouchStart={(e) => e.stopPropagation()}
     >
       <button className={styles.close} onClick={onClose} aria-label="Cerrar">
         <CloseIcon />
       </button>
 
+      {/* TOOLBOX */}
       <div className={styles.toolbox} aria-label="Herramientas">
         <button
           type="button"
@@ -779,13 +910,40 @@ export default function ZoomOverlay({
         >
           <EyeOffIncon />
         </button>
+
+        <div className={styles.toolSep} aria-hidden />
+
+        <button
+          className={styles.toolBtn}
+          onClick={() => setZoom((z) => clamp(z * 0.9, getMinZoom(), 10))}
+          title="Zoom −"
+          aria-label="Disminuir zoom"
+        >
+          <MinusIcon />
+        </button>
+        <button
+          className={styles.toolBtn}
+          onClick={() => setZoom((z) => clamp(z * 1.1, getMinZoom(), 10))}
+          title="Zoom +"
+          aria-label="Aumentar zoom"
+        >
+          <PlusIcon />
+        </button>
+        <button
+          className={styles.toolBtn}
+          onClick={fitToView}
+          title="Ajustar a la ventana"
+          aria-label="Ajustar a la ventana"
+        >
+          <FitToScreenIcon />
+        </button>
       </div>
 
       {/* Viewport principal */}
       <div
         className={styles.mainWrap}
         ref={wrapRef}
-        style={{ touchAction: "none" }} // 🔒 bloquea gestos nativos
+        style={{ touchAction: "none" }}
         onWheel={onWheel}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
@@ -806,7 +964,7 @@ export default function ZoomOverlay({
               ? `translate(${tx}px, ${ty}px) scale(${zoom})`
               : "none",
             cursor,
-            ["--zoom" as any]: zoom, // variable CSS para compensar dots
+            ["--zoom" as any]: zoom,
           }}
         >
           {/* Imagen principal */}
@@ -827,6 +985,14 @@ export default function ZoomOverlay({
                 setImgReady(true);
                 requestAnimationFrame(() => measureMini());
               }}
+              onLoadingComplete={(img: HTMLImageElement) => {
+                if (!imgW || !imgH) {
+                  setImgW(img.naturalWidth || 1);
+                  setImgH(img.naturalHeight || 1);
+                  setImgReady(true);
+                  requestAnimationFrame(() => measureMini());
+                }
+              }}
             />
           </div>
 
@@ -846,111 +1012,234 @@ export default function ZoomOverlay({
                 onClick={(e) => {
                   e.stopPropagation();
                   onFocusThread(d.id);
+                  if (isNarrow) setShowChat(true);
                 }}
               >
                 <span className={styles.dotNum}>{d.num}</span>
               </button>
             ))}
         </div>
+
+        {/* Minimap flotante (solo ≤1050px) */}
+        {isNarrow && (
+          <div
+            ref={floatRef}
+            className={styles.miniFloat}
+            style={{ left: miniPos.x, top: miniPos.y }}
+            onMouseDown={(e) => e.stopPropagation()} // 🔒 bloquear al visor
+            onTouchStart={(e) => e.stopPropagation()} // 🔒 bloquear al visor
+          >
+            <div
+              className={styles.miniDragHandle}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                beginMiniDrag(e.clientX, e.clientY);
+              }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const t = e.touches[0];
+                if (t) beginMiniDrag(t.clientX, t.clientY);
+              }}
+            >
+              Minimapa
+            </div>
+            <div
+              className={styles.minimap}
+              ref={miniRef}
+              style={{ touchAction: "none" }}
+              onMouseDown={onMiniClickOrDrag}
+              onMouseMove={(e) => {
+                e.stopPropagation();
+                if (e.buttons === 1) onMiniClickOrDrag(e);
+              }}
+              onTouchStart={onMiniTouchStart}
+              onTouchMove={onMiniTouchMove}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={styles.miniImgWrap}>
+                <ImageWithSkeleton
+                  src={src}
+                  alt=""
+                  fill
+                  sizes="320px"
+                  priority
+                  draggable={false}
+                  className={styles.miniImg}
+                  onLoadingComplete={() => {
+                    measureMini();
+                  }}
+                />
+              </div>
+              <div className={styles.viewport} style={vpStyle} />
+              <div className={styles.veil} />
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Sidebar */}
-      <div className={styles.sidebar} style={{ touchAction: "none" }}>
-        <div
-          className={styles.minimap}
-          ref={miniRef}
-          style={{ touchAction: "none" }} // ✅ evita scroll nativo en mini
-          onMouseDown={onMiniClickOrDrag}
-          onMouseMove={(e) => e.buttons === 1 && onMiniClickOrDrag(e)}
-          onTouchStart={onMiniTouchStart}
-          onTouchMove={onMiniTouchMove}
-        >
-          <div className={styles.miniImgWrap}>
-            <ImageWithSkeleton
-              src={src}
-              alt=""
-              fill
-              sizes="320px"
-              priority
-              draggable={false}
-              className={styles.miniImg}
-              onLoadingComplete={() => measureMini()}
-            />
-          </div>
-          <div className={styles.viewport} style={vpStyle} />
-          <div className={styles.veil} />
-        </div>
-
-        <div className={styles.controls}>
-          <div className={styles.row}>
-            <button
-              onClick={() => setZoom((z) => clamp(z * 0.9, getMinZoom(), 10))}
-            >
-              −
-            </button>
-            <span className={styles.zoomLabel}>
-              {zoom.toFixed(2)}
-              <CloseIcon />
-            </span>
-            <button
-              onClick={() => setZoom((z) => clamp(z * 1.1, getMinZoom(), 10))}
-            >
-              +
-            </button>
-            <button onClick={fitToView} title="Ajustar a ventana">
-              🔍
-            </button>
-          </div>
-          <div className={styles.hint}>
-            🖐️ mover · 📍 anotar ·🧵 mostrar/ocultar hilos · rueda/gestos para
-            zoom · doble-tap (móvil) · Esc para cerrar
-          </div>
-
-          {activeThread ? (
-            <ThreadChat
-              activeThread={activeThread}
-              threadIndex={threadIndex}
-              onAddThreadMessage={onAddThreadMessage}
-              onFocusThread={onFocusThread}
-              onToggleThreadStatus={onToggleThreadStatus}
-              onDeleteThread={onDeleteThread}
-            />
-          ) : (
-            <div className={styles.threadList}>
-              <div className={styles.threadListTitle}>Hilos</div>
-              <ul>
-                {threads.map((t, i) => (
-                  <li
-                    key={t.id}
-                    className={`${styles.threadRow} ${
-                      activeThreadId === t.id ? styles.threadRowActive : ""
-                    }`}
-                  >
-                    <button
-                      className={styles.threadRowMain}
-                      onClick={() => centerToThread(t)}
-                    >
-                      <span
-                        className={styles.dotMini}
-                        style={{ background: colorByThreadStatus(t.status) }}
-                      />
-                      <span className={styles.threadName}>Hilo #{i + 1}</span>
-                    </button>
-                    <button
-                      className={styles.stateBtn}
-                      onClick={() =>
-                        onToggleThreadStatus(t.id, nextThreadStatus(t.status))
-                      }
-                      title={toggleThreadStatusLabel(t.status)}
-                    >
-                      {toggleThreadStatusLabel(t.status)}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+      {/* Sidebar clásica (solo >1050px) */}
+      {!isNarrow && (
+        <div className={styles.sidebar} style={{ touchAction: "none" }}>
+          <div
+            className={styles.minimap}
+            ref={miniRef}
+            style={{ touchAction: "none" }}
+            onMouseDown={onMiniClickOrDrag}
+            onMouseMove={(e) => e.buttons === 1 && onMiniClickOrDrag(e)}
+            onTouchStart={onMiniTouchStart}
+            onTouchMove={onMiniTouchMove}
+          >
+            <div className={styles.miniImgWrap}>
+              <ImageWithSkeleton
+                src={src}
+                alt=""
+                fill
+                sizes="320px"
+                priority
+                draggable={false}
+                className={styles.miniImg}
+                onLoadingComplete={() => measureMini()}
+              />
             </div>
-          )}
+            <div className={styles.viewport} style={vpStyle} />
+            <div className={styles.veil} />
+          </div>
+
+          <div className={styles.chatPanel}>
+            {activeThread ? (
+              <ThreadChat
+                activeThread={activeThread}
+                threadIndex={threadIndex}
+                onAddThreadMessage={onAddThreadMessage}
+                onFocusThread={onFocusThread}
+                onToggleThreadStatus={onToggleThreadStatus}
+                onDeleteThread={onDeleteThread}
+              />
+            ) : (
+              <div className={styles.threadList}>
+                <div className={styles.threadListTitle}>Hilos</div>
+                <ul>
+                  {threads.map((t, i) => (
+                    <li
+                      key={t.id}
+                      className={`${styles.threadRow} ${
+                        activeThreadId === t.id ? styles.threadRowActive : ""
+                      }`}
+                    >
+                      <button
+                        className={styles.threadRowMain}
+                        onClick={() => centerToThread(t)}
+                      >
+                        <span
+                          className={styles.dotMini}
+                          style={{ background: colorByThreadStatus(t.status) }}
+                        />
+                        <span className={styles.threadName}>Hilo #{i + 1}</span>
+                      </button>
+                      <button
+                        className={styles.stateBtn}
+                        onClick={() =>
+                          onToggleThreadStatus(t.id, nextThreadStatus(t.status))
+                        }
+                        title={toggleThreadStatusLabel(t.status)}
+                      >
+                        {toggleThreadStatusLabel(t.status)}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
+      )}
+
+      {/* FAB (mostrar chat) — ≤1050px */}
+      {isNarrow && !showChat && (
+        <button
+          className={styles.fabChat}
+          aria-label="Abrir chat"
+          onClick={() => setShowChat(true)}
+          title="Abrir chat"
+        >
+          💬
+        </button>
+      )}
+
+      {/* Drawer de chat — ≤1050px */}
+      {isNarrow && showChat && (
+        <div className={styles.chatDrawer} role="dialog" aria-label="Chat">
+          <div className={styles.chatDrawerHeader}>
+            <div className={styles.chatDrawerTitle}>
+              {activeThread ? `Hilo #${threadIndex}` : "Hilos"}
+            </div>
+            <button
+              className={styles.chatDrawerClose}
+              onClick={() => setShowChat(false)}
+              aria-label="Cerrar chat"
+              title="Cerrar chat"
+            >
+              <CloseIcon />
+            </button>
+          </div>
+
+          <div className={styles.chatDrawerBody}>
+            {activeThread ? (
+              <ThreadChat
+                activeThread={activeThread}
+                threadIndex={threadIndex}
+                onAddThreadMessage={onAddThreadMessage}
+                onFocusThread={(id) => {
+                  onFocusThread(id);
+                }}
+                onToggleThreadStatus={onToggleThreadStatus}
+                onDeleteThread={onDeleteThread}
+              />
+            ) : (
+              <div className={styles.threadList}>
+                <div className={styles.threadListTitle}>Hilos</div>
+                <ul>
+                  {threads.map((t, i) => (
+                    <li
+                      key={t.id}
+                      className={`${styles.threadRow} ${
+                        activeThreadId === t.id ? styles.threadRowActive : ""
+                      }`}
+                    >
+                      <button
+                        className={styles.threadRowMain}
+                        onClick={() => centerToThread(t)}
+                      >
+                        <span
+                          className={styles.dotMini}
+                          style={{ background: colorByThreadStatus(t.status) }}
+                        />
+                        <span className={styles.threadName}>Hilo #{i + 1}</span>
+                      </button>
+                      <button
+                        className={styles.stateBtn}
+                        onClick={() =>
+                          onToggleThreadStatus(t.id, nextThreadStatus(t.status))
+                        }
+                        title={toggleThreadStatusLabel(t.status)}
+                      >
+                        {toggleThreadStatusLabel(t.status)}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Hint */}
+      <div className={styles.shortcutHint} aria-hidden>
+        🖐️ mover · <b>Pin</b> anotar · <b>T</b> hilos on/off · rueda/gestos para
+        zoom · doble-tap (móvil) · <b>Esc</b> cerrar
       </div>
     </div>
   );

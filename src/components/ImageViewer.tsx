@@ -876,6 +876,52 @@ export default function ImageViewer({
     }
     return out;
   }, [images]);
+  /** ==================== Cambiar de imagen haciendo swipe en móvil ==================== */
+  const touchStartX = useRef<number | null>(null);
+  const touchEndX = useRef<number | null>(null);
+
+  useEffect(() => {
+    const el = imgRef.current;
+    if (!el) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      touchStartX.current = e.touches[0].clientX;
+      touchEndX.current = null;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      touchEndX.current = e.touches[0].clientX;
+    };
+
+    const handleTouchEnd = () => {
+      if (
+        touchStartX.current != null &&
+        touchEndX.current != null &&
+        Math.abs(touchStartX.current - touchEndX.current) > 50 // 👈 umbral (px)
+      ) {
+        const dir = touchStartX.current - touchEndX.current;
+        if (dir > 0 && selectedImageIndex < images.length - 1) {
+          // swipe izquierda → siguiente
+          selectImage(selectedImageIndex + 1);
+        } else if (dir < 0 && selectedImageIndex > 0) {
+          // swipe derecha → anterior
+          selectImage(selectedImageIndex - 1);
+        }
+      }
+      touchStartX.current = null;
+      touchEndX.current = null;
+    };
+
+    el.addEventListener("touchstart", handleTouchStart, { passive: true });
+    el.addEventListener("touchmove", handleTouchMove, { passive: true });
+    el.addEventListener("touchend", handleTouchEnd);
+
+    return () => {
+      el.removeEventListener("touchstart", handleTouchStart);
+      el.removeEventListener("touchmove", handleTouchMove);
+      el.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [images.length, selectedImageIndex]);
 
   /** ==================== Render ==================== */
   return (

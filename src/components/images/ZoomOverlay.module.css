@@ -1,5 +1,4 @@
-/* ZoomOverlay.module.css (versión sin estilos del chat) */
-
+/* Overlay y layout */
 .overlay {
   position: fixed;
   inset: 0;
@@ -7,9 +6,12 @@
   background: rgba(10, 10, 10, 0.82);
   display: grid;
   grid-template-columns: 1fr 320px;
+  grid-template-rows: 1fr;
+  /* ✅ ocupa toda la altura */
   gap: 16px;
   padding: 16px;
   backdrop-filter: blur(2px);
+  color: var(--text-1);
 }
 
 .close {
@@ -26,15 +28,14 @@
   background: #222;
   color: #eee;
   cursor: pointer;
-  transition:
-    background 0.2s ease,
-    transform 0.08s ease;
+  transition: background 0.2s ease, transform 0.08s ease;
 }
 
 .close:hover {
-  background: #333;
+  background: #2a2a2a;
 }
 
+/* Main viewport */
 .mainWrap {
   position: relative;
   overflow: hidden;
@@ -43,6 +44,10 @@
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   touch-action: none;
   overscroll-behavior: contain;
+  height: 100%;
+  /* ✅ llena la fila del grid */
+  min-height: 0;
+  /* ✅ evita colapsos */
 }
 
 /* Stage translate+scale */
@@ -100,7 +105,6 @@
   box-shadow:
     0 0 0 3px rgba(255, 255, 255, 0.35),
     0 0 10px rgba(255, 255, 255, 0.2);
-  /* Mantén el doble de tamaño real sin importar el zoom */
   transform: translate(-50%, -50%) scale(calc(2 / var(--zoom)));
 }
 
@@ -108,14 +112,14 @@
   pointer-events: none;
 }
 
-/* Sidebar */
+/* Sidebar (minimapa + chat) */
 .sidebar {
   display: grid;
-  grid-template-rows: auto auto;
+  grid-template-rows: auto 1fr;
   gap: 12px;
 }
 
-/* Minimap */
+/* Minimap (base) */
 .minimap {
   position: relative;
   border-radius: 12px;
@@ -124,6 +128,7 @@
   overflow: hidden;
   cursor: all-scroll;
   background: #0e0e0e;
+  border: 1px solid var(--border-1);
 }
 
 .miniImgWrap {
@@ -152,55 +157,25 @@
   pointer-events: none;
 }
 
-/* Controles */
-.controls {
-  background: #151515;
-  color: #ddd;
-  border: 1px solid #2a2a2a;
-  border-radius: 12px;
-  padding: 12px;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.controls button {
-  padding: 6px 10px;
-  background: #222;
-  border: 1px solid #333;
-  border-radius: 8px;
-  color: #eee;
-  cursor: pointer;
-}
-
-.controls button:hover {
-  background: #2a2a2a;
-}
-
-.zoomLabel {
-  min-width: 54px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-.hint {
-  margin-top: 8px;
-  font-size: 12px;
-  color: #9aa;
-}
-
-.threadList {
-  max-height: calc(100vh - 450px);
-  margin-top: 16px;
-  background: #151515;
-  color: #ddd;
-  border: 1px solid #2a2a2a;
+/* Chat panel (desktop) */
+.chatPanel {
+  background: var(--surface-2, #151515);
+  color: var(--text-1, #ddd);
+  border: 1px solid var(--border-1, #2a2a2a);
   border-radius: 12px;
   padding: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Lista de hilos */
+.threadList {
   overflow: auto;
+  border-radius: 10px;
+  background: var(--surface-1, #151515);
+  border: 1px solid var(--border-1, #2a2a2a);
+  padding: 8px;
 }
 
 .threadList ul {
@@ -259,15 +234,10 @@
   font-weight: 600;
 }
 
-.threadCoords {
-  color: #9aa;
-  font-size: 12px;
-}
-
 .stateBtn {
   padding: 6px 10px;
   background: #222;
-  border: 1px solid #333;
+  border: 1px solid var(--border-1);
   border-radius: 8px;
   color: #eee;
   cursor: pointer;
@@ -286,7 +256,7 @@
   display: grid;
   gap: 8px;
   background: rgba(18, 18, 18, 0.95);
-  border: 1px solid #2a2a2a;
+  border: 1px solid var(--border-1);
   border-radius: 12px;
   padding: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -297,79 +267,229 @@
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  border: 1px solid #2a2a2a;
+  border: 1px solid var(--border-1);
   background: #222;
   color: #eee;
   cursor: pointer;
   font-size: 18px;
   display: grid;
   place-items: center;
+  transition: background 0.15s ease, transform 0.06s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .toolBtn:hover {
   background: #2a2a2a;
 }
 
+.toolBtn:active {
+  transform: translateY(1px);
+}
+
 .toolActive {
-  /* border-color: #ff0040;
-  box-shadow: 0 0 0 2px rgba(255, 0, 64, 0.25); */
   border-color: white;
 }
 
-/* Responsivo */
+.toolSep {
+  height: 1px;
+  background: var(--border-1);
+  margin: 4px 0;
+  opacity: 0.75;
+}
+
+/* Hint inferior derecho */
+.shortcutHint {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  background: rgba(18, 18, 18, 0.95);
+  border-top: 1px solid var(--border-1);
+  border-left: 1px solid var(--border-1);
+  color: var(--text-2);
+  padding: 8px 16px;
+  border-radius: 8px 0 0 0;
+  font-size: 14px;
+  letter-spacing: 0.2px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  user-select: none;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.shortcutHint b {
+  color: var(--text-1);
+  font-weight: 800;
+}
+
+/* ====== Responsive ====== */
+
+/* Narrow: columna, minimapa flotante, chat en drawer */
 @media (max-width: 1050px) {
   .overlay {
     display: flex;
     flex-direction: column;
+    padding: 10px;
+    gap: 10px;
   }
 
   .mainWrap {
     flex: 1;
-  }
-
-  .controls {
-    max-height: 260px;
-    flex: 1;
-  }
-
-  .threadList {
-    max-height: 125px;
+    min-height: 0;
+    /* ✅ importante para ocupar toda la pantalla */
   }
 
   .sidebar {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: space-between;
-  }
-
-  .minimap {
-    flex: 1;
-    min-width: 260px;
-    max-width: fit-content;
+    display: none;
   }
 }
 
+/* Minimapa flotante (solo narrow) */
+.miniFloat {
+  position: absolute;
+  z-index: 9;
+  /* por encima del FAB y toolbox */
+  width: clamp(180px, 36vw, 280px);
+  pointer-events: auto;
+  /* ✅ capta eventos (no pasan al visor) */
+  user-select: none;
+  touch-action: none;
+  /* ✅ evita gestos nativos que atraviesen */
+  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.45));
+}
+
+.miniDragHandle {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 12px;
+  letter-spacing: .2px;
+  color: #cdd2dd;
+  background: linear-gradient(180deg, #1d1d1d, #151515);
+  border: 1px solid var(--border-1);
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  cursor: grab;
+}
+
+.miniDragHandle:active {
+  cursor: grabbing;
+}
+
+@media (max-width: 1050px) {
+  .miniFloat .minimap {
+    height: clamp(140px, 24vh, 220px);
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+}
+
+/* FAB de chat (solo narrow, cuando el chat está cerrado) */
+.fabChat {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 8;
+  /* por debajo del minimapa */
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: #2a2a2a;
+  border: 1px solid var(--border-1);
+  color: #fff;
+  font-size: 22px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  transition: transform .08s ease, background .15s ease;
+}
+
+.fabChat:hover {
+  background: #333;
+}
+
+.fabChat:active {
+  transform: translateY(1px);
+}
+
+/* Drawer de chat (solo narrow) */
+.chatDrawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(92vw, 480px);
+  background: var(--surface-2, #151515);
+  border-left: 1px solid var(--border-1, #2a2a2a);
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -12px 0 30px rgba(0, 0, 0, 0.45);
+  animation: slideIn .18s ease;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(8px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.chatDrawerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-1);
+  background: #161616;
+}
+
+.chatDrawerTitle {
+  font-weight: 700;
+  color: #e7e7e7;
+}
+
+.chatDrawerClose {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border-1);
+  background: #222;
+  color: #eee;
+  cursor: pointer;
+}
+
+.chatDrawerClose:hover {
+  background: #2a2a2a;
+}
+
+.chatDrawerBody {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+}
+
+/* Oculta hint en pantallas pequeñas */
+@media (max-width: 720px) {
+  .shortcutHint {
+    display: none;
+  }
+}
+
+/* Ajustes extra small */
 @media (max-width: 638px) {
   .overlay {
     padding: 5px;
     gap: 5px;
   }
 
-  .minimap {
-    min-width: 140px;
-    height: 140px;
-    max-width: fit-content;
-  }
-
-  .sidebar {
-    gap: 5px;
-    position: fixed;
-    bottom: 0;
-  }
-
-  .controls {
-    max-width: calc(100% - 180px);
-    max-height: 140px;
+  .toolbox {
+    left: 8px;
   }
 }
