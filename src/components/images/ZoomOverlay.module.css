@@ -344,8 +344,12 @@
   }
 
   .minimap {
-    border-radius: 0 10px 10px;
+    border-radius: 0 0 6px 6px;
     border: none;
+  }
+
+  .miniImgWrap>div {
+    border-radius: 0 0 6px 6px;
   }
 }
 
