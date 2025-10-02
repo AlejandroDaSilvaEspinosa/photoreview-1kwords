@@ -16,19 +16,18 @@
 }
 
 .placeholder {
-  display: grid;
   place-items: center;
   flex: 1;
   width: 100%;
+  padding: 32px;
 }
 
 .placeholderInner {
-  width: min(1400px, 100%);
-  margin-top: 32px;
+  width: min(1700px, 100%);
   background: var(--surface-2);
   border: 1px solid var(--border-1);
   border-radius: 14px;
-  padding: 64px;
+  padding: 32px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   min-height: 100%;
 }
@@ -44,7 +43,7 @@
 .placeholderInner p {
   margin: 0 0 16px;
   color: var(--text-2);
-  font-size: 24px;
+  font-size: 20px;
 }
 
 .section {
@@ -53,7 +52,7 @@
 
 .skuGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 14px;
   width: 100%;
 }

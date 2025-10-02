@@ -6,6 +6,7 @@ import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import type { SkuWithImagesAndStatus } from "@/types/review";
 import ProgressList, { ImageStats } from "./ProgressList";
 import ChatIcon from "@/icons/chat.svg";
+import ImageIcon from "@/icons/image.svg";
 
 type Props = {
   sku: SkuWithImagesAndStatus;
@@ -16,8 +17,6 @@ type Props = {
 
 export default function SkuCard({ sku, unread, perImageStats, onOpen }: Props) {
   const needFix = sku.counts.needs_correction ?? 0;
-  const hasStatusRow =
-    Number.isFinite(sku.counts.total) && sku.counts.total >= 0;
 
   return (
     <button
@@ -45,12 +44,16 @@ export default function SkuCard({ sku, unread, perImageStats, onOpen }: Props) {
           minSkeletonMs={180}
           fallbackText={sku.sku.slice(0, 2).toUpperCase()}
         />
+        <div className={styles.pendingImagesBubble}>
+          <ImageIcon className={styles.imageIcon} />
+          <span>{sku.counts.total}</span>
+        </div>
 
-        {hasStatusRow && needFix > 0 && (
+        {/* {hasStatusRow && needFix > 0 && (
           <span className={styles.badge}>
             {needFix} img necesitan corrección
           </span>
-        )}
+        )} */}
       </div>
 
       <span className={styles.openHint}>SKU: {sku.sku}</span>

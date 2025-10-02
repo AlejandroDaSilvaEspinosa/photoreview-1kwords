@@ -15,6 +15,10 @@ import { useSupabaseUserId } from "@/hooks/useSupabaseUserId";
 import { toastError } from "@/hooks/useToast";
 import CloseIcon from "@/icons/close.svg";
 import DeleteIcon from "@/icons/delete.svg";
+import ClockIcon from "@/icons/clock.svg";
+import CheckIcon from "@/icons/check.svg";
+import AppModal from "./ui/Modal";
+// import SendIcon from "@/icons/send.svg";
 /**
  * ThreadChat
  * - Congela divisor cuando payload está listo (“cache” o “live” en meta.source)
@@ -112,6 +116,7 @@ function ThreadChatInner({
     },
     []
   );
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const getDraft = useCallback(
     (threadId: number) => drafts[threadId] ?? "",
     [drafts]
@@ -409,7 +414,7 @@ function ThreadChatInner({
         <button
           type="button"
           onClick={() => onFocusThread(null)}
-          className={styles.closeThreadChatBtn}
+          className={styles.closeBtn}
           aria-label="Cerrar hilo"
           title="Cerrar hilo"
         >
@@ -455,13 +460,21 @@ function ThreadChatInner({
           const mine = isMine(m);
 
           const ticks =
-            delivery === "sending"
-              ? "⏳"
-              : delivery === "read"
-              ? "✓✓"
-              : delivery === "delivered"
-              ? "✓✓"
-              : "✓";
+            delivery === "sending" ? (
+              <ClockIcon />
+            ) : delivery === "read" ? (
+              <>
+                <CheckIcon />
+                <CheckIcon />
+              </>
+            ) : delivery === "delivered" ? (
+              <>
+                <CheckIcon />
+                <CheckIcon />
+              </>
+            ) : (
+              <CheckIcon />
+            );
 
           const dt = new Date(m.createdAt);
           const hhmm = timeHHmm(dt);
@@ -592,24 +605,42 @@ function ThreadChatInner({
             "Validar correcciones"
           )}
         </button>
-
         <button
           title="Borrar hilo"
           className={`${styles.red} ${styles.deleteThreadBtn}`}
-          onClick={() => {
-            try {
-              onDeleteThread(activeThread.id);
-            } catch (e) {
-              toastError(e, {
-                title: "No se pudo borrar el hilo",
-                fallback: "Comprueba tu conexión e inténtalo de nuevo.",
-              });
-            }
-          }}
+          onClick={() => setConfirmDeleteOpen(true)} // 👈 abrimos modal
         >
           <DeleteIcon />
         </button>
       </div>
+      <AppModal
+        open={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        title="Eliminar hilo"
+        subtitle="¿Estás seguro de que deseas eliminar este hilo? Esta acción no se puede deshacer."
+        actions={[
+          {
+            label: "Cancelar",
+            type: "cancel",
+            onClick: () => setConfirmDeleteOpen(false),
+          },
+          {
+            label: "Eliminar",
+            type: "danger",
+            onClick: () => {
+              try {
+                onDeleteThread(activeThread.id);
+                setConfirmDeleteOpen(false);
+              } catch (e) {
+                toastError(e, {
+                  title: "No se pudo borrar el hilo",
+                  fallback: "Comprueba tu conexión e inténtalo de nuevo.",
+                });
+              }
+            },
+          },
+        ]}
+      ></AppModal>
     </div>
   );
 }

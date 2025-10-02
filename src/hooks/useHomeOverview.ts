@@ -8,7 +8,12 @@ import { toastError } from "@/hooks/useToast";
 
 type CountableStatus = Exclude<ThreadStatus, "deleted">;
 
-export type ImageStats = { total: number } & Record<CountableStatus, number>;
+// Añadimos thumbnailUrl
+export type ImageStats = {
+  total: number;
+  thumbnailUrl?: string;
+} & Record<CountableStatus, number>;
+
 export type StatsBySku = Record<string, Record<string, ImageStats>>;
 export type UnreadBySku = Record<string, boolean>;
 
@@ -17,6 +22,7 @@ const emptyStats = (): ImageStats => ({
   pending: 0,
   corrected: 0,
   reopened: 0,
+  thumbnailUrl: undefined,
 });
 
 const isCountable = (s: unknown): s is CountableStatus =>
@@ -27,6 +33,31 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
     () => (skus?.length ? skus.map((s) => s.sku) : []),
     [skus]
   );
+
+  // Índice sku -> image_name -> thumbnailUrl (con fallback)
+  const thumbIndex = useMemo(() => {
+    const idx: Record<string, Record<string, string>> = {};
+    for (const s of skus ?? []) {
+      const sku = s?.sku;
+      const images: Array<{
+        name?: string;
+        url?: string;
+        listingImageUrl?: string;
+        thumbnailUrl?: string;
+        bigImgUrl?: string;
+      }> = (s as any)?.images ?? (s as any)?.imageItems ?? [];
+
+      if (!sku || !Array.isArray(images)) continue;
+      const byImg: Record<string, string> = (idx[sku] ||= {});
+      for (const img of images) {
+        const name = img?.name;
+        if (!name) continue;
+        const best = img?.thumbnailUrl ?? img?.listingImageUrl;
+        if (best) byImg[name] = best;
+      }
+    }
+    return idx;
+  }, [skus]);
 
   // Un único cliente por hook
   const sb = useMemo(() => supabaseBrowser(), []);
@@ -50,7 +81,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
     };
   }, [sb]);
 
-  // --- carga inicial: estadísticas por imagen ---
+  // --- carga inicial: estadísticas por imagen (+ thumbnailUrl) ---
   useEffect(() => {
     if (!skuList.length) return;
     let alive = true;
@@ -75,8 +106,16 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
           if (!r?.sku || !r.image_name || !isCountable(r.status)) continue;
           const byImg = (map[r.sku] ||= {});
           const st = (byImg[r.image_name] ||= emptyStats());
+
+          // contadores
           st[r.status] = (st[r.status] ?? 0) + 1;
           st.total += 1;
+
+          // thumbnailUrl desde índice precalculado
+          if (!st.thumbnailUrl) {
+            const url = thumbIndex[r.sku]?.[r.image_name];
+            if (url) st.thumbnailUrl = url;
+          }
         }
         setStats(map);
       } catch (e) {
@@ -87,7 +126,31 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
     return () => {
       alive = false;
     };
-  }, [sb, skuList]);
+  }, [sb, skuList, thumbIndex]);
+
+  // --- parcheo: si cambian los skus (y por tanto el thumbIndex), completa/actualiza thumbnails existentes ---
+  useEffect(() => {
+    if (!Object.keys(stats).length) return;
+    setStats((prev) => {
+      const next: StatsBySku = {};
+      for (const sku of Object.keys(prev)) {
+        const byImgPrev = prev[sku] ?? {};
+        const byImgNext: Record<string, ImageStats> = {};
+        for (const imgName of Object.keys(byImgPrev)) {
+          const stPrev = byImgPrev[imgName];
+          const urlFromIdx = thumbIndex[sku]?.[imgName];
+          // si no hay thumbnail o ha cambiado, lo establecemos/actualizamos
+          const stNext: ImageStats = urlFromIdx
+            ? { ...stPrev, thumbnailUrl: stPrev.thumbnailUrl ?? urlFromIdx }
+            : { ...stPrev };
+          byImgNext[imgName] = stNext;
+        }
+        next[sku] = byImgNext;
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thumbIndex]);
 
   // --- carga inicial: no leídos por SKU (RPC server-side) ---
   useEffect(() => {
@@ -132,7 +195,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
       config: { broadcast: { ack: true } },
     });
 
-    // THREADS → actualizar barras por imagen (inmutable)
+    // THREADS → actualizar barras por imagen (inmutable) + mantener thumbnailUrl
     ch.on(
       "postgres_changes",
       { event: "*", schema: "public", table: "review_threads" },
@@ -178,6 +241,12 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
               if (isCountable(delStatus))
                 st[delStatus] = Math.max(0, (st[delStatus] ?? 0) - 1);
               st.total = Math.max(0, (st.total ?? 0) - 1);
+            }
+
+            // asegurar thumbnailUrl desde índice (no sobreescribir si ya existe)
+            if (!st.thumbnailUrl) {
+              const url = thumbIndex[row.sku!]?.[row.image_name!];
+              if (url) st.thumbnailUrl = url;
             }
 
             byImg[row.image_name!] = st;
@@ -275,7 +344,7 @@ export function useHomeOverview(skus: SkuWithImagesAndStatus[]) {
     return () => {
       sb.removeChannel(ch);
     };
-  }, [sb, skuList, selfId]);
+  }, [sb, skuList, selfId, thumbIndex]);
 
   return { stats, unread };
 }

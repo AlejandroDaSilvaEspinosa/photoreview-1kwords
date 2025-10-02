@@ -15,6 +15,17 @@
   --font-mono: var(--font-geist-mono);
 }
 
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+span,
+p {
+  margin: 0;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #181818;
@@ -56,59 +67,6 @@ strong {
   font-weight: 500;
 }
 
-/* ===== Scrollbar theme (global) ===== */
-:root {
-  --sb-size: 10px;
-  --sb-track: #222;
-  /* fondo oscuro */
-  --sb-thumb: #333;
-  /* pulgar normal */
-  --sb-thumb-hover: #4a4f59;
-  /* hover */
-  --sb-thumb-active: #5b6170;
-  /* active */
-  --sb-corner: #333;
-}
-
-/* Firefox */
-html,
-body,
-* {
-  scrollbar-width: thin;
-  margin: 0;
-  /* fino */
-  scrollbar-color: var(--sb-thumb) var(--sb-track);
-}
-
-/* WebKit (Chrome/Edge/Safari) */
-::-webkit-scrollbar {
-  width: var(--sb-size);
-  height: var(--sb-size);
-}
-
-::-webkit-scrollbar-track {
-  background: var(--sb-track);
-}
-
-::-webkit-scrollbar-thumb {
-  background-color: var(--sb-thumb);
-  border-radius: 999px;
-  border: 2px solid var(--sb-track);
-  /* halo para que se vea “separado” del track */
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background-color: var(--sb-thumb-hover);
-}
-
-::-webkit-scrollbar-thumb:active {
-  background-color: var(--sb-thumb-active);
-}
-
-::-webkit-scrollbar-corner {
-  background: var(--sb-corner);
-}
-
 /* ===== Paleta alineada a ThreadChat/ZoomOverlay ===== */
 :root {
   --surface-0: rgba(10, 10, 10, 0.82);
@@ -120,48 +78,130 @@ body,
   --text-1: #ddd;
   --text-2: #a0a0a0;
   --accent-red: #ff0040;
-}
-
-/* ===== Paleta alineada con tus otros componentes ===== */
-:root {
-  --surface-1: #151515;
-  --surface-2: #141414;
-  --surface-3: #131313;
-  --border-1: #2a2a2a;
-  --border-2: #242424;
-  --text-1: #ddd;
-  --text-2: #b7b7b7;
-  --accent-red: #ff0040;
-
   /* Estados tipo ThreadChat (fallbacks si no tienes variables globales) */
   --green-bg: #1a241e;
   --green-border: #274a33;
   --orange-bg: #281f17;
   --orange-border: #5a3a14;
+  --sb-size: 5px;
+  --sb-track: #222;
+  --sb-thumb: #333;
+  --sb-thumb-hover: #4a4f59;
+  --sb-thumb-active: #5b6170;
+  --sb-corner: #333;
 }
 
-/* ===== Paleta alineada a ZoomOverlay/ThreadChat ===== */
-:root {
-  --surface-0: rgba(10, 10, 10, 0.95);
-  --surface-1: #151515;
-  --surface-2: #141414;
-  --surface-3: #131313;
-  --border-1: #2a2a2a;
-  --border-2: #242424;
-  --text-1: #ddd;
-  --text-2: #a0a0a0;
-  --accent-red: #ff0040;
+body {
+  margin: 0;
+  box-sizing: border-box;
 }
 
-/* ===== Paleta consistente con el resto ===== */
-:root {
-  --surface-0: #1a1a1a;
-  --surface-1: #151515;
-  --surface-2: #141414;
-  --surface-3: #131313;
-  --border-1: #2a2a2a;
-  --border-2: #242424;
-  --text-1: #ddd;
-  --text-2: #a0a0a0;
-  --accent: #ff0040;
+div {
+  box-sizing: border-box;
+}
+
+/* WebKit (Chrome/Edge/Safari) — usa el contexto de html o del propio contenedor */
+html::-webkit-scrollbar,
+div::-webkit-scrollbar {
+  width: var(--sb-size, 10px);
+  height: var(--sb-size, 10px);
+}
+
+html::-webkit-scrollbar-track,
+div::-webkit-scrollbar-track {
+  background: var(--sb-track, #222);
+}
+
+html::-webkit-scrollbar-thumb,
+div::-webkit-scrollbar-thumb {
+  background-color: var(--sb-thumb, #333);
+}
+
+html::-webkit-scrollbar-thumb:hover,
+div::-webkit-scrollbar-thumb:hover {
+  background-color: var(--sb-thumb-hover, #4a4f59);
+}
+
+html::-webkit-scrollbar-thumb:active,
+div::-webkit-scrollbar-thumb:active {
+  background-color: var(--sb-thumb-active, #5b6170);
+}
+
+html::-webkit-scrollbar-corner,
+div::-webkit-scrollbar-corner {
+  background: var(--sb-corner, #333);
+}
+
+
+/* Firefox (hereda bien desde html/:root) */
+
+@supports not selector(::-webkit-scrollbar) {
+
+  html,
+  body,
+  div {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sb-thumb, #333) var(--sb-track, #222);
+  }
+}
+
+
+.os-scrollbar-horizontal {
+  bottom: 0;
+  height: var(--sb-size, 6px);
+  transform: translateY(5px);
+  /* 👈 desplaza hacia abajo la barra */
+}
+
+.os-scrollbar-horizontal>.os-scrollbar-track {
+  background-color: var(--sb-track, #222);
+  border-radius: 999px;
+}
+
+.os-scrollbar-horizontal>.os-scrollbar-track>.os-scrollbar-handle {
+  background-color: var(--sb-thumb, #333);
+  border-radius: 999px;
+  transition: background-color 0.2s ease;
+}
+
+.os-scrollbar-horizontal>.os-scrollbar-track>.os-scrollbar-handle:hover {
+  background-color: var(--sb-thumb-hover, #4a4f59);
+}
+
+.os-scrollbar-horizontal>.os-scrollbar-track>.os-scrollbar-handle:active {
+  background-color: var(--sb-thumb-active, #5b6170);
+}
+
+/* Barra vertical (por si la usas también) */
+.os-scrollbar-horizontal {
+  right: 0;
+  transform: translateX(-5px);
+}
+
+.os-scrollbar-vertical>.os-scrollbar-track {
+  background-color: var(--sb-track, #222);
+  border-radius: 999px;
+}
+
+.os-scrollbar-vertical>.os-scrollbar-track>.os-scrollbar-handle {
+  background-color: var(--sb-thumb, #333);
+  border-radius: 999px;
+  transition: background-color 0.2s ease;
+}
+
+.os-scrollbar-vertical>.os-scrollbar-track>.os-scrollbar-handle:hover {
+  background-color: var(--sb-thumb-hover, #4a4f59);
+}
+
+.os-scrollbar-vertical>.os-scrollbar-track>.os-scrollbar-handle:active {
+  background-color: var(--sb-thumb-active, #5b6170);
+}
+
+.os-scrollbar.os-scrollbar-horizontal.os-scrollbar-cornerless,
+.os-scrollbar.os-scrollbar-horizontal.os-scrollbar-cornerless.os-scrollbar-rtl {
+  left: -7px !important;
+  right: 0;
+  bottom: -12px;
+  width: calc(100% + 22px);
+  height: 8px;
 }

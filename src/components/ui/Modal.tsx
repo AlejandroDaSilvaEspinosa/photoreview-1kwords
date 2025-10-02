@@ -2,13 +2,23 @@
 
 import React, { PropsWithChildren, useEffect } from "react";
 import styles from "./Modal.module.css";
+import CloseIcon from "@/icons/close.svg";
+
+type ActionType = "primary" | "warn" | "danger" | "cancel";
+
+type Action = {
+  label: string;
+  type?: ActionType;
+  onClick: () => void;
+};
 
 type Props = {
   open: boolean;
   onClose: () => void;
   title?: string;
   subtitle?: string;
-  footer?: React.ReactNode; // opcional (botonera personalizada)
+  footer?: React.ReactNode;
+  actions?: Action[];
 };
 
 export default function AppModal({
@@ -17,6 +27,7 @@ export default function AppModal({
   title,
   subtitle,
   footer,
+  actions,
   children,
 }: PropsWithChildren<Props>) {
   useEffect(() => {
@@ -41,15 +52,37 @@ export default function AppModal({
             aria-label="Cerrar"
             title="Cerrar"
           >
-            ✕
+            <CloseIcon />
           </button>
         </header>
 
-        {subtitle ? <p className={styles.subtitle}>{subtitle}</p> : null}
+        {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
 
-        <div className={styles.body}>{children}</div>
+        {children && <div className={styles.body}>{children}</div>}
 
-        {footer ? <div className={styles.footer}>{footer}</div> : null}
+        {(footer || actions) && (
+          <div className={styles.footer}>
+            {footer}
+            {actions &&
+              actions.map((a, i) => (
+                <button
+                  key={i}
+                  className={`${styles.actionBtn} ${
+                    a.type === "primary"
+                      ? styles.actionPrimary
+                      : a.type === "warn"
+                      ? styles.actionWarn
+                      : a.type === "danger"
+                      ? styles.actionDanger
+                      : ""
+                  }`}
+                  onClick={a.onClick}
+                >
+                  {a.label}
+                </button>
+              ))}
+          </div>
+        )}
       </div>
     </div>
   );
