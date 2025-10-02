@@ -161,11 +161,12 @@ export default function ZoomOverlay({
 
   // ===== minimapa flotante (solo narrow) - posición, drag y colapsado =====
   const floatRef = useRef<HTMLDivElement>(null);
+  const handleRef = useRef<HTMLDivElement>(null); // barra draggable
   const [miniPos, setMiniPos] = useState<{ x: number; y: number }>({
     x: 12,
     y: 12,
   });
-  const [miniPosInit, setMiniPosInit] = useState(false); // evita re-colocar tras drag
+  const [miniPosInit, setMiniPosInit] = useState(false);
   const [miniCollapsed, setMiniCollapsed] = useState(false);
 
   const miniDrag = useRef<{
@@ -176,33 +177,38 @@ export default function ZoomOverlay({
     dragging: boolean;
   }>({ sx: 0, sy: 0, ox: 12, oy: 12, dragging: false });
 
-  // Colocar inicialmente en esquina INFERIOR IZQUIERDA (usando wrapRef para límites)
+  // Helper: colocar (o re-colocar) el minimapa en la ESQUINA INFERIOR IZQUIERDA
+  const snapMiniToBottomLeft = useCallback((collapsed: boolean) => {
+    const crect = wrapRef.current?.getBoundingClientRect();
+    const ow = crect?.width ?? window.innerWidth;
+    const oh = crect?.height ?? window.innerHeight;
+
+    const fr = floatRef.current?.getBoundingClientRect();
+    const mw = fr?.width ?? 240;
+
+    const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
+
+    // En expandido: altura = barra + cuadrado (width == height por aspect-ratio: 1)
+    const mh = collapsed ? handleH : handleH + mw;
+
+    const PAD = 12;
+    const x = PAD;
+    const y = Math.max(PAD, oh - mh - PAD);
+
+    setMiniPos({ x, y });
+    miniDrag.current.ox = x;
+    miniDrag.current.oy = y;
+  }, []);
+
+  // Colocar inicialmente en esquina INFERIOR IZQUIERDA (expandid@)
   useEffect(() => {
     if (!isNarrow || miniPosInit) return;
 
-    const MARGIN = 12;
-    const placeBL = () => {
-      const crect = wrapRef.current?.getBoundingClientRect();
-      const ow = crect?.width ?? window.innerWidth;
-      const oh = crect?.height ?? window.innerHeight;
-
-      const rect = floatRef.current?.getBoundingClientRect();
-      const mw = rect && rect.width > 40 ? rect.width : 240;
-      const mh = rect && rect.height > 40 ? rect.height : 240; // cuadrado
-
-      const x = MARGIN; // pegado a la izquierda con margen
-      const y = Math.max(MARGIN, oh - mh - MARGIN); // abajo con margen
-
-      setMiniPos({ x, y });
-      miniDrag.current.ox = x;
-      miniDrag.current.oy = y;
-      setMiniPosInit(true);
-    };
-
+    const placeBL = () => snapMiniToBottomLeft(false);
     requestAnimationFrame(placeBL);
     const t = setTimeout(placeBL, 300);
     return () => clearTimeout(t);
-  }, [isNarrow, miniPosInit]);
+  }, [isNarrow, miniPosInit, snapMiniToBottomLeft]);
 
   const beginMiniDrag = useCallback(
     (clientX: number, clientY: number) => {
@@ -211,6 +217,7 @@ export default function ZoomOverlay({
       miniDrag.current.ox = miniPos.x;
       miniDrag.current.oy = miniPos.y;
       miniDrag.current.dragging = true;
+      setMiniPosInit(true);
     },
     [miniPos.x, miniPos.y]
   );
@@ -218,19 +225,18 @@ export default function ZoomOverlay({
   const doMiniDrag = useCallback(
     (clientX: number, clientY: number) => {
       if (!miniDrag.current.dragging) return;
-      // límites medidos contra el contenedor visible (wrapRef)
       const crect = wrapRef.current?.getBoundingClientRect();
       const ow = crect?.width ?? window.innerWidth;
       const oh = crect?.height ?? window.innerHeight;
 
       const fr = floatRef.current?.getBoundingClientRect();
       const mw = fr?.width ?? 240;
-      const mh = fr?.height ?? (miniCollapsed ? 28 : 240);
+      const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
+      const mh = miniCollapsed ? handleH : handleH + mw;
 
       const dx = clientX - miniDrag.current.sx;
       const dy = clientY - miniDrag.current.sy;
 
-      // sin padding artificial: llega a tope a la izquierda y no se sale por la derecha
       const nx = clamp(miniDrag.current.ox + dx, 0, Math.max(0, ow - mw));
       const ny = clamp(miniDrag.current.oy + dy, 0, Math.max(0, oh - mh));
       setMiniPos({ x: nx, y: ny });
@@ -464,6 +470,18 @@ export default function ZoomOverlay({
   const visWpx = view.vw / zoom;
   const visHpx = view.vh / zoom;
 
+  const setCenterToPx = useCallback(
+    (nx: number, ny: number) => {
+      const halfW = Math.min(visWpx / 2, imgW / 2);
+      const halfH = Math.min(visHpx / 2, imgH / 2);
+      const newCx = (clamp(nx, halfW, imgW - halfW) / imgW) * 100;
+      const newCy = (clamp(ny, halfH, imgH - halfH) / imgH) * 100;
+      setCx(newCx);
+      setCy(newCy);
+    },
+    [imgW, imgH, visWpx, visHpx]
+  );
+
   const onMouseDown = (e: React.MouseEvent) => {
     if (tool !== "pan") return;
     movedRef.current = false;
@@ -502,7 +520,7 @@ export default function ZoomOverlay({
     if (!miniRef.current || !imgW || !imgH) return;
     const rect = miniRef.current.getBoundingClientRect();
     const mw = rect.width;
-    const mh = rect.height;
+    const mh = rect.height; // <-- corregido
     const s = Math.min(mw / imgW, mh / imgH);
     const dW = imgW * s;
     const dH = imgH * s;
@@ -823,18 +841,6 @@ export default function ZoomOverlay({
     [threads]
   );
 
-  const setCenterToPx = useCallback(
-    (nx: number, ny: number) => {
-      const halfW = Math.min(visWpx / 2, imgW / 2);
-      const halfH = Math.min(visHpx / 2, imgH / 2);
-      const newCx = (clamp(nx, halfW, imgW - halfW) / imgW) * 100;
-      const newCy = (clamp(ny, halfH, imgH - halfH) / imgH) * 100;
-      setCx(newCx);
-      setCy(newCy);
-    },
-    [imgW, imgH, visWpx, visHpx]
-  );
-
   const centerToThread = (t: Thread) => {
     const px = (t.x / 100) * imgW;
     const py = (t.y / 100) * imgH;
@@ -1021,6 +1027,7 @@ export default function ZoomOverlay({
           >
             <div
               className={styles.miniDragHandle}
+              ref={handleRef}
               onMouseDown={(e) => {
                 const target = e.target as HTMLElement;
                 if (target.closest(`.${styles.miniHandleBtn}`)) return;
@@ -1033,8 +1040,9 @@ export default function ZoomOverlay({
                 if (!t) return;
                 e.preventDefault();
                 e.stopPropagation();
-                const target = e.target as HTMLElement;
-                if (target.closest(`.${styles.miniHandleBtn}`)) return;
+                const target = (e.target as HTMLElement) || undefined;
+                if (target && target.closest(`.${styles.miniHandleBtn}`))
+                  return;
                 beginMiniDrag(t.clientX, t.clientY);
               }}
             >
@@ -1055,8 +1063,17 @@ export default function ZoomOverlay({
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setMiniCollapsed((v) => !v);
-                  requestAnimationFrame(() => measureMini());
+                  const next = !miniCollapsed;
+                  setMiniCollapsed(next);
+                  // Recolocar inmediatamente según estado destino
+                  if (next) {
+                    // Colapsado → barra a esquina inferior izquierda
+                    snapMiniToBottomLeft(true);
+                  } else {
+                    // Expandido → cuadrado + barra en esquina inferior izquierda
+                    snapMiniToBottomLeft(false);
+                    requestAnimationFrame(() => measureMini());
+                  }
                 }}
               >
                 {miniCollapsed ? "▣" : "▭"}
