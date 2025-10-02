@@ -119,11 +119,13 @@
   gap: 12px;
 }
 
-/* Minimap (base) */
+/* Minimap (base): cuadrado */
 .minimap {
   position: relative;
   border-radius: 12px;
-  height: 260px;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  /* ✅ cuadrado */
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   overflow: hidden;
   cursor: all-scroll;
@@ -322,7 +324,7 @@
 
 /* ====== Responsive ====== */
 
-/* Narrow: columna, minimapa flotante, chat en drawer */
+/* Narrow: columna, minimapa flotante cuadrado, chat en drawer */
 @media (max-width: 1050px) {
   .overlay {
     display: flex;
@@ -334,20 +336,25 @@
   .mainWrap {
     flex: 1;
     min-height: 0;
-    /* ✅ importante para ocupar toda la pantalla */
+    /* ✅ ocupa toda la pantalla */
   }
 
   .sidebar {
     display: none;
   }
+
+  .minimap {
+    border-radius: 0 10px 10px;
+    border: none;
+  }
 }
 
-/* Minimapa flotante (solo narrow) */
+/* Minimapa flotante (solo narrow): CUADRADO y colapsable */
 .miniFloat {
   position: absolute;
   z-index: 9;
   /* por encima del FAB y toolbox */
-  width: clamp(180px, 36vw, 280px);
+  width: clamp(160px, 32vw, 280px);
   pointer-events: auto;
   /* ✅ capta eventos (no pasan al visor) */
   user-select: none;
@@ -356,11 +363,19 @@
   filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.45));
 }
 
+/* Estado colapsado: solo barra */
+.miniFloatCollapsed .minimap {
+  display: none;
+}
+
+/* Barra/asa del minimapa */
 .miniDragHandle {
   height: 28px;
   display: flex;
   align-items: center;
-  padding: 0 10px;
+  justify-content: space-between;
+  /* título + botón */
+  padding: 0 6px 0 10px;
   font-size: 12px;
   letter-spacing: .2px;
   color: #cdd2dd;
@@ -369,19 +384,37 @@
   border-bottom: none;
   border-radius: 12px 12px 0 0;
   cursor: grab;
+  border: none;
 }
 
 .miniDragHandle:active {
   cursor: grabbing;
 }
 
-@media (max-width: 1050px) {
-  .miniFloat .minimap {
-    height: clamp(140px, 24vh, 220px);
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-  }
+.miniHandleTitle {
+  pointer-events: none;
+  font-weight: 600;
+  opacity: .95;
 }
+
+.miniHandleBtn {
+  width: 26px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--border-1);
+  background: #222;
+  color: #eaeaea;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+}
+
+.miniHandleBtn:hover {
+  background: #2a2a2a;
+}
+
+/* El minimapa flotante hereda el estilo base (aspect-ratio: 1) */
 
 /* FAB de chat (solo narrow, cuando el chat está cerrado) */
 .fabChat {

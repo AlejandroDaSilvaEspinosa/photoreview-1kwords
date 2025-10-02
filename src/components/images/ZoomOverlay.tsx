@@ -25,6 +25,7 @@ import HandIcon from "@/icons/hand.svg";
 import FitToScreenIcon from "@/icons/fit-screen.svg";
 import PlusIcon from "@/icons/plus.svg";
 import MinusIcon from "@/icons/minus.svg";
+import ChatIcon from "@/icons/chat.svg";
 
 type Props = {
   src: string;
@@ -158,55 +159,42 @@ export default function ZoomOverlay({
     offY: 0,
   });
 
-  // ===== minimapa flotante (solo narrow) - posicion y drag =====
+  // ===== minimapa flotante (solo narrow) - posición, drag y colapsado =====
   const floatRef = useRef<HTMLDivElement>(null);
   const [miniPos, setMiniPos] = useState<{ x: number; y: number }>({
     x: 12,
     y: 12,
   });
   const [miniPosInit, setMiniPosInit] = useState(false); // evita re-colocar tras drag
+  const [miniCollapsed, setMiniCollapsed] = useState(false);
+
   const miniDrag = useRef<{
     sx: number;
     sy: number;
     ox: number;
     oy: number;
     dragging: boolean;
-  }>({
-    sx: 0,
-    sy: 0,
-    ox: 12,
-    oy: 12,
-    dragging: false,
-  });
+  }>({ sx: 0, sy: 0, ox: 12, oy: 12, dragging: false });
 
-  // Colocar inicialmente en esquina INFERIOR DERECHA (evitando el FAB)
+  // Colocar inicialmente en esquina INFERIOR IZQUIERDA
   useEffect(() => {
-    if (!isNarrow) return;
-    if (miniPosInit) return;
+    if (!isNarrow || miniPosInit) return;
 
     const MARGIN = 12;
-    const SAFE_BOTTOM = 80; // reserva para FAB/gestos
-    const SAFE_RIGHT = 12;
-
-    const placeBR = () => {
+    const placeBL = () => {
       const orect = overlayRef.current?.getBoundingClientRect();
       const ow = orect?.width ?? window.innerWidth;
       const oh = orect?.height ?? window.innerHeight;
 
-      // si aún no hay medidas reales, asumimos tamaño razonable
       const rect = floatRef.current?.getBoundingClientRect();
       const mw = rect && rect.width > 40 ? rect.width : 240;
-      const mh = rect && rect.height > 40 ? rect.height : 180;
+      const mh = rect && rect.height > 40 ? rect.height : 240; // cuadrado
 
-      const x = clamp(
-        ow - mw - SAFE_RIGHT,
-        MARGIN,
-        Math.max(MARGIN, ow - mw - SAFE_RIGHT)
-      );
+      const x = clamp(MARGIN, MARGIN, Math.max(MARGIN, ow - mw - MARGIN));
       const y = clamp(
-        oh - mh - SAFE_BOTTOM,
+        oh - mh - MARGIN,
         MARGIN,
-        Math.max(MARGIN, oh - mh - SAFE_BOTTOM)
+        Math.max(MARGIN, oh - mh - MARGIN)
       );
 
       setMiniPos({ x, y });
@@ -215,10 +203,8 @@ export default function ZoomOverlay({
       setMiniPosInit(true);
     };
 
-    // coloca después del primer render y también tras layout
-    requestAnimationFrame(placeBR);
-    // y reintenta tras 300ms por si se cargó la imagen del mini y cambió altura
-    const t = setTimeout(placeBR, 300);
+    requestAnimationFrame(placeBL);
+    const t = setTimeout(placeBL, 300);
     return () => clearTimeout(t);
   }, [isNarrow, miniPosInit]);
 
@@ -233,22 +219,27 @@ export default function ZoomOverlay({
     [miniPos.x, miniPos.y]
   );
 
-  const doMiniDrag = useCallback((clientX: number, clientY: number) => {
-    if (!miniDrag.current.dragging) return;
-    const rect = overlayRef.current?.getBoundingClientRect();
-    const ow = rect?.width ?? window.innerWidth;
-    const oh = rect?.height ?? window.innerHeight;
+  const doMiniDrag = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!miniDrag.current.dragging) return;
+      const rect = overlayRef.current?.getBoundingClientRect();
+      const ow = rect?.width ?? window.innerWidth;
+      const oh = rect?.height ?? window.innerHeight;
 
-    const mw = floatRef.current?.getBoundingClientRect().width ?? 240;
-    const mh = floatRef.current?.getBoundingClientRect().height ?? 160;
+      const mw = floatRef.current?.getBoundingClientRect().width ?? 240;
+      const mh =
+        floatRef.current?.getBoundingClientRect().height ??
+        (miniCollapsed ? 28 : 240);
 
-    const dx = clientX - miniDrag.current.sx;
-    const dy = clientY - miniDrag.current.sy;
+      const dx = clientX - miniDrag.current.sx;
+      const dy = clientY - miniDrag.current.sy;
 
-    const nx = clamp(miniDrag.current.ox + dx, 8, Math.max(8, ow - mw - 8));
-    const ny = clamp(miniDrag.current.oy + dy, 8, Math.max(8, oh - mh - 8));
-    setMiniPos({ x: nx, y: ny });
-  }, []);
+      const nx = clamp(miniDrag.current.ox + dx, 8, Math.max(8, ow - mw - 8));
+      const ny = clamp(miniDrag.current.oy + dy, 8, Math.max(8, oh - mh - 8));
+      setMiniPos({ x: nx, y: ny });
+    },
+    [miniCollapsed]
+  );
 
   const endMiniDrag = useCallback(() => {
     miniDrag.current.dragging = false;
@@ -278,7 +269,7 @@ export default function ZoomOverlay({
     };
   }, [doMiniDrag, endMiniDrag]);
 
-  // re-render en resize (p/ medidas viewport & mini)
+  // re-render en resize
   const [, force] = useState(0);
   useEffect(() => {
     const ro = new ResizeObserver(() => force((n) => n + 1));
@@ -537,7 +528,7 @@ export default function ZoomOverlay({
 
   useEffect(() => {
     measureMini();
-  }, [measureMini, view.vw, view.vh, isNarrow]);
+  }, [measureMini, view.vw, view.vh, isNarrow, miniCollapsed]);
 
   useEffect(() => {
     const ro = new ResizeObserver(() => measureMini());
@@ -869,7 +860,7 @@ export default function ZoomOverlay({
       aria-label="Zoom"
       ref={overlayRef}
       style={{ touchAction: "none" }}
-      onMouseDown={(e) => e.stopPropagation()} // seguridad extra
+      onMouseDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
     >
       <button className={styles.close} onClick={onClose} aria-label="Cerrar">
@@ -1024,57 +1015,92 @@ export default function ZoomOverlay({
         {isNarrow && (
           <div
             ref={floatRef}
-            className={styles.miniFloat}
+            className={`${styles.miniFloat} ${
+              miniCollapsed ? styles.miniFloatCollapsed : ""
+            }`}
             style={{ left: miniPos.x, top: miniPos.y }}
-            onMouseDown={(e) => e.stopPropagation()} // 🔒 bloquear al visor
-            onTouchStart={(e) => e.stopPropagation()} // 🔒 bloquear al visor
+            onMouseDown={(e) => e.stopPropagation()} // 🔒 bloquea al visor
+            onTouchStart={(e) => e.stopPropagation()} // 🔒 bloquea al visor
           >
             <div
               className={styles.miniDragHandle}
               onMouseDown={(e) => {
+                // si clic en el botón, no empezar drag
+                const target = e.target as HTMLElement;
+                if (target.closest(`.${styles.miniHandleBtn}`)) return;
                 e.preventDefault();
                 e.stopPropagation();
                 beginMiniDrag(e.clientX, e.clientY);
               }}
               onTouchStart={(e) => {
+                const t = e.touches[0];
+                if (!t) return;
                 e.preventDefault();
                 e.stopPropagation();
-                const t = e.touches[0];
-                if (t) beginMiniDrag(t.clientX, t.clientY);
+                // si tocamos el botón, no drag
+                const target = e.target as HTMLElement;
+                if (target.closest(`.${styles.miniHandleBtn}`)) return;
+                beginMiniDrag(t.clientX, t.clientY);
               }}
             >
-              Minimapa
+              <span className={styles.miniHandleTitle}>Minimapa</span>
+              <button
+                className={styles.miniHandleBtn}
+                aria-label={
+                  miniCollapsed ? "Expandir minimapa" : "Minimizar minimapa"
+                }
+                title={miniCollapsed ? "Expandir" : "Minimizar"}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMiniCollapsed((v) => !v);
+                  // opcional: al expandir, recalcular medidas
+                  requestAnimationFrame(() => measureMini());
+                }}
+              >
+                {miniCollapsed ? "▣" : "▭"}
+              </button>
             </div>
-            <div
-              className={styles.minimap}
-              ref={miniRef}
-              style={{ touchAction: "none" }}
-              onMouseDown={onMiniClickOrDrag}
-              onMouseMove={(e) => {
-                e.stopPropagation();
-                if (e.buttons === 1) onMiniClickOrDrag(e);
-              }}
-              onTouchStart={onMiniTouchStart}
-              onTouchMove={onMiniTouchMove}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className={styles.miniImgWrap}>
-                <ImageWithSkeleton
-                  src={src}
-                  alt=""
-                  fill
-                  sizes="320px"
-                  priority
-                  draggable={false}
-                  className={styles.miniImg}
-                  onLoadingComplete={() => {
-                    measureMini();
-                  }}
-                />
+
+            {!miniCollapsed && (
+              <div
+                className={styles.minimap}
+                ref={miniRef}
+                style={{ touchAction: "none" }}
+                onMouseDown={onMiniClickOrDrag}
+                onMouseMove={(e) => {
+                  e.stopPropagation();
+                  if (e.buttons === 1) onMiniClickOrDrag(e);
+                }}
+                onTouchStart={onMiniTouchStart}
+                onTouchMove={onMiniTouchMove}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className={styles.miniImgWrap}>
+                  <ImageWithSkeleton
+                    src={src}
+                    alt=""
+                    fill
+                    sizes="320px"
+                    priority
+                    draggable={false}
+                    className={styles.miniImg}
+                    onLoadingComplete={() => {
+                      measureMini();
+                    }}
+                  />
+                </div>
+                <div className={styles.viewport} style={vpStyle} />
+                <div className={styles.veil} />
               </div>
-              <div className={styles.viewport} style={vpStyle} />
-              <div className={styles.veil} />
-            </div>
+            )}
           </div>
         )}
       </div>
@@ -1164,7 +1190,7 @@ export default function ZoomOverlay({
           onClick={() => setShowChat(true)}
           title="Abrir chat"
         >
-          💬
+          <ChatIcon />
         </button>
       )}
 
