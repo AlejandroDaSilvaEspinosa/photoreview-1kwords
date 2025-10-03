@@ -1,0 +1,218 @@
+/* File: src/components/ThreadsPanel.module.css */
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: rgba(18, 18, 18, 0.95);
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    padding: 10px;
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: #e7e7e7;
+    letter-spacing: 0.2px;
+}
+
+.count {
+    padding: 2px 8px;
+    background: #222;
+    color: #eee;
+    border: 1px solid #2a2a2a;
+    border-radius: 999px;
+    font-size: 12px;
+}
+
+.emptyState {
+    padding: 16px;
+    text-align: center;
+    color: #a9a9a9;
+    background: #151515;
+    border: 1px solid #2a2a2a;
+    border-radius: 12px;
+    font-style: italic;
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 8px;
+    border-radius: 10px;
+    padding: 6px;
+    background: #151515;
+    border: 1px solid #2a2a2a;
+}
+
+.rowActive {
+    background: #1c1c1c;
+    box-shadow: 0 0 0 1px #2a2a2a inset;
+}
+
+.rowMain {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    border: 0;
+    padding: 8px 8px;
+    background: transparent;
+    color: #eaeaea;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 8px;
+}
+
+.rowMain:hover {
+    background: #1f1f1f;
+}
+
+.threadTitle {
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.threadStatus {
+    margin-left: auto;
+    font-size: 12px;
+    color: #bdbdbd;
+}
+
+.dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.8);
+}
+
+.unreadBadge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 8px;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: #222222bb;
+    border: 1px solid white;
+}
+
+.actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* === Botón de cambiar estado: look&feel ThreadChat === */
+.changeStatusBtn {
+    padding: 0 12px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid #2a2a2a;
+    background: #2a2a2a;
+    color: #eee;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.changeStatusBtn:hover {
+    filter: brightness(1.03);
+}
+
+.changeStatusBtn[disabled] {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+/* Verde (validar correcciones) */
+.green {
+    border-color: var(--green-border, #274a33);
+    background: var(--green-bg, #1a241e);
+}
+
+.green:hover {
+    background: color-mix(in srgb, var(--green-bg) 97%, white);
+}
+
+/* Naranja/amarillo (reabrir) */
+.orange {
+    border-color: var(--orange-border, #5a3a14);
+    background: var(--orange-bg, #281f17);
+}
+
+.orange:hover {
+    background: color-mix(in srgb, var(--orange-bg) 97%, white);
+}
+
+/* Borrar */
+.deleteThreadBtn {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    border: 1px solid #2a2a2a;
+    background: #2a2a2a;
+    color: #eee;
+    cursor: pointer;
+}
+
+.deleteThreadBtn:hover {
+    filter: brightness(1.03);
+}
+
+/* Rojo */
+.red {
+    border-color: var(--red-border, #5a1c1c);
+    background: var(--red-bg, #281616);
+}
+
+.red:hover {
+    background: color-mix(in srgb, var(--red-bg) 97%, white);
+}
+
+/* Loading y utilidades compartidas con ThreadChat */
+.buttonLoading {
+    position: relative;
+}
+
+.spinner {
+    width: 10px;
+    height: 10px;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    display: inline-block;
+    animation: spin 0.8s linear infinite;
+    vertical-align: -2px;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.disabled {
+    opacity: 0.35 !important;
+    cursor: not-allowed !important;
+}

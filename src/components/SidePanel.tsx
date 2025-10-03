@@ -1,10 +1,11 @@
+// src/components/SidePanel.tsx
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import styles from "./SidePanel.module.css";
-import ThreadChat from "./ThreadChat";
 import type { Thread, ThreadStatus } from "@/types/review";
 import { localGet, localSet, toastStorageOnce } from "@/lib/storage";
+import ThreadsPanel from "./ThreadsPanel";
 
 type SkuStatus =
   | "pending_validation"
@@ -63,9 +64,14 @@ type Props = {
   /** Flags/UI */
   loading?: boolean;
   initialCollapsed?: boolean;
-  composeLocked?: boolean;
-  statusLocked?: boolean;
-  validationLock?: boolean;
+
+  /** Locks */
+  composeLocked?: boolean; // cuando se está creando el hilo activo
+  statusLocked?: boolean; // compat: lock del hilo activo
+  validationLock?: boolean; // SKU validado → sólo lectura
+  pendingStatusIds?: Set<number>; // NUEVO: hilos guardando estado (lista)
+
+  /** Reglas de validación */
   blockValidateByNeedsCorrection?: boolean;
 };
 
@@ -90,11 +96,11 @@ export default function SidePanel({
   loading = false,
   initialCollapsed = false,
   composeLocked = false,
-  statusLocked = false,
+  statusLocked = false, // compat: se usará si no viene pendingStatusIds
   validationLock = false,
+  pendingStatusIds, // NUEVO
   blockValidateByNeedsCorrection = false,
-}: // blockValidateByThreads = false,
-Props) {
+}: Props) {
   const [collapsed, setCollapsed] = useState<boolean>(initialCollapsed);
   const [presenceOpen, setPresenceOpen] = useState<boolean>(false);
 
@@ -188,6 +194,11 @@ Props) {
     : blockValidateByNeedsCorrection
     ? "No puedes validar mientras el SKU tenga correcciones pendientes."
     : "Validar SKU";
+
+  // Lock efectivo para el hilo activo (si nos pasan pendingStatusIds lo usamos)
+  const statusLockedForActive =
+    (activeThreadId != null && !!pendingStatusIds?.has(activeThreadId)) ||
+    statusLocked;
 
   return (
     <aside
@@ -332,7 +343,7 @@ Props) {
           </div>
 
           <div className={styles.divider}>
-            <span>Chat del punto seleccionado</span>
+            <span>Hilos y chat</span>
           </div>
 
           {loading ? (
@@ -342,30 +353,24 @@ Props) {
             </div>
           ) : (
             <div className={styles.annotationsList}>
-              {!selected ? (
-                <p className={styles.noAnnotations}>
-                  {isValidated ? (
-                    <>
-                      Este SKU está <b>validado</b>. Puedes leer hilos y
-                      mensajes, pero no crear ni enviar.
-                    </>
-                  ) : (
-                    "Selecciona un punto en la imagen para ver su chat."
-                  )}
-                </p>
-              ) : (
-                <ThreadChat
-                  activeThread={selected}
-                  threadIndex={threadIndex}
-                  onAddThreadMessage={onAddThreadMessage}
-                  onFocusThread={onFocusThread}
-                  onToggleThreadStatus={onToggleThreadStatus}
-                  onDeleteThread={onDeleteThread}
-                  composeLocked={composeLocked}
-                  statusLocked={statusLocked}
-                  validationLock={validationLock}
-                />
-              )}
+              <ThreadsPanel
+                threads={threads}
+                activeThreadId={activeThreadId}
+                validationLock={validationLock}
+                pendingStatusIds={pendingStatusIds}
+                composeLocked={composeLocked}
+                statusLockedForActive={statusLockedForActive}
+                onAddThreadMessage={onAddThreadMessage}
+                onFocusThread={onFocusThread}
+                onToggleThreadStatus={onToggleThreadStatus}
+                onDeleteThread={onDeleteThread}
+                emptyTitle={
+                  validationLock
+                    ? "SKU validado — sin hilos"
+                    : "Sin hilos en esta imagen"
+                }
+                emptySubtitle="Crea un hilo en la imagen para empezar el chat."
+              />
             </div>
           )}
 

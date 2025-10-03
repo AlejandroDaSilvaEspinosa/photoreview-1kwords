@@ -15,7 +15,7 @@
 
 /* Scrollbar sutil */
 .thumbnailStrip::-webkit-scrollbar {
-  height: 10px;
+  height: 2px;
 }
 
 .thumbnailStrip::-webkit-scrollbar-thumb {

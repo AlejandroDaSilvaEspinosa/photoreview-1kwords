@@ -101,9 +101,7 @@
 }
 
 .dotActive {
-  box-shadow:
-    0 0 0 3px rgba(255, 255, 255, 0.35),
-    0 0 10px rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35), 0 0 10px rgba(255, 255, 255, 0.2);
   transform: translate(-50%, -50%) scale(calc(2 / var(--zoom)));
 }
 
@@ -111,7 +109,7 @@
   pointer-events: none;
 }
 
-/* Sidebar (minimapa + chat) */
+/* Sidebar (minimapa + panel contenedor de chats/lista) */
 .sidebar {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -158,7 +156,7 @@
   pointer-events: none;
 }
 
-/* Chat panel (desktop) */
+/* Panel contenedor (aquí se monta ThreadsPanel) */
 .chatPanel {
   background: var(--surface-2, #151515);
   color: var(--text-1, #ddd);
@@ -168,84 +166,6 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-}
-
-/* Lista de hilos */
-.threadList {
-  overflow: auto;
-  border-radius: 10px;
-  background: var(--surface-1, #151515);
-  border: 1px solid var(--border-1, #2a2a2a);
-  padding: 8px;
-}
-
-.threadList ul {
-  padding: 0;
-  margin: 0;
-  list-style: none;
-}
-
-.threadListTitle {
-  font-weight: 600;
-  margin: 4px 2px 8px;
-  color: #cfd3dc;
-}
-
-.threadRow {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 6px;
-  padding: 6px;
-  border-radius: 8px;
-}
-
-.threadRow+.threadRow {
-  margin-top: 4px;
-}
-
-.threadRowActive {
-  background: #1c1c1c;
-}
-
-.threadRowMain {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: transparent;
-  border: 0;
-  color: inherit;
-  cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 6px;
-}
-
-.threadRowMain:hover {
-  background: #1f1f1f;
-}
-
-.dotMini {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.8);
-}
-
-.threadName {
-  font-weight: 600;
-}
-
-.stateBtn {
-  padding: 6px 10px;
-  background: #222;
-  border: 1px solid var(--border-1);
-  border-radius: 8px;
-  color: #eee;
-  cursor: pointer;
-}
-
-.stateBtn:hover {
-  background: #2a2a2a;
 }
 
 /* TOOLBOX flotante */
@@ -322,7 +242,6 @@
 }
 
 /* ====== Responsive ====== */
-
 /* Narrow: columna, minimapa flotante cuadrado, chat en drawer */
 @media (max-width: 1050px) {
   .overlay {
@@ -335,7 +254,6 @@
   .mainWrap {
     flex: 1;
     min-height: 0;
-    /* ✅ ocupa toda la pantalla */
   }
 
   .sidebar {
@@ -416,8 +334,6 @@
 .miniHandleBtn:hover {
   background: #2a2a2a;
 }
-
-/* El minimapa flotante hereda el estilo base (aspect-ratio: 1) */
 
 /* FAB de chat (solo narrow, cuando el chat está cerrado) */
 .fabChat {

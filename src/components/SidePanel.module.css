@@ -1,7 +1,8 @@
 /* Panel */
 .panel {
   position: relative;
-  width: 400px;
+  width: 470px;
+  max-width: 30vw;
   background: rgba(18, 18, 18, 0.95);
   border-left: 1px solid #2a2a2a;
   box-shadow: -6px 0 18px rgba(0, 0, 0, 0.28);
@@ -247,7 +248,7 @@
   background: color-mix(in srgb, var(--orange-bg) 97%, white);
 }
 
-/* Spinner reutilizable (igual patrón que ThreadChat) */
+/* Spinner reutilizable del propio SidePanel */
 .buttonLoading {
   position: relative;
 }
@@ -295,23 +296,13 @@
   font-size: 12px;
 }
 
-/* Lista/chat */
+/* Contenedor donde se monta ThreadsPanel */
 .annotationsList {
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-height: 120px;
   flex: 1;
-}
-
-.noAnnotations {
-  padding: 18px;
-  text-align: center;
-  color: #a9a9a9;
-  background: #151515;
-  border: 1px solid #2a2a2a;
-  border-radius: 12px;
-  font-style: italic;
 }
 
 /* Loader */
@@ -367,12 +358,12 @@
 }
 
 .countWarn {
-  color: #EB7042;
+  color: #eeeeeed8;
   font-weight: 800;
 }
 
 .countOk {
-  color: #6BEB42;
+  color: #eeeeeed8;
   font-weight: 800;
 }
 
