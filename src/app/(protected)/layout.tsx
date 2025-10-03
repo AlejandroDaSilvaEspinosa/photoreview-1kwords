@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 import { powerCore } from "@/app/fonts";
 
 export const metadata: Metadata = {
-  title: "1K Words - Revisión de Productos",
+  title: "1kwords® - App",
   description:
     "Panel de revisión de imágenes de productos para Castejón Joyeros",
 };
