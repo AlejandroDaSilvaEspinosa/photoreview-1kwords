@@ -1,9 +1,4 @@
-/* ===== Colores y patrón como tus ejemplos =====
-   Fondos:  #141414 / #151515 / #131313
-   Bordes:  #2a2a2a / #242424
-   Texto:   #ddd / #eee
-   Acentos: #FF0040 (hover/estado), verdes estilo estado
-*/
+/* Panel */
 .panel {
   position: relative;
   width: 400px;
@@ -15,7 +10,7 @@
   display: flex;
 }
 
-/* Estado colapsado → rail/pestaña */
+/* Colapsado → rail */
 .isCollapsed {
   width: 56px;
 }
@@ -53,9 +48,7 @@
   background: #222;
   color: #eee;
   cursor: pointer;
-  transition:
-    background 0.2s ease,
-    transform 0.08s ease;
+  transition: background 0.2s ease, transform 0.08s ease;
 }
 
 .railExpandBtn:hover {
@@ -75,55 +68,29 @@
   overflow-x: hidden;
 }
 
-/* ===== Header como ThreadChat ===== */
+/* Header/presencia */
 .header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0px 0 8px 0;
+  padding: 0 0 8px 0;
   color: #ddd;
   font-weight: 600;
   border-radius: 10px;
 }
 
-.headerLeft {
-  color: #ddd;
-}
-
-.headerRight {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.collapseBtn {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  border: 1px solid var(--border-1);
-  font-size: 20px;
-  line-height: 0;
-  background: #222;
-  color: #eee;
-  cursor: pointer;
-  transition:
-    background 0.2s ease,
-    transform 0.08s ease;
-}
-
-.collapseBtn:hover {
-  background: #333;
-}
-
-.collapseBtn:active {
-  transform: translateY(1px);
-}
-
-/* ===== Presencia (mismo dot de tus ejemplos) ===== */
 .presenceWrap {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.presenceWrap:focus {
+  outline: 1px dashed #555;
+  outline-offset: 2px;
 }
 
 .dotMini {
@@ -134,18 +101,90 @@
   background: #00b000;
 }
 
-/* ===== Caja del archivo ===== */
-.currentImageInfo {
+.presenceText {
+  color: #ddd;
+}
+
+/* Overlay de presencia */
+.presenceOverlay {
+  position: absolute;
+  top: 40px;
+  left: 0;
+  z-index: 10;
+  background: #151515;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  min-width: 280px;
+  max-width: 360px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+  padding: 8px;
+}
+
+.presenceOverlayHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 12px;
-  background: #151515;
-  border: 1px solid #2a2a2a;
+  color: #ccc;
+  border-bottom: 1px solid #242424;
+  padding: 6px 4px 8px;
+  margin-bottom: 6px;
 }
 
+.presenceList {
+  display: grid;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.presenceItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #181818;
+  border: 1px solid #242424;
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.userName {
+  color: #e6e6e6;
+}
+
+.sessionBadge {
+  background: #222;
+  color: #eee;
+  border: 1px solid #2a2a2a;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+/* Collapse */
+.collapseBtn {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--border-1);
+  font-size: 20px;
+  line-height: 0;
+  background: #222;
+  color: #eee;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.08s ease;
+}
+
+.collapseBtn:hover {
+  background: #333;
+}
+
+.collapseBtn:active {
+  transform: translateY(1px);
+}
+
+/* Info archivo */
 .fileName {
   color: #eaeaea;
   text-overflow: ellipsis;
@@ -167,7 +206,7 @@
   border-radius: 999px;
 }
 
-/* ===== Botones (base gris como en ZoomOverlay/ThreadChat) ===== */
+/* Botones */
 .validationButtons {
   margin-top: 2px;
 }
@@ -181,10 +220,7 @@
   color: #eee;
   font-weight: 700;
   cursor: pointer;
-  transition:
-    background 0.2s ease,
-    transform 0.06s ease,
-    filter 0.15s ease;
+  transition: background 0.2s ease, transform 0.06s ease, filter 0.15s ease;
 }
 
 .actionBtn:hover {
@@ -200,7 +236,7 @@
   cursor: not-allowed;
 }
 
-/* Variantes de color compatibles con tu patrón (usando fallbacks) */
+/* Variantes */
 .green {
   border-color: var(--green-border, #274a33);
   background: var(--green-bg, #1a241e);
@@ -219,7 +255,6 @@
   background: color-mix(in srgb, var(--orange-bg) 97%, white);
 }
 
-
 .red {
   border-color: var(--red-border, #5a1c1c);
   background: var(--red-bg, #281616);
@@ -229,8 +264,7 @@
   background: color-mix(in srgb, var(--red-bg) 97%, white);
 }
 
-
-/* ===== Divider ===== */
+/* Divider */
 .divider {
   position: relative;
   text-align: center;
@@ -255,7 +289,7 @@
   font-size: 12px;
 }
 
-/* ===== Lista/chat vacío ===== */
+/* Lista/chat */
 .annotationsList {
   display: flex;
   flex-direction: column;
@@ -274,7 +308,8 @@
   font-style: italic;
 }
 
-/* ===== Loader ===== */
+
+/* Loader */
 .loaderWrap {
   display: grid;
   place-items: center;
@@ -305,7 +340,7 @@
   font-size: 13px;
 }
 
-/* ===== Tarjeta de progreso (look controles/threads) ===== */
+/* Tarjeta progreso */
 .reviewSummary {
   gap: 4px;
   display: flex;
@@ -342,22 +377,6 @@
   font-weight: 800;
 }
 
-/* ===== Responsive ===== */
-@media (max-width: 1200px) {
-  .panel {
-    width: 100%;
-  }
-
-  .isCollapsed {
-    width: 56px;
-  }
-
-  .collapseBtn {
-    display: none;
-  }
-}
-
-/* ===== Progress Bar estilizada ===== */
 .progressBarWrap {
   background: #1a1a1a;
   border: 1px solid #2a2a2a;
@@ -372,7 +391,6 @@
 .progressBarFill {
   height: 100%;
   background: #eeeeeed8;
-  /* blanco para corregidas */
   transition: width 0.3s ease;
 }
 
@@ -381,4 +399,19 @@
   gap: 32px;
   align-items: center;
   margin-bottom: 6px;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .panel {
+    width: 100%;
+  }
+
+  .isCollapsed {
+    width: 56px;
+  }
+
+  .collapseBtn {
+    display: none;
+  }
 }

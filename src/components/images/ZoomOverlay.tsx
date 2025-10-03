@@ -125,7 +125,7 @@ export default function ZoomOverlay({
   } | null>(null);
   const movedRef = useRef(false);
 
-  // Doble-tap & pinch control  (🔧 mutable, SIN Object.freeze)
+  // Doble-tap & pinch control (mutable)
   const tapRef = useRef<{ t: number; x: number; y: number }>({
     t: 0,
     x: 0,
@@ -179,42 +179,51 @@ export default function ZoomOverlay({
     dragging: boolean;
   }>({ sx: 0, sy: 0, ox: 12, oy: 12, dragging: false });
 
-  // Helper: colocar (o re-colocar) el minimapa en la ESQUINA INFERIOR IZQUIERDA
-  const snapMiniToBottomLeft = useCallback((collapsed: boolean) => {
-    const crect = wrapRef.current?.getBoundingClientRect();
-    const ow = crect?.width ?? window.innerWidth;
-    const oh = crect?.height ?? window.innerHeight;
+  /**
+   * Coloca el minimapa en una esquina:
+   *  - collapsed=true  → usa alto de la barra
+   *  - corner: 'bl' = bottom-left, 'br' = bottom-right
+   */
+  const snapMiniToCorner = useCallback(
+    (collapsed: boolean, corner: "bl" | "br" = "bl") => {
+      const crect = wrapRef.current?.getBoundingClientRect();
+      const ow = crect?.width ?? window.innerWidth;
+      const oh = crect?.height ?? window.innerHeight;
 
-    const fr = floatRef.current?.getBoundingClientRect();
-    const mw = fr?.width ?? 240;
-    const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
-    const mh = collapsed ? handleH : handleH + mw;
+      const fr = floatRef.current?.getBoundingClientRect();
+      const mw = fr?.width ?? 240;
+      const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
+      const mh = collapsed ? handleH : handleH + mw; // cuadrado + barra si expandido
 
-    const PAD = 8;
-    const x = PAD;
-    const y = Math.max(PAD, oh - mh - PAD);
+      const PAD = 0;
+      const x = corner === "bl" ? PAD : Math.max(PAD, ow - mw - PAD); // derecha = ow - width - pad
+      const y = Math.max(PAD, oh - mh - PAD); // siempre bottom
 
-    setMiniPos({ x, y });
-    miniDrag.current.ox = x;
-    miniDrag.current.oy = y;
-    setMiniPosInit(true);
-  }, []);
+      setMiniPos({ x, y });
+      miniDrag.current.ox = x;
+      miniDrag.current.oy = y;
+      setMiniPosInit(true);
+    },
+    []
+  );
 
   // Colocar inicialmente en esquina INFERIOR IZQUIERDA (expandido)
   useEffect(() => {
     if (!isNarrow || miniPosInit) return;
-    const placeBL = () => snapMiniToBottomLeft(false);
-    requestAnimationFrame(placeBL);
-    const t = setTimeout(placeBL, 300);
+    const place = () => snapMiniToCorner(false, "bl");
+    requestAnimationFrame(place);
+    const t = setTimeout(place, 300);
     return () => clearTimeout(t);
-  }, [isNarrow, miniPosInit, snapMiniToBottomLeft]);
+  }, [isNarrow, miniPosInit, snapMiniToCorner]);
 
-  // Re-anclar al redimensionar cuando está minimizado (y clamping general)
+  // Re-ubicar al redimensionar:
+  //  - si está colapsado → esquina inferior DERECHA
+  //  - si está expandido → mantener dentro por clamp
   useEffect(() => {
     const onResize = () => {
       if (!isNarrow) return;
       if (miniCollapsed) {
-        snapMiniToBottomLeft(true);
+        snapMiniToCorner(true, "bl");
       } else {
         const crect = wrapRef.current?.getBoundingClientRect();
         const ow = crect?.width ?? window.innerWidth;
@@ -233,7 +242,7 @@ export default function ZoomOverlay({
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [isNarrow, miniCollapsed, snapMiniToBottomLeft]);
+  }, [isNarrow, miniCollapsed, snapMiniToCorner]);
 
   const beginMiniDrag = useCallback(
     (clientX: number, clientY: number) => {
@@ -274,7 +283,7 @@ export default function ZoomOverlay({
     miniDrag.current.dragging = false;
   }, []);
 
-  // listeners globales para drag (mouse + touch)
+  // listeners globales drag
   useEffect(() => {
     const onMove = (e: MouseEvent) => doMiniDrag(e.clientX, e.clientY);
     const onUp = () => endMiniDrag();
@@ -1096,11 +1105,11 @@ export default function ZoomOverlay({
                   const next = !miniCollapsed;
                   setMiniCollapsed(next);
                   if (next) {
-                    // Colapsar → barra a esquina inferior izquierda y sin drag
-                    snapMiniToBottomLeft(true);
+                    // Colapsar → barra a esquina inferior DERECHA (no draggable)
+                    snapMiniToCorner(true, "bl");
                   } else {
-                    // Expandir → vuelve desplegado a esquina inferior izquierda
-                    snapMiniToBottomLeft(false);
+                    // Expandir → vuelve desplegado a esquina inferior IZQUIERDA
+                    snapMiniToCorner(false, "bl");
                     requestAnimationFrame(() => measureMini());
                   }
                 }}

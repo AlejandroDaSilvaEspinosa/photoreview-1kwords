@@ -19,6 +19,14 @@ type ThreadCounts = {
   total: number;
 };
 
+type PresenceLike = {
+  id?: string;
+  username?: string | null;
+  displayName?: string | null;
+  email?: string | null;
+  sessions?: number;
+};
+
 type Props = {
   name: string;
 
@@ -29,10 +37,6 @@ type Props = {
   threads: Thread[];
   activeThreadId: number | null;
 
-  /** Acciones sobre SKU */
-  onValidateSku: () => void;
-  onUnvalidateSku: () => void;
-
   /** Operaciones de chat/thread */
   onAddThreadMessage: (threadId: number, text: string) => Promise<void> | void;
   onDeleteThread: (id: number) => void;
@@ -42,13 +46,12 @@ type Props = {
     next: ThreadStatus
   ) => Promise<void> | void;
 
-  onlineUsers?: { username: string }[];
+  onlineUsers?: PresenceLike[];
 
   /** Métricas del SKU (imágenes) */
   imagesReadyToValidate: number; // imágenes finished (listas para validar)
   totalImages: number;
 
-  /** NUEVO: Contadores de hilos en TODO el SKU */
   skuThreadCounts?: ThreadCounts;
 
   /** Flags/UI */
@@ -81,6 +84,7 @@ export default function SidePanel({
   statusLocked,
 }: Props) {
   const [collapsed, setCollapsed] = useState<boolean>(initialCollapsed);
+  const [presenceOpen, setPresenceOpen] = useState<boolean>(false);
 
   useEffect(() => {
     try {
@@ -118,7 +122,6 @@ export default function SidePanel({
 
   // ===== Contadores (preferir TODO el SKU si nos llegan por props) =====
   const fallbackCounts: ThreadCounts = useMemo(() => {
-    // Fallback a contadores SOLO de la imagen, por compatibilidad
     const pending = threads.filter((t) => t.status === "pending").length;
     const reopened = threads.filter((t) => t.status === "reopened").length;
     const corrected = threads.filter((t) => t.status === "corrected").length;
@@ -127,7 +130,6 @@ export default function SidePanel({
   }, [threads]);
 
   const counts: ThreadCounts = skuThreadCounts ?? fallbackCounts;
-
   const correctedPct = counts.total
     ? (counts.corrected / counts.total) * 100
     : 0;
@@ -135,6 +137,32 @@ export default function SidePanel({
   const isValidated = skuStatus === "validated";
   const canValidate = skuStatus === "pending_validation";
   const showReopen = skuStatus === "validated" || skuStatus === "reopened";
+
+  // === Presencia: asegurar únicos y mostrar sesiones si vienen
+  const presenceList = useMemo(() => {
+    const map = new Map<string, PresenceLike>();
+    for (const u of onlineUsers) {
+      const key =
+        (u?.id as string) ||
+        (u?.email as string) ||
+        (u?.username as string) ||
+        (u?.displayName as string) ||
+        Math.random().toString(36);
+      if (map.has(key)) {
+        const cur = map.get(key)!;
+        cur.sessions = (cur.sessions ?? 1) + (u.sessions ?? 1);
+      } else {
+        map.set(key, {
+          id: key,
+          username: u.username ?? null,
+          displayName: u.displayName ?? null,
+          email: u.email ?? null,
+          sessions: u.sessions ?? 1,
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [onlineUsers]);
 
   return (
     <aside
@@ -147,7 +175,7 @@ export default function SidePanel({
           <div className={styles.railHeader}>
             <span className={styles.dotMini} />
             <span className={styles.presenceText}>
-              {onlineUsers.length} en línea
+              {presenceList.length} en línea
             </span>
           </div>
           <button
@@ -165,10 +193,25 @@ export default function SidePanel({
       {!collapsed && (
         <div className={styles.content}>
           <header className={styles.header}>
-            <div className={styles.presenceWrap}>
+            <div
+              className={styles.presenceWrap}
+              title="Ver usuarios en línea"
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                setPresenceOpen((v) => !v);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setPresenceOpen((v) => !v);
+                }
+              }}
+            >
               <span className={styles.dotMini} />
               <span className={styles.presenceText}>
-                {onlineUsers.length} en línea
+                {presenceList.length} en línea
               </span>
             </div>
             <button
@@ -180,6 +223,38 @@ export default function SidePanel({
             >
               ❯
             </button>
+
+            {presenceOpen && (
+              <div
+                className={styles.presenceOverlay}
+                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-label="Usuarios conectados"
+              >
+                <ul className={styles.presenceList}>
+                  {presenceList.map((u) => {
+                    const name =
+                      u.displayName ||
+                      u.username ||
+                      u.email ||
+                      (u.id
+                        ? `Usuario ${String(u.id).slice(0, 6)}`
+                        : "Anónimo");
+                    const sessions = u.sessions ?? 1;
+                    return (
+                      <li key={u.id as string} className={styles.presenceItem}>
+                        <span className={styles.userName}>{name}</span>
+                        {sessions > 1 && (
+                          <span className={styles.sessionBadge}>
+                            {sessions}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
           </header>
 
           <span className={styles.fileName}>Revisión de: {name}</span>
