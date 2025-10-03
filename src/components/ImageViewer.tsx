@@ -1326,6 +1326,7 @@ export default function ImageViewer({
 
       {zoomOverlay && selectedImage?.url && (
         <ZoomOverlay
+          imageName={selectImage.name}
           src={selectedImage.bigImgUrl || selectedImage.url}
           threads={threadsInImage}
           activeThreadId={resolvedActiveThreadId}
