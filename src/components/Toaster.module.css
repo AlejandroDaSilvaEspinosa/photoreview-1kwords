@@ -95,7 +95,7 @@
   height: 100%;
   width: 100%;
   gap: 6px;
-  min-height: 0;
+  min-height: var(--toastH);
 }
 
 .title {

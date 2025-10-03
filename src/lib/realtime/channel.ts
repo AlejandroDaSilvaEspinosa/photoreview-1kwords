@@ -113,9 +113,14 @@ export function connectWithBackoff({
     onAction?: () => void;
     thumbUrl?: string;
   }) => {
+    if (process.env.NODE_ENV !== "development") {
+      return;
+    }
     if (!rec) return;
     const now = Date.now();
-    const key = `${input.variant ?? "info"}|${input.title}|${input.description ?? ""}`;
+    const key = `${input.variant ?? "info"}|${input.title}|${
+      input.description ?? ""
+    }`;
     const shouldEmit =
       key !== rec.lastToastKey || now - rec.lastToastAt > rec.toastCooldownMs;
     if (!shouldEmit) return;
