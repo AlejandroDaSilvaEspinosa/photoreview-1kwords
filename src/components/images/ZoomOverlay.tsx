@@ -319,7 +319,6 @@ export default function ZoomOverlay({
       const mh = collapsed ? handleH : handleH + miniH;
 
       const PAD = 0;
-      console.log(corner);
       const x = corner === "bl" ? PAD : Math.max(PAD, ow - mw - PAD);
       const y = Math.max(PAD, oh - mh - PAD);
 
