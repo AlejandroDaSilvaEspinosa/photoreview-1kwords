@@ -111,7 +111,8 @@
   top: 40px;
   left: 0;
   z-index: 10;
-  background: #151515;
+  background: var(--surface-0);
+  backdrop-filter: blur(10px);
   border: 1px solid #2a2a2a;
   border-radius: 12px;
   min-width: 280px;
@@ -120,31 +121,22 @@
   padding: 8px;
 }
 
-.presenceOverlayHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: #ccc;
-  border-bottom: 1px solid #242424;
-  padding: 6px 4px 8px;
-  margin-bottom: 6px;
-}
-
 .presenceList {
-  display: grid;
+  display: flex;
   gap: 6px;
+  padding: 0;
   max-height: 240px;
+  width: 100%;
+  margin: 0;
   overflow: auto;
-  padding-right: 4px;
 }
 
 .presenceItem {
+  flex-grow: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: #181818;
-  border: 1px solid #242424;
   border-radius: 10px;
   padding: 8px 10px;
 }
@@ -206,7 +198,7 @@
   border-radius: 999px;
 }
 
-/* Botones */
+/* Botón único Validar/Reabrir */
 .validationButtons {
   margin-top: 2px;
 }
@@ -232,7 +224,7 @@
 }
 
 .actionBtn:disabled {
-  opacity: 0.6;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
@@ -255,13 +247,27 @@
   background: color-mix(in srgb, var(--orange-bg) 97%, white);
 }
 
-.red {
-  border-color: var(--red-border, #5a1c1c);
-  background: var(--red-bg, #281616);
+/* Spinner reutilizable (igual patrón que ThreadChat) */
+.buttonLoading {
+  position: relative;
 }
 
-.red:hover {
-  background: color-mix(in srgb, var(--red-bg) 97%, white);
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+  animation: spin 0.8s linear infinite;
+  vertical-align: -2px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Divider */
@@ -308,7 +314,6 @@
   font-style: italic;
 }
 
-
 /* Loader */
 .loaderWrap {
   display: grid;
@@ -327,12 +332,6 @@
   border: 3px solid #333;
   border-top-color: #ff0040;
   animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .loaderText {

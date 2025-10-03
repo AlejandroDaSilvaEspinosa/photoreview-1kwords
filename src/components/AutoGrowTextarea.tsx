@@ -12,6 +12,8 @@ type Props = {
   className?: string;
   growsUp?: boolean; // si true, la altura “empuja” hacia arriba (default)
   onEnter?: () => void; // enviar con Enter (Shift+Enter hace salto de línea)
+  disabled?: boolean;
+  onFocus?: (e: React.FocusEvent<HTMLTextAreaElement>) => void;
 };
 
 export default function AutoGrowTextarea({
@@ -23,6 +25,8 @@ export default function AutoGrowTextarea({
   className,
   growsUp = true,
   onEnter,
+  disabled,
+  onFocus,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -121,8 +125,13 @@ export default function AutoGrowTextarea({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className={clsx(styles.chatInput, growsUp && styles.growUp, className)}
+      className={`${clsx(
+        styles.chatInput,
+        growsUp && styles.growUp,
+        className
+      )} ${disabled && styles.disabled}`}
       onKeyDown={onKeyDown}
+      onFocus={onFocus}
     />
   );
 }

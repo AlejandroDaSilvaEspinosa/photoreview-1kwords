@@ -1,12 +1,11 @@
-/* ThreadChat.module.css */
-
 .chatDock {
   background: rgba(18, 18, 18, 0.95);
   border: 1px solid #2a2a2a;
   border-radius: 12px;
   overflow: hidden;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr auto auto;
+  position: relative;
 }
 
 .chatHeader {
@@ -90,14 +89,11 @@
   color: #ddd;
 }
 
-.timeago {
-  color: #999;
-}
-
 .ticks.read {
   color: aqua;
 }
 
+/* Composer (disabled look sin overlays) */
 .composer {
   display: flex;
   gap: 8px;
@@ -119,6 +115,11 @@
   outline: none;
 }
 
+.composer textarea:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .composer button {
   flex: 0 0 auto;
   padding: 0 12px;
@@ -132,15 +133,13 @@
   align-self: end;
 }
 
-/* 🔄 estado de carga en el botón */
 .composer button[disabled] {
-  opacity: 0.65;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
 .buttonLoading {
   position: relative;
-  padding: 0;
 }
 
 .spinner {
@@ -161,11 +160,7 @@
   }
 }
 
-.changeStatusBtn[disabled] {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
+/* Acciones de hilo (disabled look también) */
 .changeStatusBtnWrapper {
   display: flex;
   gap: 8px;
@@ -186,6 +181,11 @@
   width: 100%;
 }
 
+.changeStatusBtn[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .deleteThreadBtn {
   max-width: fit-content;
   padding: 0 12px;
@@ -198,7 +198,12 @@
   width: 100%;
 }
 
-/* Variantes de color compatibles con tu patrón (usando fallbacks) */
+.deleteThreadBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Variantes */
 .green {
   border-color: var(--green-border, #274a33);
   background: var(--green-bg, #1a241e);
@@ -217,7 +222,6 @@
   background: color-mix(in srgb, var(--orange-bg) 97%, white);
 }
 
-
 .red {
   border-color: var(--red-border, #5a1c1c);
   background: var(--red-bg, #281616);
@@ -227,41 +231,12 @@
   background: color-mix(in srgb, var(--red-bg) 97%, white);
 }
 
-
 .dotMini {
   width: 12px;
   height: 12px;
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.8);
   margin-top: 1px;
-}
-
-.composer button:hover {
-  background: #333;
-}
-
-.composer button:active {
-  transform: translateY(1px);
-}
-
-.mine {
-  background: #171a22;
-  border-color: #243247;
-  color: #bcd;
-  margin-left: auto;
-  border-top-right-radius: 2px;
-}
-
-.theirs {
-  background: #1c1c1c;
-  color: #f0f0f0;
-  border-color: #2a2a2a;
-  margin-right: auto;
-  border-top-left-radius: 2px;
-}
-
-.bubble * {
-  margin: 0px;
 }
 
 .closeBtn {
@@ -288,47 +263,51 @@
   transform: translateY(1px);
 }
 
-
-.closeThreadChatBtn:hover {
-  color: #ff0040;
-  background-color: rgba(255, 0, 64, 0.1);
-}
-
-/* ===== Divisor genérico (día y demás) */
+/* Divisores */
 .unreadDivider {
   display: flex;
   align-items: center;
   gap: 12px;
-  /* separación líneas ↔ texto */
   margin: 10px 0;
-  /* altura similar a la captura */
   opacity: 0.95;
+  scroll-margin-top: 16px;
 }
 
 .unreadDividerLine {
   flex: 1;
   height: 1px;
-  /* línea muy fina */
   background: var(--border-1, #2a2a2a);
-  /* gris sutil en dark */
 }
 
 .unreadDividerLabel {
   font-size: 16px;
-  /* texto pequeño */
   font-weight: 500;
-  /* semibold */
   letter-spacing: 0.15px;
-  /* ligero tracking */
   color: var(--muted-1, #bdbdbd);
-  /* gris claro por defecto */
 }
 
-.unreadDivider {
-  scroll-margin-top: 16px;
+/* Variantes de burbuja */
+.mine {
+  background: #171a22;
+  border-color: #243247;
+  color: #bcd;
+  margin-left: auto;
+  border-top-right-radius: 2px;
 }
 
-/* en ThreadChat.module.css */
+.theirs {
+  background: #1c1c1c;
+  color: #f0f0f0;
+  border-color: #2a2a2a;
+  margin-right: auto;
+  border-top-left-radius: 2px;
+}
+
+.bubble * {
+  margin: 0px;
+}
+
+/* animaciones opcionales */
 .ticks.justDelivered {
   animation: pulseDelivered 450ms ease-out;
 }
@@ -359,4 +338,9 @@
     transform: scale(1);
     opacity: 1;
   }
+}
+
+.disabled {
+  opacity: 0.35 !important;
+  cursor: not-allowed !important;
 }

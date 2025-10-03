@@ -19,6 +19,7 @@ import type {
   Thread,
   ThreadRow,
   MessageMeta,
+  SkuStatus,
 } from "@/types/review";
 import { usePresence } from "@/lib/usePresence";
 import { useImageGeometry } from "@/lib/useImageGeometry";
@@ -107,12 +108,13 @@ export default function ImageViewer({
   // Realtime por SKU
   useWireSkuRealtime(sku.sku);
 
-  // ======= estado para modal de validación
+  // ======= modal de validación
   const [validatedModalOpen, setValidatedModalOpen] = useState(false);
 
   // ======= SKU status + locks
   const skuStatus = sku.status; // "pending_validation" | "needs_correction" | "validated" | "reopened"
   const isSkuValidated = skuStatus === "validated";
+  const [skuStatusBusy, setSkuStatusBusy] = useState(false);
 
   const imagesReadyToValidate = sku.counts?.finished ?? 0;
   const totalImages = images.length;
@@ -173,7 +175,10 @@ export default function ImageViewer({
     ax: number;
     ay: number;
   }>(null);
-
+  const defaultTool = "zoom";
+  const resetTool = () => {
+    setTool(defaultTool);
+  };
   // ===== Threads (imagen visible)
   const selectedImageKey = selectedImage?.name ?? "";
   const threadsRaw = useThreadsStore(
@@ -522,22 +527,61 @@ export default function ImageViewer({
     return null;
   }, [threadsRaw, selectedImage, activeThreadId, activeKey]);
 
+  /** ==================== Contadores para todo el SKU ==================== */
+  const threadStats: ThreadCounts = useMemo(() => {
+    let pending = 0,
+      reopened = 0,
+      corrected = 0;
+
+    for (const key of Object.keys(threadsByNeededImages)) {
+      const list = (threadsByNeededImages as any)[key] as Thread[];
+      for (const t of list) {
+        if (t.status === "deleted") continue; // excluir borrados del cómputo
+        if (t.status === "pending") pending++;
+        else if (t.status === "reopened") reopened++;
+        else if (t.status === "corrected") corrected++;
+      }
+    }
+
+    const total = pending + reopened + corrected;
+    return { pending, reopened, corrected, total };
+  }, [threadsByNeededImages]);
+
+  /** =============== Reglas extra para VALIDAR SKU (UI + guardas) =============== */
+  const blockedByNeedsCorrection = skuStatus === "needs_correction";
+  const canValidateByRules = !blockedByNeedsCorrection;
+
   /** ==================== Acciones de estado del SKU ==================== */
   const upsertSkuStatus = useStatusesStore((s) => s.upsertSku);
 
   const handleValidateSku = useCallback(async () => {
+    // Guardia UI extra (servidor también valida)
+    if (!canValidateByRules) {
+      emitToast({
+        variant: "warning",
+        title: "No se puede validar",
+        description: "El SKU tiene correcciones pendientes.",
+      });
+      return;
+    }
+
     try {
-      const ok = await fetch("/api/sku/status", {
+      setSkuStatusBusy(true);
+      const response = await fetch("/api/sku/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sku: sku.sku, status: "validated" }),
-      }).then((r) => r.ok);
-      if (!ok) throw new Error("No se pudo validar el SKU.");
+      }).then((r) => r);
+      if (!response.ok) {
+        toastError(response.body, { title: "Fallo al validar el SKU" });
+        return;
+      }
+      resetTool();
 
       // Optimista
       upsertSkuStatus({
         sku: sku.sku,
-        status: "validated" as any,
+        status: "validated" as SkuStatus,
         images_total: sku.counts.total,
         images_needing_fix: 0,
         updated_at: new Date().toISOString(),
@@ -546,11 +590,14 @@ export default function ImageViewer({
       setValidatedModalOpen(true);
     } catch (e) {
       toastError(e, { title: "Fallo al validar el SKU" });
+    } finally {
+      setSkuStatusBusy(false);
     }
-  }, [sku.sku, sku.counts.total, upsertSkuStatus]);
+  }, [canValidateByRules, sku.sku, sku.counts.total, upsertSkuStatus]);
 
   const handleReopenSku = useCallback(async () => {
     try {
+      setSkuStatusBusy(true);
       const ok = await fetch("/api/sku/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -573,6 +620,8 @@ export default function ImageViewer({
       });
     } catch (e) {
       toastError(e, { title: "Fallo al reabrir el SKU" });
+    } finally {
+      setSkuStatusBusy(false);
     }
   }, [sku.sku, sku.counts.total, sku.counts.needs_correction, upsertSkuStatus]);
 
@@ -582,8 +631,9 @@ export default function ImageViewer({
       if (isSkuValidated) {
         emitToast({
           variant: "warning",
-          title: "SKU bloqueado",
-          description: "Este SKU está validado. Reábrelo para poder anotar.",
+          title: "SKU validado",
+          description:
+            "Este SKU está validado. Reábrelo para poder crear hilos nuevos.",
         });
         return;
       }
@@ -665,7 +715,7 @@ export default function ImageViewer({
       if (isSkuValidated) {
         emitToast({
           variant: "warning",
-          title: "SKU bloqueado",
+          title: "SKU validado",
           description:
             "Este SKU está validado. Reábrelo para escribir mensajes.",
         });
@@ -689,7 +739,15 @@ export default function ImageViewer({
 
   const toggleThreadStatus = useCallback(
     async (_imgName: string, threadId: number, next: ThreadStatus) => {
-      if (isSkuValidated) return;
+      if (isSkuValidated) {
+        emitToast({
+          variant: "warning",
+          title: "SKU validado",
+          description:
+            "Este SKU está validado. Reábrelo para cambiar el estado de los hilos.",
+        });
+        return;
+      }
 
       const {
         byImage,
@@ -710,7 +768,7 @@ export default function ImageViewer({
       try {
         enqueueSendSystemMessage(threadId, tempText);
       } catch {
-        // opcional: toast
+        // opcional
       }
 
       try {
@@ -731,7 +789,14 @@ export default function ImageViewer({
 
   const removeThread = useCallback(
     async (id: number) => {
-      if (isSkuValidated) return;
+      if (isSkuValidated) {
+        emitToast({
+          variant: "warning",
+          title: "SKU validado",
+          description: "Este SKU está validado. Reábrelo para borrar hilos.",
+        });
+        return;
+      }
       setThreadStatus(id, "deleted");
       try {
         await fetch(`/api/threads/status`, {
@@ -764,24 +829,27 @@ export default function ImageViewer({
     setZoomOverlay({ x: xPct, y: yPct, ax, ay });
   };
 
-  const selectImage = (index: number) => {
-    const name = images[index]?.name ?? null;
-    setActiveThreadId(null);
-    setActiveKey(null);
-    suppressFollowThreadOnceRef.current = true;
-    startTransition(() => onSelectThread?.(null));
-    if (name) {
-      pendingUrlImageRef.current = name;
-      setCurrentImageName(name);
-      onSelectImage?.(name);
-    } else {
-      pendingUrlImageRef.current = null;
-      const fallback = images[0]?.name ?? null;
-      setCurrentImageName(fallback);
-      onSelectImage?.(fallback);
-    }
-    requestAnimationFrame(update);
-  };
+  const selectImage = useCallback(
+    (index: number) => {
+      const name = images[index]?.name ?? null;
+      setActiveThreadId(null);
+      setActiveKey(null);
+      suppressFollowThreadOnceRef.current = true;
+      startTransition(() => onSelectThread?.(null));
+      if (name) {
+        pendingUrlImageRef.current = name;
+        setCurrentImageName(name);
+        onSelectImage?.(name);
+      } else {
+        pendingUrlImageRef.current = null;
+        const fallback = images[0]?.name ?? null;
+        setCurrentImageName(fallback);
+        onSelectImage?.(fallback);
+      }
+      requestAnimationFrame(update);
+    },
+    [images, onSelectImage, onSelectThread, setActiveThreadId, update]
+  );
 
   const handleImageClick = async (e: React.MouseEvent) => {
     if (!selectedImage?.name) return;
@@ -789,7 +857,16 @@ export default function ImageViewer({
       openZoomAtEvent(e);
       return;
     }
-    if (isSkuValidated) return;
+    if (tool !== "pin") return;
+    if (isSkuValidated) {
+      // ahora el botón pin estará disabled, pero por si llega por otra vía:
+      emitToast({
+        variant: "warning",
+        title: "SKU validado",
+        description: "Este SKU está validado. Reábrelo para crear hilos.",
+      });
+      return;
+    } // botón Pin se deja disabled; extra guardia
     const rect = imgRef.current?.getBoundingClientRect();
     if (!rect) return;
     const xPct = ((e.clientX - rect.left) / rect.width) * 100;
@@ -823,7 +900,17 @@ export default function ImageViewer({
       } else if (e.key === "z" || e.key === "Z") {
         setTool("zoom");
       } else if (e.key === "p" || e.key === "P") {
-        if (!isSkuValidated) setTool("pin");
+        if (!isSkuValidated) {
+          setTool("pin");
+        } else {
+          // ahora el botón pin estará disabled, pero por si llega por otra vía:
+          emitToast({
+            variant: "warning",
+            title: "SKU validado",
+            description: "Este SKU está validado. Reábrelo para crear hilos.",
+          });
+          return;
+        }
       } else if (e.key === "t" || e.key === "T") {
         setShowThreads((v) => !v);
       } else if (e.key === "Enter") {
@@ -834,29 +921,15 @@ export default function ImageViewer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [images.length, selectedImageIndex, zoomOverlay, isSkuValidated]);
+  }, [
+    images.length,
+    selectedImageIndex,
+    zoomOverlay,
+    isSkuValidated,
+    selectImage,
+  ]);
 
-  /** ==================== Contadores para todo el SKU ==================== */
-  const threadStats: ThreadCounts = useMemo(() => {
-    let pending = 0,
-      reopened = 0,
-      corrected = 0;
-
-    for (const key of Object.keys(threadsByNeededImages)) {
-      const list = (threadsByNeededImages as any)[key] as Thread[];
-      for (const t of list) {
-        if (t.status === "deleted") continue; // excluir borrados del cómputo
-        if (t.status === "pending") pending++;
-        else if (t.status === "reopened") reopened++;
-        else if (t.status === "corrected") corrected++;
-      }
-    }
-
-    const total = pending + reopened + corrected;
-    return { pending, reopened, corrected, total };
-  }, [threadsByNeededImages]);
-
-  /** ==================== Unread por imagen (no system, no míos, sin read_at) ==================== */
+  /** ==================== Unread por imagen ==================== */
   const unreadByImage = useMemo(() => {
     const out: Record<string, boolean> = {};
     for (const img of images) {
@@ -866,7 +939,7 @@ export default function ImageViewer({
       );
     }
     return out;
-  }, [images, threadsByNeededImages, msgsByThread]);
+  }, [images, threadsByNeededImages]);
 
   const imageStatusByName = useMemo(() => {
     const out: Record<string, "finished" | "needs_correction"> = {};
@@ -876,7 +949,8 @@ export default function ImageViewer({
     }
     return out;
   }, [images]);
-  /** ==================== Cambiar de imagen haciendo swipe en móvil ==================== */
+
+  /** ==================== Swipe en móvil ==================== */
   const touchStartX = useRef<number | null>(null);
   const touchEndX = useRef<number | null>(null);
 
@@ -897,14 +971,12 @@ export default function ImageViewer({
       if (
         touchStartX.current != null &&
         touchEndX.current != null &&
-        Math.abs(touchStartX.current - touchEndX.current) > 50 // 👈 umbral (px)
+        Math.abs(touchStartX.current - touchEndX.current) > 50
       ) {
         const dir = touchStartX.current - touchEndX.current;
         if (dir > 0 && selectedImageIndex < images.length - 1) {
-          // swipe izquierda → siguiente
           selectImage(selectedImageIndex + 1);
         } else if (dir < 0 && selectedImageIndex > 0) {
-          // swipe derecha → anterior
           selectImage(selectedImageIndex - 1);
         }
       }
@@ -921,7 +993,7 @@ export default function ImageViewer({
       el.removeEventListener("touchmove", handleTouchMove);
       el.removeEventListener("touchend", handleTouchEnd);
     };
-  }, [images.length, selectedImageIndex]);
+  }, [images.length, selectedImageIndex, imgRef, selectImage]);
 
   /** ==================== Render ==================== */
   return (
@@ -949,7 +1021,7 @@ export default function ImageViewer({
             <button
               className={`${styles.toolBtn} ${
                 tool === "zoom" ? styles.toolActive : ""
-              }`}
+              } `}
               aria-pressed={tool === "zoom"}
               title="Lupa (abrir zoom)"
               onClick={() => setTool("zoom")}
@@ -959,15 +1031,23 @@ export default function ImageViewer({
             <button
               className={`${styles.toolBtn} ${
                 tool === "pin" ? styles.toolActive : ""
-              }`}
+              } ${isSkuValidated && styles.disabled}`}
               aria-pressed={tool === "pin"}
               title={
                 isSkuValidated
                   ? "SKU validado (bloqueado)"
                   : "Añadir nuevo hilo"
               }
-              onClick={() => !isSkuValidated && setTool("pin")}
-              disabled={isSkuValidated}
+              onClick={() =>
+                !isSkuValidated
+                  ? setTool("pin")
+                  : emitToast({
+                      variant: "warning",
+                      title: "SKU validado",
+                      description:
+                        "Este SKU está validado. Reábrelo para crear hilos.",
+                    })
+              }
             >
               <PinIcon />
             </button>
@@ -1123,14 +1203,15 @@ export default function ImageViewer({
         </div>
       </div>
 
-      {/* ===== SidePanel con contadores de TODO el SKU ===== */}
+      {/* ===== SidePanel con el botón único + reglas de validación ===== */}
       <SidePanel
         name={selectedImage?.name || ""}
         skuStatus={skuStatus}
-        threads={threadsInImage}
-        activeThreadId={resolvedActiveThreadId}
+        skuStatusBusy={skuStatusBusy}
         onValidateSku={handleValidateSku}
         onUnvalidateSku={handleReopenSku}
+        threads={threadsInImage}
+        activeThreadId={resolvedActiveThreadId}
         onAddThreadMessage={(threadId: number, text: string) => {
           try {
             if (selectedImage?.name) addMessage(threadId, text);
@@ -1169,18 +1250,18 @@ export default function ImageViewer({
         loading={loading}
         initialCollapsed={false}
         composeLocked={
-          isSkuValidated ||
-          (creatingThreadId != null &&
-            activeThreadId != null &&
-            creatingThreadId === activeThreadId)
+          creatingThreadId != null &&
+          activeThreadId != null &&
+          creatingThreadId === activeThreadId
         }
         statusLocked={
-          isSkuValidated ||
-          (activeThreadId != null && pendingStatusMap.has(activeThreadId))
+          activeThreadId != null && pendingStatusMap.has(activeThreadId)
         }
+        validationLock={isSkuValidated}
         imagesReadyToValidate={imagesReadyToValidate}
         totalImages={totalImages}
         skuThreadCounts={threadStats}
+        blockValidateByNeedsCorrection={blockedByNeedsCorrection}
       />
 
       {/* Modal de éxito tras validar */}

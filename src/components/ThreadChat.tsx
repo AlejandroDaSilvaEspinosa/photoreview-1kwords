@@ -12,19 +12,12 @@ import ReactMarkdown from "react-markdown";
 import { Thread, ThreadMessage, ThreadStatus } from "@/types/review";
 import AutoGrowTextarea from "./AutoGrowTextarea";
 import { useSupabaseUserId } from "@/hooks/useSupabaseUserId";
-import { toastError } from "@/hooks/useToast";
+import { emitToast, toastError } from "@/hooks/useToast";
 import CloseIcon from "@/icons/close.svg";
 import DeleteIcon from "@/icons/delete.svg";
 import ClockIcon from "@/icons/clock.svg";
 import CheckIcon from "@/icons/check.svg";
 import AppModal from "./ui/Modal";
-// import SendIcon from "@/icons/send.svg";
-/**
- * ThreadChat
- * - Congela divisor cuando payload está listo (“cache” o “live” en meta.source)
- * - Emite "rev:thread-unread-ready" una sola vez por (tid, phase) tras congelar
- * - NO envía read aquí (lo hace ImageViewer al recibir el evento)
- */
 
 type DeliveryState = "sending" | "sent" | "delivered" | "read";
 
@@ -84,9 +77,10 @@ const UnreadDividerAlign = React.memo(
 
 type Props = {
   activeThread: Thread;
+  threadIndex: number;
   composeLocked?: boolean;
   statusLocked?: boolean;
-  threadIndex: number;
+  validationLock?: boolean;
   onAddThreadMessage: (threadId: number, text: string) => Promise<void> | void;
   onFocusThread: (threadId: number | null) => void;
   onToggleThreadStatus: (threadId: number, next: ThreadStatus) => void;
@@ -100,8 +94,9 @@ function ThreadChatInner({
   onFocusThread,
   onToggleThreadStatus,
   onDeleteThread,
-  composeLocked,
-  statusLocked,
+  composeLocked = false,
+  statusLocked = false,
+  validationLock = false,
 }: Props) {
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const setDraft = useCallback(
@@ -186,12 +181,6 @@ function ThreadChatInner({
       year: "numeric",
     });
   };
-  const timeHHmm = (d: Date) =>
-    d.toLocaleTimeString("es-ES", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
 
   // ===== Orden cronológico estable =====
   const messagesChrono = useMemo(() => {
@@ -256,7 +245,6 @@ function ThreadChatInner({
       }
     }
 
-    // Congelar y avisar en el próximo frame
     requestAnimationFrame(() => {
       if (cutoffId != null && count > 0) {
         setFrozenUnread({
@@ -270,7 +258,6 @@ function ThreadChatInner({
       }
       computedForKeyRef.current = key;
 
-      // 👇 Aviso de handshake: ImageViewer podrá enviar los "read" ahora sin romper el divisor
       window.dispatchEvent(
         new CustomEvent("rev:thread-unread-ready", { detail: { tid } })
       );
@@ -367,10 +354,21 @@ function ThreadChatInner({
   }, [messagesChrono, isMine]);
 
   const handleSend = useCallback(async () => {
+    if (validationLock) {
+      emitToast({
+        variant: "warning",
+        title: "SKU validado",
+        description:
+          "Este SKU está validado. Reábrelo para enviar mensajes nuevos.",
+      });
+    }
     const id = activeThread?.id;
     if (!id) return;
     const draft = getDraft(id).trim();
     if (!draft) return;
+
+    if (validationLock || composeLocked) return; // disabled look → no acción
+
     clearDraft(id);
     try {
       await onAddThreadMessage(id, draft);
@@ -386,7 +384,14 @@ function ThreadChatInner({
         fallback: "Revisa tu conexión e inténtalo de nuevo.",
       });
     }
-  }, [activeThread?.id, getDraft, clearDraft, onAddThreadMessage]);
+  }, [
+    activeThread?.id,
+    getDraft,
+    clearDraft,
+    onAddThreadMessage,
+    validationLock,
+    composeLocked,
+  ]);
 
   const toggleLabel = useCallback(
     (s: ThreadStatus) =>
@@ -477,7 +482,11 @@ function ThreadChatInner({
             );
 
           const dt = new Date(m.createdAt);
-          const hhmm = timeHHmm(dt);
+          const hhmm = dt
+            ? `${String(dt.getHours()).padStart(2, "0")}:${String(
+                dt.getMinutes()
+              ).padStart(2, "0")}`
+            : "";
 
           const idNum = typeof m.id === "number" ? m.id : NaN;
           const isTemp = Number.isFinite(idNum) && idNum < 0;
@@ -540,9 +549,10 @@ function ThreadChatInner({
         })}
       </div>
 
+      {/* ===== Composer: disabled look cuando validationLock ===== */}
       <div
         className={styles.composer}
-        aria-disabled={composeLocked ? "true" : "false"}
+        aria-disabled={composeLocked || validationLock ? "true" : "false"}
       >
         <AutoGrowTextarea
           value={activeThread?.id ? getDraft(activeThread?.id) : ""}
@@ -550,37 +560,64 @@ function ThreadChatInner({
             activeThread.id && setDraft(activeThread.id, v)
           }
           placeholder={
-            composeLocked
+            validationLock
+              ? "SKU validado — sólo lectura"
+              : composeLocked
               ? "Creando hilo… espera un momento"
               : "Escribe un mensaje…"
           }
           minRows={1}
           maxRows={5}
           growsUp
-          onEnter={composeLocked ? undefined : handleSend}
+          onEnter={validationLock || composeLocked ? undefined : handleSend}
+          onFocus={(e: React.FocusEvent<HTMLTextAreaElement>) => {
+            if (validationLock) {
+              emitToast({
+                variant: "warning",
+                title: "SKU validado",
+                description:
+                  "Este SKU está validado. Reábrelo para escribir un nuevo mensaje.",
+              });
+              e.currentTarget.blur(); // quita el foco inmediatamente
+            }
+          }}
+          disabled={validationLock || composeLocked}
         />
         <button
           onClick={handleSend}
           disabled={composeLocked}
           aria-busy={composeLocked}
-          className={composeLocked ? `${styles.buttonLoading}` : undefined}
-          title={composeLocked ? "Guardando el nuevo hilo…" : "Enviar mensaje"}
+          className={`${composeLocked && styles.buttonLoading} ${
+            validationLock && styles.disabled
+          }`}
+          title={
+            validationLock
+              ? "SKU validado — sólo lectura"
+              : composeLocked
+              ? "Guardando el nuevo hilo…"
+              : "Enviar mensaje"
+          }
         >
           {composeLocked ? (
-            <span className={styles.spinner} aria-hidden />
+            <>
+              <span className={styles.spinner} aria-hidden /> Enviar
+            </>
           ) : (
             "Enviar"
           )}
         </button>
       </div>
 
+      {/* ===== Botones estado/borrado: disabled look cuando validationLock ===== */}
       <div className={styles.changeStatusBtnWrapper}>
         <button
           className={`${styles.changeStatusBtn} ${
             styles[
               `${activeThread.status === "corrected" ? "orange" : "green"}`
             ]
-          } ${statusLocked ? styles.buttonLoading : ""}`}
+          } ${statusLocked ? styles.buttonLoading : ""} ${
+            validationLock && styles.disabled
+          }`}
           onClick={() =>
             onToggleThreadStatus(
               activeThread.id,
@@ -605,14 +642,27 @@ function ThreadChatInner({
             "Validar correcciones"
           )}
         </button>
+
         <button
           title="Borrar hilo"
-          className={`${styles.red} ${styles.deleteThreadBtn}`}
-          onClick={() => setConfirmDeleteOpen(true)} // 👈 abrimos modal
+          className={`${styles.red} ${styles.deleteThreadBtn} ${
+            validationLock && styles.disabled
+          }`}
+          onClick={() =>
+            !validationLock
+              ? setConfirmDeleteOpen(true)
+              : emitToast({
+                  variant: "warning",
+                  title: "SKU validado",
+                  description:
+                    "Este SKU está validado. Reábrelo para poder borrar hilos.",
+                })
+          }
         >
           <DeleteIcon />
         </button>
       </div>
+
       <AppModal
         open={confirmDeleteOpen}
         onClose={() => setConfirmDeleteOpen(false)}
@@ -640,7 +690,7 @@ function ThreadChatInner({
             },
           },
         ]}
-      ></AppModal>
+      />
     </div>
   );
 }
@@ -663,10 +713,12 @@ function areEqual(prev: any, next: any) {
   const nextSig = messagesSignature(next.activeThread.messages);
   if (prevSig !== nextSig) return false;
   if (prev.threadIndex !== next.threadIndex) return false;
-  // meta.source cambia la fase y debe re-renderizar para congelar divisor:
   const prevSrc = (prev.activeThread as any)?.meta?.source;
   const nextSrc = (next.activeThread as any)?.meta?.source;
   if (prevSrc !== nextSrc) return false;
+  if (prev.composeLocked !== next.composeLocked) return false;
+  if (prev.statusLocked !== next.statusLocked) return false;
+  if (prev.validationLock !== next.validationLock) return false;
   return true;
 }
 

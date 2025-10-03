@@ -32,6 +32,11 @@ type Props = {
 
   /** Estado del SKU (fuente de verdad) */
   skuStatus: SkuStatus;
+  /** Busy del botón único (validar/reabrir) */
+  skuStatusBusy?: boolean;
+  /** Acciones de SKU */
+  onValidateSku: () => Promise<void> | void;
+  onUnvalidateSku: () => Promise<void> | void;
 
   /** Threads de la IMAGEN visible (el panel es por imagen) */
   threads: Thread[];
@@ -52,6 +57,7 @@ type Props = {
   imagesReadyToValidate: number; // imágenes finished (listas para validar)
   totalImages: number;
 
+  /** Contadores totales de hilos del SKU (no sólo la imagen) */
   skuThreadCounts?: ThreadCounts;
 
   /** Flags/UI */
@@ -59,6 +65,8 @@ type Props = {
   initialCollapsed?: boolean;
   composeLocked?: boolean;
   statusLocked?: boolean;
+  validationLock?: boolean;
+  blockValidateByNeedsCorrection?: boolean;
 };
 
 const LS_KEY = "photoreview:sidepanel:collapsed";
@@ -66,10 +74,11 @@ const LS_KEY = "photoreview:sidepanel:collapsed";
 export default function SidePanel({
   name,
   skuStatus,
-  threads,
-  activeThreadId,
+  skuStatusBusy = false,
   onValidateSku,
   onUnvalidateSku,
+  threads,
+  activeThreadId,
   onAddThreadMessage,
   onDeleteThread,
   onFocusThread,
@@ -80,9 +89,12 @@ export default function SidePanel({
   skuThreadCounts,
   loading = false,
   initialCollapsed = false,
-  composeLocked,
-  statusLocked,
-}: Props) {
+  composeLocked = false,
+  statusLocked = false,
+  validationLock = false,
+  blockValidateByNeedsCorrection = false,
+}: // blockValidateByThreads = false,
+Props) {
   const [collapsed, setCollapsed] = useState<boolean>(initialCollapsed);
   const [presenceOpen, setPresenceOpen] = useState<boolean>(false);
 
@@ -125,7 +137,7 @@ export default function SidePanel({
     const pending = threads.filter((t) => t.status === "pending").length;
     const reopened = threads.filter((t) => t.status === "reopened").length;
     const corrected = threads.filter((t) => t.status === "corrected").length;
-    const total = threads.length || pending + reopened + corrected; // por si threads filtra "deleted"
+    const total = threads.length || pending + reopened + corrected;
     return { pending, reopened, corrected, total };
   }, [threads]);
 
@@ -135,8 +147,6 @@ export default function SidePanel({
     : 0;
 
   const isValidated = skuStatus === "validated";
-  const canValidate = skuStatus === "pending_validation";
-  const showReopen = skuStatus === "validated" || skuStatus === "reopened";
 
   // === Presencia: asegurar únicos y mostrar sesiones si vienen
   const presenceList = useMemo(() => {
@@ -163,6 +173,21 @@ export default function SidePanel({
     }
     return Array.from(map.values());
   }, [onlineUsers]);
+
+  const validateDisabled =
+    skuStatusBusy || isValidated || blockValidateByNeedsCorrection;
+
+  const skuActionLabel = skuStatusBusy
+    ? "Actualizando…"
+    : isValidated
+    ? "Reabrir SKU"
+    : "Validar SKU";
+
+  const buttonTitle = isValidated
+    ? "Reabrir SKU"
+    : blockValidateByNeedsCorrection
+    ? "No puedes validar mientras el SKU tenga correcciones pendientes."
+    : "Validar SKU";
 
   return (
     <aside
@@ -263,28 +288,45 @@ export default function SidePanel({
           )}
 
           <div className={styles.validationButtons}>
-            <button
-              type="button"
-              className={`${styles.actionBtn} ${styles.green}`}
-              onClick={onValidateSku}
-              disabled={!canValidate}
-              title={
-                canValidate
-                  ? "Validar SKU"
-                  : "Sólo disponible cuando el SKU está pendiente de validación"
-              }
-            >
-              ✓ Validar SKU
-            </button>
-
-            {showReopen && (
+            {isValidated ? (
               <button
                 type="button"
-                className={`${styles.actionBtn} ${styles.orange}`}
-                onClick={onUnvalidateSku}
-                title="Reabrir SKU para continuar trabajando"
+                className={`${styles.actionBtn} ${styles.orange} ${
+                  skuStatusBusy ? styles.buttonLoading : ""
+                }`}
+                onClick={() => (skuStatusBusy ? undefined : onUnvalidateSku())}
+                disabled={skuStatusBusy}
+                aria-busy={skuStatusBusy ? "true" : "false"}
+                title={buttonTitle}
               >
-                ↩️ Reabrir SKU
+                {skuStatusBusy ? (
+                  <>
+                    <span className={styles.spinner} aria-hidden />{" "}
+                    {skuActionLabel}
+                  </>
+                ) : (
+                  skuActionLabel
+                )}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={`${styles.actionBtn} ${styles.green} ${
+                  skuStatusBusy ? styles.buttonLoading : ""
+                }`}
+                onClick={() => (validateDisabled ? undefined : onValidateSku())}
+                disabled={validateDisabled}
+                aria-busy={skuStatusBusy ? "true" : "false"}
+                title={buttonTitle}
+              >
+                {skuStatusBusy ? (
+                  <>
+                    <span className={styles.spinner} aria-hidden />{" "}
+                    {skuActionLabel}
+                  </>
+                ) : (
+                  skuActionLabel
+                )}
               </button>
             )}
           </div>
@@ -300,14 +342,16 @@ export default function SidePanel({
             </div>
           ) : (
             <div className={styles.annotationsList}>
-              {isValidated ? (
+              {!selected ? (
                 <p className={styles.noAnnotations}>
-                  Este SKU está <b>validado</b>. No puedes añadir hilos ni
-                  mensajes hasta que se reabra.
-                </p>
-              ) : !selected ? (
-                <p className={styles.noAnnotations}>
-                  Selecciona un punto en la imagen para ver su chat.
+                  {isValidated ? (
+                    <>
+                      Este SKU está <b>validado</b>. Puedes leer hilos y
+                      mensajes, pero no crear ni enviar.
+                    </>
+                  ) : (
+                    "Selecciona un punto en la imagen para ver su chat."
+                  )}
                 </p>
               ) : (
                 <ThreadChat
@@ -317,8 +361,9 @@ export default function SidePanel({
                   onFocusThread={onFocusThread}
                   onToggleThreadStatus={onToggleThreadStatus}
                   onDeleteThread={onDeleteThread}
-                  composeLocked={composeLocked || isValidated}
-                  statusLocked={statusLocked || isValidated}
+                  composeLocked={composeLocked}
+                  statusLocked={statusLocked}
+                  validationLock={validationLock}
                 />
               )}
             </div>
@@ -331,7 +376,6 @@ export default function SidePanel({
             <div className={styles.progressHeader}>
               <h4>Progreso</h4>
 
-              {/* Barra estilizada: corregidas (blanco) vs resto (negro) */}
               <div
                 className={styles.progressBarWrap}
                 title={`${Math.round(correctedPct)}% corregido`}
