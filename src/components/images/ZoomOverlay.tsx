@@ -184,60 +184,96 @@ export default function ZoomOverlay({
     dragging: boolean;
   }>({ sx: 0, sy: 0, ox: 12, oy: 12, dragging: false });
 
+  // Ajuste por esquina por defecto:
+  const DEFAULT_CORNER_ON_COLLAPSE: "bl" | "br" = "br"; // minimizado → esquina inferior derecha
+  const DEFAULT_CORNER_ON_EXPAND: "bl" | "br" = "bl"; // expandido → inferior izquierda
+
   const snapMiniToCorner = useCallback(
     (collapsed: boolean, corner: "bl" | "br" = "bl") => {
       const crect = wrapRef.current?.getBoundingClientRect();
       const ow = crect?.width ?? window.innerWidth;
       const oh = crect?.height ?? window.innerHeight;
+
       const fr = floatRef.current?.getBoundingClientRect();
       const mw = fr?.width ?? 240;
+
       const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
-      const mh = collapsed ? handleH : handleH + mw; // cuadrado + barra si expandido
+
+      // Alto real del minimapa con aspect-ratio dinámico
+      const miniRect = miniRef.current?.getBoundingClientRect();
+      const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw; // fallback cuadrado si no hay dims
+      const miniH = miniRect?.height ?? ratioH;
+
+      const mh = collapsed ? handleH : handleH + miniH;
+
       const PAD = 0;
       const x = corner === "bl" ? PAD : Math.max(PAD, ow - mw - PAD);
       const y = Math.max(PAD, oh - mh - PAD);
+
       setMiniPos({ x, y });
       miniDrag.current.ox = x;
       miniDrag.current.oy = y;
       setMiniPosInit(true);
     },
-    []
+    [imgW, imgH]
   );
 
   useEffect(() => {
     if (!isNarrow || miniPosInit) return;
-    const place = () => snapMiniToCorner(false, "bl");
+    const place = () => snapMiniToCorner(false, DEFAULT_CORNER_ON_EXPAND);
     requestAnimationFrame(place);
     const t = setTimeout(place, 300);
     return () => clearTimeout(t);
   }, [isNarrow, miniPosInit, snapMiniToCorner]);
 
   useEffect(() => {
+    // cuando cambian las dimensiones reales de la imagen, re-snap para respetar límites
+    if (!isNarrow || !imgW || !imgH) return;
+    snapMiniToCorner(
+      miniCollapsed,
+      miniCollapsed ? DEFAULT_CORNER_ON_COLLAPSE : DEFAULT_CORNER_ON_EXPAND
+    );
+  }, [
+    isNarrow,
+    imgW,
+    imgH,
+    miniCollapsed,
+    snapMiniToCorner,
+    DEFAULT_CORNER_ON_COLLAPSE,
+    DEFAULT_CORNER_ON_EXPAND,
+  ]);
+
+  useEffect(() => {
     const onResize = () => {
       if (!isNarrow) return;
-      if (miniCollapsed) {
-        snapMiniToCorner(true, "bl");
-      } else {
-        const crect = wrapRef.current?.getBoundingClientRect();
-        const ow = crect?.width ?? window.innerWidth;
-        const oh = crect?.height ?? window.innerHeight;
-        const fr = floatRef.current?.getBoundingClientRect();
-        const mw = fr?.width ?? 240;
-        const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
-        const mh = handleH + mw; // expandido
-        setMiniPos((p) => ({
-          x: clamp(p.x, 0, Math.max(0, ow - mw)),
-          y: clamp(p.y, 0, Math.max(0, oh - mh)),
-        }));
-      }
+
+      const crect = wrapRef.current?.getBoundingClientRect();
+      const ow = crect?.width ?? window.innerWidth;
+      const oh = crect?.height ?? window.innerHeight;
+
+      const fr = floatRef.current?.getBoundingClientRect();
+      const mw = fr?.width ?? 240;
+
+      const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
+
+      const miniRect = miniRef.current?.getBoundingClientRect();
+      const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw;
+      const miniH = miniRect?.height ?? ratioH;
+
+      const mh = miniCollapsed ? handleH : handleH + miniH;
+
+      setMiniPos((p) => ({
+        x: clamp(p.x, 0, Math.max(0, ow - mw)),
+        y: clamp(p.y, 0, Math.max(0, oh - mh)),
+      }));
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [isNarrow, miniCollapsed, snapMiniToCorner]);
+  }, [isNarrow, miniCollapsed, imgW, imgH]);
 
   const beginMiniDrag = useCallback(
     (clientX: number, clientY: number) => {
-      if (miniCollapsed) return; // 🔒 No draggable cuando está minimizado
+      if (miniCollapsed) return; // no draggable colapsado
       miniDrag.current.sx = clientX;
       miniDrag.current.sy = clientY;
       miniDrag.current.ox = miniPos.x;
@@ -251,20 +287,30 @@ export default function ZoomOverlay({
   const doMiniDrag = useCallback(
     (clientX: number, clientY: number) => {
       if (!miniDrag.current.dragging || miniCollapsed) return;
+
       const crect = wrapRef.current?.getBoundingClientRect();
       const ow = crect?.width ?? window.innerWidth;
       const oh = crect?.height ?? window.innerHeight;
+
       const fr = floatRef.current?.getBoundingClientRect();
       const mw = fr?.width ?? 240;
+
       const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
-      const mh = handleH + mw; // expandido al arrastrar
+
+      const miniRect = miniRef.current?.getBoundingClientRect();
+      const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw;
+      const miniH = miniRect?.height ?? ratioH;
+
+      const mh = handleH + miniH; // expandido al arrastrar
+
       const dx = clientX - miniDrag.current.sx;
       const dy = clientY - miniDrag.current.sy;
+
       const nx = clamp(miniDrag.current.ox + dx, 0, Math.max(0, ow - mw));
       const ny = clamp(miniDrag.current.oy + dy, 0, Math.max(0, oh - mh));
       setMiniPos({ x: nx, y: ny });
     },
-    [miniCollapsed]
+    [miniCollapsed, imgW, imgH]
   );
 
   const endMiniDrag = useCallback(() => {
@@ -518,7 +564,7 @@ export default function ZoomOverlay({
     const rect = miniRef.current.getBoundingClientRect();
     const mw = rect.width;
     const mh = rect.height;
-    const s = Math.min(mw / imgW, mh / imgH);
+    const s = Math.min(mw / imgW, mh / imgH); // con aspect-ratio correcto, mw/imgW ≈ mh/imgH
     const dW = imgW * s;
     const dH = imgH * s;
     const offX = (mw - dW) / 2;
@@ -832,6 +878,12 @@ export default function ZoomOverlay({
     );
   }, [isDragging, tool]);
 
+  // Aspect ratio dinámico para el minimapa (sobrescribe el 1/1 del CSS vía inline style)
+  const miniAspect = useMemo(
+    () => (imgW && imgH ? `${imgW} / ${imgH}` : undefined),
+    [imgW, imgH]
+  );
+
   return (
     <div
       className={styles.overlay}
@@ -874,7 +926,7 @@ export default function ZoomOverlay({
           className={`${styles.toolBtn} ${
             !hideThreads ? "" : styles.toolActive
           }`}
-          aria-pressed={hideThreads}
+          aria-pressed={!!hideThreads}
           title={`${hideThreads ? "Ocultar" : "Mostrar"} hilos — T`}
           onClick={() => setHideThreads((v) => !v)}
         >
@@ -1007,7 +1059,7 @@ export default function ZoomOverlay({
               }`}
               ref={handleRef}
               onMouseDown={(e) => {
-                if (miniCollapsed) return; // 🔒 no drag en colapsado
+                if (miniCollapsed) return; // no drag en colapsado
                 const target = e.target as HTMLElement;
                 if (target.closest(`.${styles.miniHandleBtn}`)) return;
                 e.preventDefault();
@@ -1046,11 +1098,11 @@ export default function ZoomOverlay({
                   const next = !miniCollapsed;
                   setMiniCollapsed(next);
                   if (next) {
-                    // Colapsar → barra a esquina inferior IZQUIERDA
-                    snapMiniToCorner(true, "bl");
+                    // Colapsar → a esquina inferior DERECHA
+                    snapMiniToCorner(true, DEFAULT_CORNER_ON_COLLAPSE);
                   } else {
-                    // Expandir → vuelve desplegado
-                    snapMiniToCorner(false, "bl");
+                    // Expandir → vuelve desplegado a esquina por defecto expandida
+                    snapMiniToCorner(false, DEFAULT_CORNER_ON_EXPAND);
                     requestAnimationFrame(() => measureMini());
                   }
                 }}
@@ -1063,7 +1115,11 @@ export default function ZoomOverlay({
               <div
                 className={styles.minimap}
                 ref={miniRef}
-                style={{ touchAction: "none" }}
+                style={{
+                  touchAction: "none",
+                  // sobrescribe aspect-ratio: 1/1 del CSS con el real de la imagen
+                  aspectRatio: miniAspect,
+                }}
                 onMouseDown={onMiniClickOrDrag}
                 onMouseMove={(e) => {
                   e.stopPropagation();
@@ -1101,7 +1157,10 @@ export default function ZoomOverlay({
           <div
             className={styles.minimap}
             ref={miniRef}
-            style={{ touchAction: "none" }}
+            style={{
+              touchAction: "none",
+              aspectRatio: miniAspect, // sobrescribe 1/1 por el real
+            }}
             onMouseDown={onMiniClickOrDrag}
             onMouseMove={(e) => e.buttons === 1 && onMiniClickOrDrag(e)}
             onTouchStart={onMiniTouchStart}

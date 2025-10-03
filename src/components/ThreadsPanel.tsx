@@ -8,8 +8,10 @@ import AppModal from "./ui/Modal";
 import DeleteIcon from "@/icons/delete.svg";
 import Check from "@/icons/check.svg";
 import UndoIcon from "@/icons/undo.svg";
+import ChatIcon from "@/icons/chat.svg";
 import type { Thread, ThreadStatus } from "@/types/review";
 import { colorByThreadStatus } from "@/lib/ui/status";
+import { useMessagesStore, hasUnreadInThread } from "@/stores/messages";
 
 type Props = {
   threads: Thread[];
@@ -67,6 +69,8 @@ export default function ThreadsPanel({
   emptyTitle = "Aún no hay hilos",
   emptySubtitle = "Crea un hilo en la imagen para empezar el chat.",
 }: Props) {
+  useMessagesStore((s) => s.byThread);
+  useMessagesStore((s) => s.selfAuthId);
   // ====== Vista activa (chat si hay hilo seleccionado) ======
   const activeThread = useMemo(
     () =>
@@ -170,6 +174,7 @@ export default function ThreadsPanel({
             const variant = t.status === "corrected" ? "orange" : "green";
             const willGo = toggleLabel(t.status);
             const willGoIcon = toggleIcon(t.status);
+            const hasUnread = hasUnreadInThread(t.id);
 
             return (
               <li key={t.id} className={styles.row}>
@@ -180,6 +185,19 @@ export default function ThreadsPanel({
                   }
                   title={`Hilo #${i + 1} — ${STATUS_LABEL[t.status]}`}
                 >
+                  {hasUnread && (
+                    <span
+                      title="Mensajes sin leer"
+                      aria-label="Mensajes sin leer"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        marginLeft: 8,
+                      }}
+                    >
+                      <ChatIcon style={{ width: 14, height: 14 }} />
+                    </span>
+                  )}
                   <span
                     className={styles.dot}
                     style={{ background: colorByThreadStatus(t.status) }}

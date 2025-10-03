@@ -18,6 +18,7 @@ import DeleteIcon from "@/icons/delete.svg";
 import ClockIcon from "@/icons/clock.svg";
 import CheckIcon from "@/icons/check.svg";
 import AppModal from "./ui/Modal";
+import UndoIcon from "@/icons/undo.svg";
 
 type DeliveryState = "sending" | "sent" | "delivered" | "read";
 
@@ -636,10 +637,14 @@ function ThreadChatInner({
             <>
               <span className={styles.spinner} aria-hidden /> Actualizando…
             </>
-          ) : activeThread.status === "corrected" ? (
-            "Reabrir hilo"
+          ) : activeThread?.status === "corrected" ? (
+            <>
+              <UndoIcon /> Reabrir hilo
+            </>
           ) : (
-            "Validar correcciones"
+            <>
+              <CheckIcon /> Validar correcciones
+            </>
           )}
         </button>
 

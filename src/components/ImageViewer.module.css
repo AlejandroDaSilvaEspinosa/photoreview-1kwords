@@ -104,11 +104,6 @@
   font-weight: 800;
 }
 
-@media (max-width: 720px) {
-  .shortcutHint {
-    display: none;
-  }
-}
 
 /* ===== Navegación lateral ===== */
 .navButton {
@@ -315,8 +310,7 @@
 }
 
 .bottomStrip {
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
   gap: 12px;
   align-items: stretch;
   padding: 8px;
@@ -337,4 +331,12 @@
   align-items: center;
   justify-content: center;
   border: 1px solid white;
+}
+
+@media (max-width:640px) {
+  .shortcutHint {
+    display: none;
+  }
+
+
 }

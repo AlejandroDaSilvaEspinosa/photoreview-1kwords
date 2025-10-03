@@ -88,9 +88,73 @@ interface ImageViewerProps {
   ) => void;
   selectedThreadId?: number | null;
   onSelectThread?: (id: number | null) => void;
-  // Navegación a siguiente SKU
   nextSkuCandidate?: SkuWithImagesAndStatus | null;
   onGoToSku?: (skuCode: string) => void;
+}
+
+/** ====== Hook ligero para numeración estable por imagen ======
+ * - Por cada imagen guardamos: key (img + x + y) -> número mostrado.
+ * - Inicializamos 1..N una sola vez (orden por id para base determinista).
+ * - En cuanto aparece una key nueva, le damos nextIndex (length+1).
+ * - No reenumeramos al borrar/cambiar estado.
+ */
+function useStableDotNumbers(
+  imageName: string | null,
+  threads: Array<{ id: number; x: number; y: number; status: ThreadStatus }>
+) {
+  // imagen -> (key -> numero)
+  const perImageMapRef = useRef<Map<string, Map<string, number>>>(new Map());
+  // imagen -> siguiente número a asignar
+  const nextIndexRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    if (!imageName) return;
+    const current = threads.filter((t) => t.status !== "deleted");
+
+    let map = perImageMapRef.current.get(imageName);
+    const next = nextIndexRef.current.get(imageName);
+
+    // Primera vez para esta imagen: sembramos 1..N ordenado por id (determinista)
+    if (!map) {
+      map = new Map<string, number>();
+      const sorted = current.slice().sort((a, b) => a.id - b.id);
+      let i = 1;
+      for (const t of sorted) {
+        map.set(pointKey(imageName, t.x, t.y), i++);
+      }
+      perImageMapRef.current.set(imageName, map);
+      nextIndexRef.current.set(imageName, i);
+      return;
+    }
+
+    // Ya existe el mapa: sólo asignamos número a keys nuevas
+    let localNext = typeof next === "number" ? next : 1;
+    for (const t of current) {
+      const key = pointKey(imageName, t.x, t.y);
+      if (!map.has(key)) {
+        map.set(key, localNext++);
+      }
+    }
+    nextIndexRef.current.set(imageName, localNext);
+  }, [imageName, threads]);
+
+  const getNumber = useCallback(
+    (img: string, x: number, y: number): number | null => {
+      const map = perImageMapRef.current.get(img);
+      if (!map) return null;
+      const n = map.get(pointKey(img, x, y));
+      return n ?? null;
+    },
+    []
+  );
+
+  // (Por si quieres limpiar manualmente en algún evento)
+  const resetForImage = useCallback((img: string) => {
+    perImageMapRef.current.delete(img);
+    nextIndexRef.current.delete(img);
+  }, []);
+
+  return { getNumber, resetForImage };
 }
 
 export default function ImageViewer({
@@ -105,7 +169,6 @@ export default function ImageViewer({
   onGoToSku,
 }: ImageViewerProps) {
   const { images } = sku;
-  // Realtime por SKU
   useWireSkuRealtime(sku.sku);
 
   // ======= modal de validación
@@ -174,9 +237,7 @@ export default function ImageViewer({
   }>(null);
 
   const defaultTool = "zoom";
-  const resetTool = () => {
-    setTool(defaultTool);
-  };
+  const resetTool = () => setTool(defaultTool);
 
   // ===== Threads (imagen visible)
   const selectedImageKey = selectedImage?.name ?? "";
@@ -198,6 +259,18 @@ export default function ImageViewer({
         out[img.name] = s.byImage[img.name] ?? EMPTY_ARR;
       return out;
     })
+  );
+
+  // Lista para render (filtrada; SIN reordenar). Numeración la pone el hook.
+  const threadsForRender = useMemo(
+    () => (threadsRaw ?? EMPTY_ARR).filter((t: any) => t.status !== "deleted"),
+    [threadsRaw]
+  );
+
+  // Numeración estable y ligera por imagen
+  const { getNumber } = useStableDotNumbers(
+    selectedImage?.name ?? null,
+    threadsForRender as any
   );
 
   const threadToImageMapSize = threadToImage.size;
@@ -230,7 +303,7 @@ export default function ImageViewer({
     });
   }, []);
 
-  // Escucha eventos DOM para elevar a "live" y marcar leído si activo
+  // Eventos DOM para marcar "live" + read when active
   useEffect(() => {
     const onLive = (e: any) => {
       const tid = e?.detail?.tid as number | undefined;
@@ -240,8 +313,7 @@ export default function ImageViewer({
         if (cur === "live") return prev;
         const m = new Map(prev);
         const activeTid = useThreadsStore.getState().activeThreadId;
-        if (tid !== activeTid) m.set(tid, "live");
-        else m.set(tid, "cache");
+        m.set(tid, tid !== activeTid ? "live" : "cache");
         return m;
       });
     };
@@ -663,7 +735,7 @@ export default function ImageViewer({
         });
         try {
           enqueueSendSystemMessage(realId, sysText);
-        } catch (e) {
+        } catch {
           /* opcional */
         }
       } catch (e) {
@@ -1020,7 +1092,7 @@ export default function ImageViewer({
               className={`${styles.toolBtn} ${
                 !showThreads ? styles.toolActive : ""
               }`}
-              aria-pressed={showThreads}
+              aria-pressed={!showThreads}
               title={`${showThreads ? "Ocultar" : "Mostrar"} hilos — T`}
               onClick={() => setShowThreads((v) => !v)}
             >
@@ -1075,14 +1147,19 @@ export default function ImageViewer({
                 .toUpperCase()}
             />
 
+            {/* Dots: numeración estable con length+1 para nuevos hilos (por imagen) */}
             {showThreads &&
-              (threadsRaw || []).map((th, index) => {
-                if (th.status === "deleted") return null;
+              threadsForRender.map((th, idxRender) => {
                 const topPx = imgBox.offsetTop + (th.y / 100) * imgBox.height;
                 const leftPx = imgBox.offsetLeft + (th.x / 100) * imgBox.width;
                 const bg = colorByStatus(th.status);
                 const isActive = activeThreadId === th.id;
                 const hasUnread = hasUnreadInThread(th.id);
+                const num =
+                  selectedImage?.name != null
+                    ? getNumber(selectedImage.name, th.x, th.y) ?? idxRender + 1
+                    : idxRender + 1;
+
                 return (
                   <div
                     key={th.id}
@@ -1094,7 +1171,7 @@ export default function ImageViewer({
                       left: `${leftPx}px`,
                       background: bg,
                       boxShadow: isActive
-                        ? "0 0 0 3px rgba(255,255,255,.35), 0 0 10px " + bg
+                        ? `0 0 0 3px rgba(255,255,255,.35), 0 0 10px ${bg}`
                         : "none",
                     }}
                     onClick={(e) => {
@@ -1105,11 +1182,9 @@ export default function ImageViewer({
                         setActiveKey(pointKey(selectedImage.name, th.x, th.y));
                     }}
                     title={STATUS_LABEL[th.status]}
-                    aria-label={`Hilo #${index + 1} — ${
-                      STATUS_LABEL[th.status]
-                    }`}
+                    aria-label={`Hilo #${num} — ${STATUS_LABEL[th.status]}`}
                   >
-                    {index + 1}
+                    {num}
                     {hasUnread && (
                       <div
                         className={styles.unreadBadge}
