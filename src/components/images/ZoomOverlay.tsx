@@ -30,7 +30,8 @@ import ChatIcon from "@/icons/chat.svg";
 
 type Props = {
   src: string;
-  imageName: string; // clave igual que en ImageViewer
+  /** opcional: clave usada para numeración estable; si no llega, se usa un fallback */
+  imageName?: string;
   threads: Thread[];
   activeThreadId: number | null;
   initial?: {
@@ -83,42 +84,44 @@ type GestureState = {
   didPinch: boolean;
 };
 
-/** ====== Numeración estable por imagen (igual que ImageViewer) ====== */
+/** ====== Numeración estable por imagen (igual filosofía que ImageViewer) ====== */
 function useStableDotNumbers(
-  imageName: string,
+  imageKey: string,
   threads: Array<{ id: number; x: number; y: number; status: ThreadStatus }>
 ) {
   const perImageMapRef = useRef<Map<string, Map<string, number>>>(new Map());
   const nextIndexRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
-    if (!imageName) return;
+    if (!imageKey) return;
     const current = threads.filter((t) => t.status !== "deleted");
 
-    let map = perImageMapRef.current.get(imageName);
-    const next = nextIndexRef.current.get(imageName);
+    let map = perImageMapRef.current.get(imageKey);
+    const next = nextIndexRef.current.get(imageKey);
 
+    // Primera vez: siembra 1..N estable (orden por id)
     if (!map) {
       map = new Map<string, number>();
       const sorted = current.slice().sort((a, b) => a.id - b.id);
       let i = 1;
       for (const t of sorted) {
-        map.set(pointKey(imageName, t.x, t.y), i++);
+        map.set(pointKey(imageKey, t.x, t.y), i++);
       }
-      perImageMapRef.current.set(imageName, map);
-      nextIndexRef.current.set(imageName, i);
+      perImageMapRef.current.set(imageKey, map);
+      nextIndexRef.current.set(imageKey, i);
       return;
     }
 
+    // Ya existía: asigna números solo a keys nuevas
     let localNext = typeof next === "number" ? next : 1;
     for (const t of current) {
-      const key = pointKey(imageName, t.x, t.y);
+      const key = pointKey(imageKey, t.x, t.y);
       if (!map.has(key)) {
         map.set(key, localNext++);
       }
     }
-    nextIndexRef.current.set(imageName, localNext);
-  }, [imageName, threads]);
+    nextIndexRef.current.set(imageKey, localNext);
+  }, [imageKey, threads]);
 
   const getNumber = useCallback(
     (img: string, x: number, y: number): number | null => {
@@ -132,6 +135,12 @@ function useStableDotNumbers(
 
   return { getNumber };
 }
+
+/** ====== Claves de localStorage ====== */
+const LS_KEYS = {
+  pos: "rev.zoom.minimap.pos.v1",
+  collapsed: "rev.zoom.minimap.collapsed.v1",
+};
 
 export default function ZoomOverlay({
   src,
@@ -150,8 +159,8 @@ export default function ZoomOverlay({
   validationLock,
   pendingStatusIds,
 }: Props) {
-  // === Numeración estable ===
-  const { getNumber } = useStableDotNumbers(imageName, threads);
+  const imageKey = imageName || "__overlay__";
+  const { getNumber } = useStableDotNumbers(imageKey, threads);
 
   // ===== responsive =====
   const [isNarrow, setIsNarrow] = useState(false);
@@ -208,7 +217,7 @@ export default function ZoomOverlay({
   });
   const pinchRAF = useRef<number | null>(null);
 
-  // minimapa
+  // minimapa (dims)
   const miniRef = useRef<HTMLDivElement>(null);
   const [miniDims, setMiniDims] = useState({
     mw: 1,
@@ -219,7 +228,7 @@ export default function ZoomOverlay({
     offY: 0,
   });
 
-  // ===== minimapa flotante (solo narrow) =====
+  // ===== minimapa flotante (solo narrow) - posición persistente =====
   const floatRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<HTMLDivElement>(null);
   const [miniPos, setMiniPos] = useState<{ x: number; y: number }>({
@@ -227,6 +236,11 @@ export default function ZoomOverlay({
     y: 12,
   });
   const [miniPosInit, setMiniPosInit] = useState(false);
+  const miniPosInitRef = useRef(miniPosInit);
+  useEffect(() => {
+    miniPosInitRef.current = miniPosInit;
+  }, [miniPosInit]);
+
   const [miniCollapsed, setMiniCollapsed] = useState(false);
   const miniDrag = useRef<{
     sx: number;
@@ -239,6 +253,53 @@ export default function ZoomOverlay({
   const DEFAULT_CORNER_ON_COLLAPSE: "bl" | "br" = "bl";
   const DEFAULT_CORNER_ON_EXPAND: "bl" | "br" = "bl";
 
+  /** Lee posición/collapsed desde localStorage (solo en narrow) */
+  useEffect(() => {
+    if (!isNarrow) return;
+    try {
+      const rawPos = localStorage.getItem(LS_KEYS.pos);
+      if (rawPos) {
+        const parsed = JSON.parse(rawPos);
+        if (
+          parsed &&
+          typeof parsed.x === "number" &&
+          typeof parsed.y === "number" &&
+          Number.isFinite(parsed.x) &&
+          Number.isFinite(parsed.y)
+        ) {
+          setMiniPos({ x: parsed.x, y: parsed.y });
+          setMiniPosInit(true); // evita snap inicial
+        }
+      }
+      const rawCol = localStorage.getItem(LS_KEYS.collapsed);
+      if (rawCol === "1" || rawCol === "0") {
+        setMiniCollapsed(rawCol === "1");
+      }
+    } catch {
+      /* noop */
+    }
+  }, [isNarrow]);
+
+  /** Guarda posición en localStorage cuando cambia */
+  useEffect(() => {
+    if (!isNarrow) return;
+    try {
+      localStorage.setItem(LS_KEYS.pos, JSON.stringify(miniPos));
+    } catch {
+      /* noop */
+    }
+  }, [isNarrow, miniPos.x, miniPos.y]);
+
+  /** Guarda collapsed en localStorage cuando cambia */
+  useEffect(() => {
+    if (!isNarrow) return;
+    try {
+      localStorage.setItem(LS_KEYS.collapsed, miniCollapsed ? "1" : "0");
+    } catch {
+      /* noop */
+    }
+  }, [isNarrow, miniCollapsed]);
+
   const snapMiniToCorner = useCallback(
     (collapsed: boolean, corner: "bl" | "br" = "bl") => {
       const crect = wrapRef.current?.getBoundingClientRect();
@@ -250,13 +311,15 @@ export default function ZoomOverlay({
 
       const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
 
+      // Alto real del minimapa con aspect-ratio dinámico
       const miniRect = miniRef.current?.getBoundingClientRect();
-      const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw;
+      const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw; // fallback cuadrado
       const miniH = miniRect?.height ?? ratioH;
 
       const mh = collapsed ? handleH : handleH + miniH;
 
       const PAD = 0;
+      console.log(corner);
       const x = corner === "bl" ? PAD : Math.max(PAD, ow - mw - PAD);
       const y = Math.max(PAD, oh - mh - PAD);
 
@@ -268,22 +331,49 @@ export default function ZoomOverlay({
     [imgW, imgH]
   );
 
-  useEffect(() => {
-    if (!isNarrow || miniPosInit) return;
-    const place = () => snapMiniToCorner(false, DEFAULT_CORNER_ON_EXPAND);
-    requestAnimationFrame(place);
-    const t = setTimeout(place, 300);
-    return () => clearTimeout(t);
-  }, [isNarrow, miniPosInit, snapMiniToCorner]);
-
+  /** Si no hay posición inicial, hace snap; si la hay, solo aclampa a límites. */
   useEffect(() => {
     if (!isNarrow || !imgW || !imgH) return;
-    snapMiniToCorner(
-      miniCollapsed,
-      miniCollapsed ? DEFAULT_CORNER_ON_COLLAPSE : DEFAULT_CORNER_ON_EXPAND
-    );
-  }, [isNarrow, imgW, imgH, miniCollapsed, snapMiniToCorner]);
 
+    const crect = wrapRef.current?.getBoundingClientRect();
+    const ow = crect?.width ?? window.innerWidth;
+    const oh = crect?.height ?? window.innerHeight;
+
+    const fr = floatRef.current?.getBoundingClientRect();
+    const mw = fr?.width ?? 240;
+
+    const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
+
+    const miniRect = miniRef.current?.getBoundingClientRect();
+    const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw;
+    const miniH = miniRect?.height ?? ratioH;
+
+    const mh = miniCollapsed ? handleH : handleH + miniH;
+
+    const maxX = Math.max(0, ow - mw);
+    const maxY = Math.max(0, oh - mh);
+
+    if (miniPosInitRef.current) {
+      // Tenemos pos guardada → solo clamp
+      setMiniPos((p) => ({ x: clamp(p.x, 0, maxX), y: clamp(p.y, 0, maxY) }));
+    } else {
+      // Sin pos guardada → coloca en esquina adecuada
+      snapMiniToCorner(
+        miniCollapsed,
+        miniCollapsed ? DEFAULT_CORNER_ON_COLLAPSE : DEFAULT_CORNER_ON_EXPAND
+      );
+    }
+  }, [
+    isNarrow,
+    imgW,
+    imgH,
+    miniCollapsed,
+    snapMiniToCorner,
+    DEFAULT_CORNER_ON_COLLAPSE,
+    DEFAULT_CORNER_ON_EXPAND,
+  ]);
+
+  /** Clamp en resize de viewport */
   useEffect(() => {
     const onResize = () => {
       if (!isNarrow) return;
@@ -320,7 +410,7 @@ export default function ZoomOverlay({
       miniDrag.current.ox = miniPos.x;
       miniDrag.current.oy = miniPos.y;
       miniDrag.current.dragging = true;
-      setMiniPosInit(true);
+      setMiniPosInit(true); // ya “tenemos posición”
     },
     [miniPos.x, miniPos.y, miniCollapsed]
   );
@@ -342,7 +432,7 @@ export default function ZoomOverlay({
       const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw;
       const miniH = miniRect?.height ?? ratioH;
 
-      const mh = handleH + miniH;
+      const mh = handleH + miniH; // expandido al arrastrar
 
       const dx = clientX - miniDrag.current.sx;
       const dy = clientY - miniDrag.current.sy;
@@ -475,20 +565,22 @@ export default function ZoomOverlay({
   const initializeView = useCallback(() => {
     if (hasInitialized || !imgReady || !view.vw || !view.vh) return;
     const fit = getFitZoom();
-    const panZoom = getPanEnabledZoom();
-    const z0 = Math.max(initial?.zoom ?? fit * 1.2, panZoom);
-    const fx = initial?.xPct ?? 50;
-    const fy = initial?.yPct ?? 50;
-    const { cx, cy } = centerEdgeAware(
-      fx,
-      fy,
-      z0,
-      initial?.ax ?? 0.5,
-      initial?.ay ?? 0.5
-    );
-    setZoom(z0);
-    setCx(cx);
-    setCy(cy);
+    {
+      const panZoom = getPanEnabledZoom();
+      const z0 = Math.max(initial?.zoom ?? fit * 1.2, panZoom);
+      const fx = initial?.xPct ?? 50;
+      const fy = initial?.yPct ?? 50;
+      const { cx, cy } = centerEdgeAware(
+        fx,
+        fy,
+        z0,
+        initial?.ax ?? 0.5,
+        initial?.ay ?? 0.5
+      );
+      setZoom(z0);
+      setCx(cx);
+      setCy(cy);
+    }
     setHasInitialized(true);
   }, [
     hasInitialized,
@@ -693,9 +785,9 @@ export default function ZoomOverlay({
 
   const threadIndex = useMemo(() => {
     if (!activeThread) return 0;
-    const n = getNumber(imageName, activeThread.x, activeThread.y);
+    const n = getNumber(imageKey, activeThread.x, activeThread.y);
     return n ?? 0;
-  }, [activeThread, imageName, getNumber]);
+  }, [activeThread, imageKey, getNumber]);
 
   const fitToView = useCallback(() => {
     const z = getFitZoom();
@@ -704,7 +796,7 @@ export default function ZoomOverlay({
     setCy(50);
   }, [getFitZoom]);
 
-  // ====== MOBILE: touch gestures ======
+  // ====== MOBILE: gestures ======
   const onTouchStart = useCallback(
     (e: React.TouchEvent) => {
       e.preventDefault();
@@ -874,9 +966,9 @@ export default function ZoomOverlay({
         left: `${t.x}%`,
         top: `${t.y}%`,
         status: t.status,
-        num: getNumber(imageName, t.x, t.y) ?? i + 1,
+        num: getNumber(imageKey, t.x, t.y) ?? i + 1,
       })),
-    [threads, imageName, getNumber]
+    [threads, imageKey, getNumber]
   );
 
   const centerToThread = (t: Thread) => {
@@ -1060,7 +1152,7 @@ export default function ZoomOverlay({
         {/* Minimap flotante (solo ≤1050px) */}
         {isNarrow && (
           <MiniFloat
-            src={src} // <-- usar src correcto
+            src={src}
             miniAspect={miniAspect}
             miniPos={miniPos}
             setMiniPos={setMiniPos}
@@ -1290,8 +1382,10 @@ function MiniFloat(props: {
             const next = !miniCollapsed;
             setMiniCollapsed(next);
             if (next) {
-              snapMiniToCorner(true, "br");
+              // colapsar → esquina inferior derecha
+              snapMiniToCorner(true, "bl");
             } else {
+              // expandir → esquina por defecto expandida
               snapMiniToCorner(false, "bl");
               requestAnimationFrame(() => measureMini());
             }
@@ -1317,7 +1411,7 @@ function MiniFloat(props: {
         >
           <div className={styles.miniImgWrap}>
             <ImageWithSkeleton
-              src={src} // <-- FIX: usar src real
+              src={src}
               alt=""
               fill
               sizes="320px"
