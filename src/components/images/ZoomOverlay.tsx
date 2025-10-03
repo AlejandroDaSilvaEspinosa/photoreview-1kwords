@@ -17,6 +17,7 @@ import ImageWithSkeleton from "@/components/ImageWithSkeleton";
 import ThreadsPanel from "@/components/ThreadsPanel";
 import type { Thread, ThreadStatus } from "@/types/review";
 import { colorByThreadStatus } from "@/lib/ui/status";
+import { pointKey } from "@/lib/common/coords";
 
 import CloseIcon from "@/icons/close.svg";
 import EyeOffIncon from "@/icons/eye-off.svg";
@@ -29,6 +30,7 @@ import ChatIcon from "@/icons/chat.svg";
 
 type Props = {
   src: string;
+  imageName: string; // clave igual que en ImageViewer
   threads: Thread[];
   activeThreadId: number | null;
   initial?: {
@@ -40,15 +42,12 @@ type Props = {
   };
   currentUsername?: string;
 
-  /** Control de visibilidad de pins sobre la imagen */
   hideThreads?: boolean;
   setHideThreads: Dispatch<SetStateAction<boolean>>;
 
-  /** Homologación con SidePanel */
-  validationLock?: boolean; // SKU validado → sólo lectura
-  pendingStatusIds?: Set<number>; // hilos con cambio de estado en curso
+  validationLock?: boolean;
+  pendingStatusIds?: Set<number>;
 
-  /** Callbacks */
   onCreateThreadAt: (xPct: number, yPct: number) => void;
   onFocusThread: (id: number | null) => void;
   onAddThreadMessage: (threadId: number, text: string) => void;
@@ -84,8 +83,59 @@ type GestureState = {
   didPinch: boolean;
 };
 
+/** ====== Numeración estable por imagen (igual que ImageViewer) ====== */
+function useStableDotNumbers(
+  imageName: string,
+  threads: Array<{ id: number; x: number; y: number; status: ThreadStatus }>
+) {
+  const perImageMapRef = useRef<Map<string, Map<string, number>>>(new Map());
+  const nextIndexRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    if (!imageName) return;
+    const current = threads.filter((t) => t.status !== "deleted");
+
+    let map = perImageMapRef.current.get(imageName);
+    const next = nextIndexRef.current.get(imageName);
+
+    if (!map) {
+      map = new Map<string, number>();
+      const sorted = current.slice().sort((a, b) => a.id - b.id);
+      let i = 1;
+      for (const t of sorted) {
+        map.set(pointKey(imageName, t.x, t.y), i++);
+      }
+      perImageMapRef.current.set(imageName, map);
+      nextIndexRef.current.set(imageName, i);
+      return;
+    }
+
+    let localNext = typeof next === "number" ? next : 1;
+    for (const t of current) {
+      const key = pointKey(imageName, t.x, t.y);
+      if (!map.has(key)) {
+        map.set(key, localNext++);
+      }
+    }
+    nextIndexRef.current.set(imageName, localNext);
+  }, [imageName, threads]);
+
+  const getNumber = useCallback(
+    (img: string, x: number, y: number): number | null => {
+      const map = perImageMapRef.current.get(img);
+      if (!map) return null;
+      const n = map.get(pointKey(img, x, y));
+      return n ?? null;
+    },
+    []
+  );
+
+  return { getNumber };
+}
+
 export default function ZoomOverlay({
   src,
+  imageName,
   threads,
   activeThreadId,
   onFocusThread,
@@ -100,7 +150,10 @@ export default function ZoomOverlay({
   validationLock,
   pendingStatusIds,
 }: Props) {
-  // ===== responsive: ≤1050 => minimapa flotante + chat drawer =====
+  // === Numeración estable ===
+  const { getNumber } = useStableDotNumbers(imageName, threads);
+
+  // ===== responsive =====
   const [isNarrow, setIsNarrow] = useState(false);
   const [showChat, setShowChat] = useState(false);
   useEffect(() => {
@@ -115,7 +168,7 @@ export default function ZoomOverlay({
   const [imgH, setImgH] = useState(0);
   const [imgReady, setImgReady] = useState(false);
 
-  // Centro (en %) y zoom
+  // Centro y zoom
   const [cx, setCx] = useState(initial?.xPct ?? 50);
   const [cy, setCy] = useState(initial?.yPct ?? 50);
   const [zoom, setZoom] = useState(initial?.zoom ?? 1);
@@ -131,9 +184,8 @@ export default function ZoomOverlay({
     cxPx: number;
     cyPx: number;
   } | null>(null);
-  const movedRef = useRef(false);
 
-  // Doble-tap & pinch control (mutable)
+  // Doble-tap & pinch
   const tapRef = useRef<{ t: number; x: number; y: number }>({
     t: 0,
     x: 0,
@@ -167,7 +219,7 @@ export default function ZoomOverlay({
     offY: 0,
   });
 
-  // ===== minimapa flotante (solo narrow) - posición, drag y colapsado =====
+  // ===== minimapa flotante (solo narrow) =====
   const floatRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<HTMLDivElement>(null);
   const [miniPos, setMiniPos] = useState<{ x: number; y: number }>({
@@ -184,9 +236,8 @@ export default function ZoomOverlay({
     dragging: boolean;
   }>({ sx: 0, sy: 0, ox: 12, oy: 12, dragging: false });
 
-  // Ajuste por esquina por defecto:
-  const DEFAULT_CORNER_ON_COLLAPSE: "bl" | "br" = "br"; // minimizado → esquina inferior derecha
-  const DEFAULT_CORNER_ON_EXPAND: "bl" | "br" = "bl"; // expandido → inferior izquierda
+  const DEFAULT_CORNER_ON_COLLAPSE: "bl" | "br" = "bl";
+  const DEFAULT_CORNER_ON_EXPAND: "bl" | "br" = "bl";
 
   const snapMiniToCorner = useCallback(
     (collapsed: boolean, corner: "bl" | "br" = "bl") => {
@@ -199,9 +250,8 @@ export default function ZoomOverlay({
 
       const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
 
-      // Alto real del minimapa con aspect-ratio dinámico
       const miniRect = miniRef.current?.getBoundingClientRect();
-      const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw; // fallback cuadrado si no hay dims
+      const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw;
       const miniH = miniRect?.height ?? ratioH;
 
       const mh = collapsed ? handleH : handleH + miniH;
@@ -227,21 +277,12 @@ export default function ZoomOverlay({
   }, [isNarrow, miniPosInit, snapMiniToCorner]);
 
   useEffect(() => {
-    // cuando cambian las dimensiones reales de la imagen, re-snap para respetar límites
     if (!isNarrow || !imgW || !imgH) return;
     snapMiniToCorner(
       miniCollapsed,
       miniCollapsed ? DEFAULT_CORNER_ON_COLLAPSE : DEFAULT_CORNER_ON_EXPAND
     );
-  }, [
-    isNarrow,
-    imgW,
-    imgH,
-    miniCollapsed,
-    snapMiniToCorner,
-    DEFAULT_CORNER_ON_COLLAPSE,
-    DEFAULT_CORNER_ON_EXPAND,
-  ]);
+  }, [isNarrow, imgW, imgH, miniCollapsed, snapMiniToCorner]);
 
   useEffect(() => {
     const onResize = () => {
@@ -273,7 +314,7 @@ export default function ZoomOverlay({
 
   const beginMiniDrag = useCallback(
     (clientX: number, clientY: number) => {
-      if (miniCollapsed) return; // no draggable colapsado
+      if (miniCollapsed) return;
       miniDrag.current.sx = clientX;
       miniDrag.current.sy = clientY;
       miniDrag.current.ox = miniPos.x;
@@ -301,7 +342,7 @@ export default function ZoomOverlay({
       const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw;
       const miniH = miniRect?.height ?? ratioH;
 
-      const mh = handleH + miniH; // expandido al arrastrar
+      const mh = handleH + miniH;
 
       const dx = clientX - miniDrag.current.sx;
       const dy = clientY - miniDrag.current.sy;
@@ -358,7 +399,7 @@ export default function ZoomOverlay({
     return { vw: rect?.width ?? 1, vh: rect?.height ?? 1 };
   })();
 
-  // zooms
+  // zoom helpers
   const getMinZoom = useCallback(() => {
     if (!imgW || !imgH) return 1;
     return Math.min(view.vw / imgW, view.vh / imgH);
@@ -374,7 +415,7 @@ export default function ZoomOverlay({
     return Math.max(rw, rh) * 1.06;
   }, [imgW, imgH, view.vw, view.vh]);
 
-  // centro en px y transform
+  // centro px y transform
   const cxPx = (cx / 100) * imgW;
   const cyPx = (cy / 100) * imgH;
   const tx = view.vw / 2 - cxPx * zoom;
@@ -384,7 +425,7 @@ export default function ZoomOverlay({
   const viewWPercent = (view.vw / (imgW * zoom)) * 100;
   const viewHPercent = (view.vh / (imgH * zoom)) * 100;
 
-  // helpers de clamping
+  // clamping helpers
   const clampCenterPxFor = useCallback(
     (cxPxNew: number, cyPxNew: number, z: number) => {
       if (!imgW || !imgH || !view.vw || !view.vh) return { cx: 50, cy: 50 };
@@ -495,7 +536,6 @@ export default function ZoomOverlay({
       }
     },
     [
-      wrapRef,
       imgW,
       imgH,
       view.vw,
@@ -527,7 +567,6 @@ export default function ZoomOverlay({
 
   const onMouseDown = (e: React.MouseEvent) => {
     if (tool !== "pan") return;
-    movedRef.current = false;
     setIsDragging(true);
     dragRef.current = { x: e.clientX, y: e.clientY, cxPx, cyPx };
   };
@@ -564,7 +603,7 @@ export default function ZoomOverlay({
     const rect = miniRef.current.getBoundingClientRect();
     const mw = rect.width;
     const mh = rect.height;
-    const s = Math.min(mw / imgW, mh / imgH); // con aspect-ratio correcto, mw/imgW ≈ mh/imgH
+    const s = Math.min(mw / imgW, mh / imgH);
     const dW = imgW * s;
     const dH = imgH * s;
     const offX = (mw - dW) / 2;
@@ -651,13 +690,12 @@ export default function ZoomOverlay({
     () => threads.find((t) => t.id === activeThreadId) || null,
     [threads, activeThreadId]
   );
-  const threadIndex = useMemo(
-    () =>
-      activeThreadId
-        ? threads.findIndex((t) => t.id === activeThreadId) + 1
-        : 0,
-    [threads, activeThreadId]
-  );
+
+  const threadIndex = useMemo(() => {
+    if (!activeThread) return 0;
+    const n = getNumber(imageName, activeThread.x, activeThread.y);
+    return n ?? 0;
+  }, [activeThread, imageName, getNumber]);
 
   const fitToView = useCallback(() => {
     const z = getFitZoom();
@@ -701,7 +739,7 @@ export default function ZoomOverlay({
         gestureRef.current.didPinch = true;
       }
     },
-    [wrapRef, imgW, imgH, cx, cy, zoom, tx, ty]
+    [imgW, imgH, cx, cy, zoom, tx, ty]
   );
 
   const onTouchMove = useCallback(
@@ -724,12 +762,6 @@ export default function ZoomOverlay({
         );
         setCx(cxPct);
         setCy(cyPct);
-        if (
-          Math.abs(x - gestureRef.current.startX) > 4 ||
-          Math.abs(y - gestureRef.current.startY) > 4
-        ) {
-          gestureRef.current.moved = true;
-        }
       } else if (gestureRef.current.mode === "pinch" && e.touches.length >= 2) {
         if (pinchRAF.current != null) return;
         pinchRAF.current = requestAnimationFrame(() => {
@@ -766,7 +798,7 @@ export default function ZoomOverlay({
         });
       }
     },
-    [wrapRef, imgW, imgH, zoom, view.vw, view.vh, getMinZoom, clampCenterPxFor]
+    [imgW, imgH, zoom, view.vw, view.vh, getMinZoom, clampCenterPxFor]
   );
 
   const onTouchEnd = useCallback(
@@ -774,57 +806,42 @@ export default function ZoomOverlay({
       if (e.touches.length > 0) return;
       const now = performance.now();
       const last = tapRef.current;
-      const x = gestureRef.current.tapX;
-      const y = gestureRef.current.tapY;
-      const isQuick = now - last.t < 300 && dist(x, y, last.x, last.y) < 30;
-      const canDoubleTap =
-        !gestureRef.current.moved && !gestureRef.current.didPinch;
-      if (isQuick && canDoubleTap) {
-        const rect = wrapRef.current?.getBoundingClientRect();
-        if (rect) {
-          const fit = getFitZoom();
-          const panZoom = getPanEnabledZoom();
-          const threshold = panZoom * 1.5;
-          if (zoom >= threshold) {
-            const nextZ = panZoom;
-            const cxPxNow = (cx / 100) * imgW;
-            const cyPxNow = (cy / 100) * imgH;
-            const { cx: cx2, cy: cy2 } = clampCenterPxFor(
-              cxPxNow,
-              cyPxNow,
-              nextZ
-            );
-            setZoom(nextZ);
-            setCx(cx2);
-            setCy(cy2);
-          } else {
-            const localX = x;
-            const localY = y;
-            const xImg = (localX - tx) / zoom;
-            const yImg = (localY - ty) / zoom;
-            const nextZ = clamp(
-              Math.max(zoom * 2, fit * 2.4),
-              getMinZoom(),
-              10
-            );
-            const cxPxNext = view.vw / (2 * nextZ) + xImg - localX / nextZ;
-            const cyPxNext = view.vh / (2 * nextZ) + yImg - localY / nextZ;
-            const { cx: cxPct, cy: cyPct } = clampCenterPxFor(
-              cxPxNext,
-              cyPxNext,
-              nextZ
-            );
-            setZoom(nextZ);
-            setCx(cxPct);
-            setCy(cyPct);
-          }
+      const isQuick = now - last.t < 300;
+      if (
+        isQuick &&
+        !gestureRef.current.moved &&
+        !gestureRef.current.didPinch
+      ) {
+        const fit = getFitZoom();
+        const panZoom = getPanEnabledZoom();
+        const threshold = panZoom * 1.5;
+        if (zoom >= threshold) {
+          const nextZ = panZoom;
+          const cxPxNow = (cx / 100) * imgW;
+          const cyPxNow = (cy / 100) * imgH;
+          const { cx: cx2, cy: cy2 } = clampCenterPxFor(
+            cxPxNow,
+            cyPxNow,
+            nextZ
+          );
+          setZoom(nextZ);
+          setCx(cx2);
+          setCy(cy2);
+        } else {
+          const nextZ = clamp(Math.max(zoom * 2, fit * 2.4), getMinZoom(), 10);
+          const cxPxNext = view.vw / (2 * nextZ) + (cxPx - view.vw / 2) / zoom;
+          const cyPxNext = view.vh / (2 * nextZ) + (cyPx - view.vh / 2) / zoom;
+          const { cx: cxPct, cy: cyPct } = clampCenterPxFor(
+            cxPxNext,
+            cyPxNext,
+            nextZ
+          );
+          setZoom(nextZ);
+          setCx(cxPct);
+          setCy(cyPct);
         }
       }
-      tapRef.current = {
-        t: now,
-        x: gestureRef.current.tapX,
-        y: gestureRef.current.tapY,
-      };
+      tapRef.current = { t: now, x: 0, y: 0 };
       gestureRef.current.mode = "none";
       gestureRef.current.didPinch = false;
       if (pinchRAF.current) {
@@ -833,14 +850,13 @@ export default function ZoomOverlay({
       }
     },
     [
-      wrapRef,
       zoom,
-      tx,
-      ty,
-      view.vw,
-      view.vh,
       cx,
       cy,
+      cxPx,
+      cyPx,
+      view.vw,
+      view.vh,
       imgW,
       imgH,
       getFitZoom,
@@ -850,17 +866,17 @@ export default function ZoomOverlay({
     ]
   );
 
-  // ====== dots ======
+  // ====== dots (numeración estable) ======
   const dots = useMemo(
     () =>
-      threads.map((t) => ({
+      threads.map((t, i) => ({
         id: t.id,
         left: `${t.x}%`,
         top: `${t.y}%`,
         status: t.status,
-        num: 1 + threads.findIndex((x) => x.id === t.id),
+        num: getNumber(imageName, t.x, t.y) ?? i + 1,
       })),
-    [threads]
+    [threads, imageName, getNumber]
   );
 
   const centerToThread = (t: Thread) => {
@@ -878,7 +894,6 @@ export default function ZoomOverlay({
     );
   }, [isDragging, tool]);
 
-  // Aspect ratio dinámico para el minimapa (sobrescribe el 1/1 del CSS vía inline style)
   const miniAspect = useMemo(
     () => (imgW && imgH ? `${imgW} / ${imgH}` : undefined),
     [imgW, imgH]
@@ -1044,110 +1059,24 @@ export default function ZoomOverlay({
 
         {/* Minimap flotante (solo ≤1050px) */}
         {isNarrow && (
-          <div
-            ref={floatRef}
-            className={`${styles.miniFloat} ${
-              miniCollapsed ? styles.miniFloatCollapsed : ""
-            }`}
-            style={{ left: miniPos.x, top: miniPos.y }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
-          >
-            <div
-              className={`${styles.miniDragHandle} ${
-                miniCollapsed ? styles.miniDragHandleDisabled : ""
-              }`}
-              ref={handleRef}
-              onMouseDown={(e) => {
-                if (miniCollapsed) return; // no drag en colapsado
-                const target = e.target as HTMLElement;
-                if (target.closest(`.${styles.miniHandleBtn}`)) return;
-                e.preventDefault();
-                e.stopPropagation();
-                beginMiniDrag(e.clientX, e.clientY);
-              }}
-              onTouchStart={(e) => {
-                if (miniCollapsed) return;
-                const t = e.touches[0];
-                if (!t) return;
-                e.preventDefault();
-                e.stopPropagation();
-                const target = (e.target as HTMLElement) || undefined;
-                if (target && target.closest(`.${styles.miniHandleBtn}`))
-                  return;
-                beginMiniDrag(t.clientX, t.clientY);
-              }}
-            >
-              <span className={styles.miniHandleTitle}>Minimapa</span>
-              <button
-                className={styles.miniHandleBtn}
-                aria-label={
-                  miniCollapsed ? "Expandir minimapa" : "Minimizar minimapa"
-                }
-                title={miniCollapsed ? "Expandir" : "Minimizar"}
-                onMouseDown={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                }}
-                onTouchStart={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const next = !miniCollapsed;
-                  setMiniCollapsed(next);
-                  if (next) {
-                    // Colapsar → a esquina inferior DERECHA
-                    snapMiniToCorner(true, DEFAULT_CORNER_ON_COLLAPSE);
-                  } else {
-                    // Expandir → vuelve desplegado a esquina por defecto expandida
-                    snapMiniToCorner(false, DEFAULT_CORNER_ON_EXPAND);
-                    requestAnimationFrame(() => measureMini());
-                  }
-                }}
-              >
-                {miniCollapsed ? "▣" : "▭"}
-              </button>
-            </div>
-
-            {!miniCollapsed && (
-              <div
-                className={styles.minimap}
-                ref={miniRef}
-                style={{
-                  touchAction: "none",
-                  // sobrescribe aspect-ratio: 1/1 del CSS con el real de la imagen
-                  aspectRatio: miniAspect,
-                }}
-                onMouseDown={onMiniClickOrDrag}
-                onMouseMove={(e) => {
-                  e.stopPropagation();
-                  if (e.buttons === 1) onMiniClickOrDrag(e);
-                }}
-                onTouchStart={onMiniTouchStart}
-                onTouchMove={onMiniTouchMove}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className={styles.miniImgWrap}>
-                  <ImageWithSkeleton
-                    src={src}
-                    alt=""
-                    fill
-                    sizes="320px"
-                    priority
-                    draggable={false}
-                    className={styles.miniImg}
-                    onLoadingComplete={() => {
-                      measureMini();
-                    }}
-                  />
-                </div>
-                <div className={styles.viewport} style={vpStyle} />
-                <div className={styles.veil} />
-              </div>
-            )}
-          </div>
+          <MiniFloat
+            src={src} // <-- usar src correcto
+            miniAspect={miniAspect}
+            miniPos={miniPos}
+            setMiniPos={setMiniPos}
+            miniCollapsed={miniCollapsed}
+            setMiniCollapsed={setMiniCollapsed}
+            miniRef={miniRef}
+            floatRef={floatRef}
+            handleRef={handleRef}
+            onMiniClickOrDrag={onMiniClickOrDrag}
+            onMiniTouchStart={onMiniTouchStart}
+            onMiniTouchMove={onMiniTouchMove}
+            vpStyle={vpStyle}
+            beginMiniDrag={beginMiniDrag}
+            snapMiniToCorner={snapMiniToCorner}
+            measureMini={measureMini}
+          />
         )}
       </div>
 
@@ -1157,10 +1086,7 @@ export default function ZoomOverlay({
           <div
             className={styles.minimap}
             ref={miniRef}
-            style={{
-              touchAction: "none",
-              aspectRatio: miniAspect, // sobrescribe 1/1 por el real
-            }}
+            style={{ touchAction: "none", aspectRatio: miniAspect }}
             onMouseDown={onMiniClickOrDrag}
             onMouseMove={(e) => e.buttons === 1 && onMiniClickOrDrag(e)}
             onTouchStart={onMiniTouchStart}
@@ -1269,6 +1195,142 @@ export default function ZoomOverlay({
         <HandIcon /> mover · <b>Pin</b> anotar · <b>T</b> hilos on/off ·
         rueda/gestos para zoom · doble-tap (móvil) · <b>Esc</b> cerrar
       </div>
+    </div>
+  );
+}
+
+/** Minimap flotante (usa src correcto) */
+function MiniFloat(props: {
+  src: string;
+  miniAspect: string | undefined;
+  miniPos: { x: number; y: number };
+  setMiniPos: (p: { x: number; y: number }) => void;
+  miniCollapsed: boolean;
+  setMiniCollapsed: (b: boolean) => void;
+  miniRef: React.RefObject<HTMLDivElement>;
+  floatRef: React.RefObject<HTMLDivElement>;
+  handleRef: React.RefObject<HTMLDivElement>;
+  onMiniClickOrDrag: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onMiniTouchStart: (e: React.TouchEvent<HTMLDivElement>) => void;
+  onMiniTouchMove: (e: React.TouchEvent<HTMLDivElement>) => void;
+  vpStyle: React.CSSProperties;
+  beginMiniDrag: (x: number, y: number) => void;
+  snapMiniToCorner: (collapsed: boolean, corner: "bl" | "br") => void;
+  measureMini: () => void;
+}) {
+  const {
+    src,
+    miniAspect,
+    miniPos,
+    miniCollapsed,
+    setMiniCollapsed,
+    miniRef,
+    floatRef,
+    handleRef,
+    onMiniClickOrDrag,
+    onMiniTouchStart,
+    onMiniTouchMove,
+    vpStyle,
+    beginMiniDrag,
+    snapMiniToCorner,
+    measureMini,
+  } = props;
+
+  return (
+    <div
+      ref={floatRef}
+      className={`${styles.miniFloat} ${
+        miniCollapsed ? styles.miniFloatCollapsed : ""
+      }`}
+      style={{ left: miniPos.x, top: miniPos.y }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+    >
+      <div
+        className={`${styles.miniDragHandle} ${
+          miniCollapsed ? styles.miniDragHandleDisabled : ""
+        }`}
+        ref={handleRef}
+        onMouseDown={(e) => {
+          if (miniCollapsed) return;
+          const target = e.target as HTMLElement;
+          if (target.closest(`.${styles.miniHandleBtn}`)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          beginMiniDrag(e.clientX, e.clientY);
+        }}
+        onTouchStart={(e) => {
+          if (miniCollapsed) return;
+          const t = e.touches[0];
+          if (!t) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const target = (e.target as HTMLElement) || undefined;
+          if (target && target.closest(`.${styles.miniHandleBtn}`)) return;
+          beginMiniDrag(t.clientX, t.clientY);
+        }}
+      >
+        <span className={styles.miniHandleTitle}>Minimapa</span>
+        <button
+          className={styles.miniHandleBtn}
+          aria-label={
+            miniCollapsed ? "Expandir minimapa" : "Minimizar minimapa"
+          }
+          title={miniCollapsed ? "Expandir" : "Minimizar"}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onTouchStart={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            const next = !miniCollapsed;
+            setMiniCollapsed(next);
+            if (next) {
+              snapMiniToCorner(true, "br");
+            } else {
+              snapMiniToCorner(false, "bl");
+              requestAnimationFrame(() => measureMini());
+            }
+          }}
+        >
+          {miniCollapsed ? "▣" : "▭"}
+        </button>
+      </div>
+
+      {!miniCollapsed && (
+        <div
+          className={styles.minimap}
+          ref={miniRef}
+          style={{ touchAction: "none", aspectRatio: miniAspect }}
+          onMouseDown={onMiniClickOrDrag}
+          onMouseMove={(e) => {
+            e.stopPropagation();
+            if (e.buttons === 1) onMiniClickOrDrag(e);
+          }}
+          onTouchStart={onMiniTouchStart}
+          onTouchMove={onMiniTouchMove}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className={styles.miniImgWrap}>
+            <ImageWithSkeleton
+              src={src} // <-- FIX: usar src real
+              alt=""
+              fill
+              sizes="320px"
+              priority
+              draggable={false}
+              className={styles.miniImg}
+              onLoadingComplete={() => measureMini()}
+            />
+          </div>
+          <div className={styles.viewport} style={vpStyle} />
+          <div className={styles.veil} />
+        </div>
+      )}
     </div>
   );
 }
