@@ -835,7 +835,7 @@ export default function ZoomOverlay({
 
   const onTouchMove = useCallback(
     (e: React.TouchEvent) => {
-      e.preventDefault();
+      // e.preventDefault();
       const rect = wrapRef.current?.getBoundingClientRect();
       if (!rect || !imgW || !imgH) return;
       if (gestureRef.current.mode === "pan" && e.touches.length === 1) {
@@ -1272,6 +1272,7 @@ export default function ZoomOverlay({
                 onFocusThread(id);
                 if (id != null) setShowChat(true);
               }}
+              centerToThread={centerToThread}
               onToggleThreadStatus={onToggleThreadStatus}
               onDeleteThread={onDeleteThread}
               emptyTitle="Aún no hay hilos"

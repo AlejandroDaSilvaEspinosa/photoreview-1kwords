@@ -79,6 +79,9 @@
 
 /* Puntos */
 .dot {
+  z-index: 10;
+  touch-action: none;
+  /* will-change: transform; */
   position: absolute;
   transform-origin: center;
   transform: translate(-50%, -50%) scale(calc(1 / var(--zoom)));
@@ -97,13 +100,21 @@
 }
 
 .dot:hover {
-  filter: brightness(1.1);
+  filter: brightness(1.6);
 }
+
+.dot:active {
+  transform: translate(-50%, -50%) scale(calc(1.1/ var(--zoom)));
+}
+
 
 .dotActive {
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35), 0 0 10px rgba(255, 255, 255, 0.2);
   transform: translate(-50%, -50%) scale(calc(2 / var(--zoom)));
+  box-shadow: none;
+  position: absolute;
 }
+
 
 .dotNum {
   pointer-events: none;
