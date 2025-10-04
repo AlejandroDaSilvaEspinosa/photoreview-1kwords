@@ -15,13 +15,11 @@
   /* capa base oscura */
   background-color: #151515;
   /* shimmer más claro encima */
-  background-image: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.04) 0%,
-    rgba(255, 255, 255, 0.08) 20%,
-    rgba(255, 255, 255, 0.04) 40%,
-    rgba(255, 255, 255, 0.04) 100%
-  );
+  background-image: linear-gradient(90deg,
+      rgba(255, 255, 255, 0.04) 0%,
+      rgba(255, 255, 255, 0.08) 20%,
+      rgba(255, 255, 255, 0.04) 40%,
+      rgba(255, 255, 255, 0.04) 100%);
   background-size: 200% 100%;
   animation: shimmer 1.15s linear infinite;
   border-radius: inherit;
@@ -45,6 +43,7 @@
   opacity: 0;
   transition: opacity 0.22s ease;
   display: block;
+  position: relative !important;
 }
 
 .imageVisible {

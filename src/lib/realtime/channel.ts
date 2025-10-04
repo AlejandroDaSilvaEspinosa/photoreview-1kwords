@@ -82,7 +82,7 @@ export function connectWithBackoff({
       lastStatus: "idle",
       lastToastAt: 0,
       lastToastKey: "",
-      toastCooldownMs: 4000,
+      toastCooldownMs: 40000000000000,
     };
     g.topics.set(channelName, rec);
   }
@@ -212,7 +212,7 @@ export function connectWithBackoff({
               variant: "success",
               title: `Reconectado a “${channelName}”`,
               description: "Conexión en tiempo real restaurada.",
-              durationMs: 4000,
+              durationMs: 40000000000000,
             });
           }
 
@@ -265,7 +265,7 @@ export function connectWithBackoff({
                 description: `Reintentando conexión a “${channelName}”…`,
                 actionLabel: "Reintentar ahora",
                 onAction: forceReconnect,
-                durationMs: 4000,
+                durationMs: 40000000000000,
               });
               void connect();
             }
@@ -282,7 +282,7 @@ export function connectWithBackoff({
               description: `Reconectando “${channelName}”…`,
               actionLabel: "Reintentar ahora",
               onAction: forceReconnect,
-              durationMs: 4000,
+              durationMs: 40000000000000,
             });
             void connect();
           }
@@ -348,7 +348,7 @@ export function connectWithBackoff({
       variant: "info",
       title: `Canal “${channelName}” cerrado`,
       description: "Se cerró porque ya no hay consumidores activos.",
-      durationMs: 4000,
+      durationMs: 40000000000000,
     });
   };
 }

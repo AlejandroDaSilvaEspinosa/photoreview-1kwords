@@ -93,11 +93,11 @@ strong {
 
 body {
   margin: 0;
-  box-sizing: border-box;
+  box-sizing: content-box;
 }
 
 div {
-  box-sizing: border-box;
+  box-sizing: content-box;
 }
 
 /* WebKit (Chrome/Edge/Safari) — usa el contexto de html o del propio contenedor */
