@@ -81,7 +81,6 @@
 .dot {
   z-index: 10;
   touch-action: none;
-  /* will-change: transform; */
   position: absolute;
   transform-origin: center;
   transform: translate(-50%, -50%) scale(calc(1 / var(--zoom)));
@@ -104,9 +103,8 @@
 }
 
 .dot:active {
-  transform: translate(-50%, -50%) scale(calc(1.1/ var(--zoom)));
+  transform: translate(-50%, -50%) scale(calc(1.1 / var(--zoom)));
 }
-
 
 .dotActive {
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35), 0 0 10px rgba(255, 255, 255, 0.2);
@@ -115,59 +113,18 @@
   position: absolute;
 }
 
-
 .dotNum {
   pointer-events: none;
 }
 
-/* Sidebar (minimapa + panel contenedor de chats/lista) */
+/* Sidebar (contenedor de minimapa + chats) */
 .sidebar {
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 12px;
 }
 
-/* Minimap (base): cuadrado */
-.minimap {
-  position: relative;
-  border-radius: 12px;
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  /* ✅ cuadrado */
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  overflow: hidden;
-  cursor: all-scroll;
-  background: #0e0e0e;
-  border: 1px solid var(--border-1);
-}
-
-.miniImgWrap {
-  position: absolute;
-  inset: 0;
-}
-
-.miniImg {
-  object-fit: contain;
-  user-select: none;
-  pointer-events: none;
-}
-
-.viewport {
-  position: absolute;
-  border: 2px solid #58a6ff;
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.45);
-  border-radius: 6px;
-  pointer-events: none;
-}
-
-.veil {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(transparent 0 0, rgba(0, 0, 0, 0.35));
-  pointer-events: none;
-}
-
-/* Panel contenedor (aquí se monta ThreadsPanel) */
+/* Panel contenedor (ThreadsPanel) */
 .chatPanel {
   background: var(--surface-2, #151515);
   color: var(--text-1, #ddd);
@@ -253,7 +210,7 @@
 }
 
 /* ====== Responsive ====== */
-/* Narrow: columna, minimapa flotante cuadrado, chat en drawer */
+/* Narrow: columna, minimapa flotante, chat en drawer */
 @media (max-width: 1050px) {
   .overlay {
     display: flex;
@@ -269,81 +226,8 @@
 
   .sidebar {
     display: none;
+    /* el minimapa pasa a flotante */
   }
-
-  .minimap {
-    border-radius: 0 0 6px 6px;
-    border: none;
-  }
-
-  .miniImgWrap>div {
-    border-radius: 0 0 6px 6px;
-  }
-}
-
-/* Minimapa flotante (solo narrow): CUADRADO y colapsable */
-.miniFloat {
-  position: absolute;
-  z-index: 9;
-  /* por encima del FAB y toolbox */
-  width: clamp(160px, 32vw, 280px);
-  pointer-events: auto;
-  /* ✅ capta eventos (no pasan al visor) */
-  user-select: none;
-  touch-action: none;
-  /* ✅ evita gestos nativos que atraviesen */
-  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.45));
-}
-
-/* Estado colapsado: solo barra */
-.miniFloatCollapsed .minimap {
-  display: none;
-}
-
-/* Barra/asa del minimapa */
-.miniDragHandle {
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  /* título + botón */
-  padding: 0 6px 0 10px;
-  font-size: 12px;
-  letter-spacing: .2px;
-  color: #cdd2dd;
-  background: linear-gradient(180deg, #1d1d1d, #151515);
-  border: 1px solid var(--border-1);
-  border-bottom: none;
-  border-radius: 12px 12px 0 0;
-  cursor: grab;
-  border: none;
-}
-
-.miniDragHandle:active {
-  cursor: grabbing;
-}
-
-.miniHandleTitle {
-  pointer-events: none;
-  font-weight: 600;
-  opacity: .95;
-}
-
-.miniHandleBtn {
-  width: 26px;
-  height: 22px;
-  border-radius: 6px;
-  border: 1px solid var(--border-1);
-  background: #222;
-  color: #eaeaea;
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  font-size: 12px;
-}
-
-.miniHandleBtn:hover {
-  background: #2a2a2a;
 }
 
 /* FAB de chat (solo narrow, cuando el chat está cerrado) */
@@ -352,7 +236,6 @@
   right: 16px;
   bottom: 16px;
   z-index: 8;
-  /* por debajo del minimapa */
   width: 56px;
   height: 56px;
   border-radius: 14px;

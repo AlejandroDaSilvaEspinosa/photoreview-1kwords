@@ -28,6 +28,10 @@ import PlusIcon from "@/icons/plus.svg";
 import MinusIcon from "@/icons/minus.svg";
 import ChatIcon from "@/icons/chat.svg";
 
+// 🔹 Nuevos componentes
+import Minimap from "./Minimap";
+import MinimapFloat from "./MinimapFloat";
+
 type Props = {
   src: string;
   /** opcional: clave usada para numeración estable; si no llega, se usa un fallback */
@@ -835,7 +839,6 @@ export default function ZoomOverlay({
 
   const onTouchMove = useCallback(
     (e: React.TouchEvent) => {
-      // e.preventDefault();
       const rect = wrapRef.current?.getBoundingClientRect();
       if (!rect || !imgW || !imgH) return;
       if (gestureRef.current.mode === "pan" && e.touches.length === 1) {
@@ -1150,20 +1153,19 @@ export default function ZoomOverlay({
 
         {/* Minimap flotante (solo ≤1050px) */}
         {isNarrow && (
-          <MiniFloat
+          <MinimapFloat
             src={src}
-            miniAspect={miniAspect}
-            miniPos={miniPos}
-            setMiniPos={setMiniPos}
-            miniCollapsed={miniCollapsed}
-            setMiniCollapsed={setMiniCollapsed}
+            aspect={miniAspect}
+            position={miniPos}
+            collapsed={miniCollapsed}
+            setCollapsed={setMiniCollapsed}
             miniRef={miniRef}
             floatRef={floatRef}
             handleRef={handleRef}
+            vpStyle={vpStyle}
             onMiniClickOrDrag={onMiniClickOrDrag}
             onMiniTouchStart={onMiniTouchStart}
             onMiniTouchMove={onMiniTouchMove}
-            vpStyle={vpStyle}
             beginMiniDrag={beginMiniDrag}
             snapMiniToCorner={snapMiniToCorner}
             measureMini={measureMini}
@@ -1174,30 +1176,17 @@ export default function ZoomOverlay({
       {/* Sidebar clásica (solo >1050px) */}
       {!isNarrow && (
         <div className={styles.sidebar} style={{ touchAction: "none" }}>
-          <div
-            className={styles.minimap}
-            ref={miniRef}
-            style={{ touchAction: "none", aspectRatio: miniAspect }}
+          <Minimap
+            src={src}
+            aspect={miniAspect}
+            vpStyle={vpStyle}
+            miniRef={miniRef}
             onMouseDown={onMiniClickOrDrag}
             onMouseMove={(e) => e.buttons === 1 && onMiniClickOrDrag(e)}
             onTouchStart={onMiniTouchStart}
             onTouchMove={onMiniTouchMove}
-          >
-            <div className={styles.miniImgWrap}>
-              <ImageWithSkeleton
-                src={src}
-                alt=""
-                fill
-                sizes="320px"
-                priority
-                draggable={false}
-                className={styles.miniImg}
-                onLoadingComplete={() => measureMini()}
-              />
-            </div>
-            <div className={styles.viewport} style={vpStyle} />
-            <div className={styles.veil} />
-          </div>
+            onImageReady={measureMini}
+          />
 
           <div className={styles.chatPanel}>
             <ThreadsPanel
@@ -1287,144 +1276,6 @@ export default function ZoomOverlay({
         <HandIcon /> mover · <b>Pin</b> anotar · <b>T</b> hilos on/off ·
         rueda/gestos para zoom · doble-tap (móvil) · <b>Esc</b> cerrar
       </div>
-    </div>
-  );
-}
-
-/** Minimap flotante (usa src correcto) */
-function MiniFloat(props: {
-  src: string;
-  miniAspect: string | undefined;
-  miniPos: { x: number; y: number };
-  setMiniPos: (p: { x: number; y: number }) => void;
-  miniCollapsed: boolean;
-  setMiniCollapsed: (b: boolean) => void;
-  miniRef: React.RefObject<HTMLDivElement>;
-  floatRef: React.RefObject<HTMLDivElement>;
-  handleRef: React.RefObject<HTMLDivElement>;
-  onMiniClickOrDrag: (e: React.MouseEvent<HTMLDivElement>) => void;
-  onMiniTouchStart: (e: React.TouchEvent<HTMLDivElement>) => void;
-  onMiniTouchMove: (e: React.TouchEvent<HTMLDivElement>) => void;
-  vpStyle: React.CSSProperties;
-  beginMiniDrag: (x: number, y: number) => void;
-  snapMiniToCorner: (collapsed: boolean, corner: "bl" | "br") => void;
-  measureMini: () => void;
-}) {
-  const {
-    src,
-    miniAspect,
-    miniPos,
-    miniCollapsed,
-    setMiniCollapsed,
-    miniRef,
-    floatRef,
-    handleRef,
-    onMiniClickOrDrag,
-    onMiniTouchStart,
-    onMiniTouchMove,
-    vpStyle,
-    beginMiniDrag,
-    snapMiniToCorner,
-    measureMini,
-  } = props;
-
-  return (
-    <div
-      ref={floatRef}
-      className={`${styles.miniFloat} ${
-        miniCollapsed ? styles.miniFloatCollapsed : ""
-      }`}
-      style={{ left: miniPos.x, top: miniPos.y }}
-      onMouseDown={(e) => e.stopPropagation()}
-      onTouchStart={(e) => e.stopPropagation()}
-    >
-      <div
-        className={`${styles.miniDragHandle} ${
-          miniCollapsed ? styles.miniDragHandleDisabled : ""
-        }`}
-        ref={handleRef}
-        onMouseDown={(e) => {
-          if (miniCollapsed) return;
-          const target = e.target as HTMLElement;
-          if (target.closest(`.${styles.miniHandleBtn}`)) return;
-          e.preventDefault();
-          e.stopPropagation();
-          beginMiniDrag(e.clientX, e.clientY);
-        }}
-        onTouchStart={(e) => {
-          if (miniCollapsed) return;
-          const t = e.touches[0];
-          if (!t) return;
-          e.preventDefault();
-          e.stopPropagation();
-          const target = (e.target as HTMLElement) || undefined;
-          if (target && target.closest(`.${styles.miniHandleBtn}`)) return;
-          beginMiniDrag(t.clientX, t.clientY);
-        }}
-      >
-        <span className={styles.miniHandleTitle}>Minimapa</span>
-        <button
-          className={styles.miniHandleBtn}
-          aria-label={
-            miniCollapsed ? "Expandir minimapa" : "Minimizar minimapa"
-          }
-          title={miniCollapsed ? "Expandir" : "Minimizar"}
-          onMouseDown={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-          }}
-          onTouchStart={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            const next = !miniCollapsed;
-            setMiniCollapsed(next);
-            if (next) {
-              // colapsar → esquina inferior derecha
-              snapMiniToCorner(true, "bl");
-            } else {
-              // expandir → esquina por defecto expandida
-              snapMiniToCorner(false, "bl");
-              requestAnimationFrame(() => measureMini());
-            }
-          }}
-        >
-          {miniCollapsed ? "▣" : "▭"}
-        </button>
-      </div>
-
-      {!miniCollapsed && (
-        <div
-          className={styles.minimap}
-          ref={miniRef}
-          style={{ touchAction: "none", aspectRatio: miniAspect }}
-          onMouseDown={onMiniClickOrDrag}
-          onMouseMove={(e) => {
-            e.stopPropagation();
-            if (e.buttons === 1) onMiniClickOrDrag(e);
-          }}
-          onTouchStart={onMiniTouchStart}
-          onTouchMove={onMiniTouchMove}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className={styles.miniImgWrap}>
-            <ImageWithSkeleton
-              src={src}
-              alt=""
-              fill
-              sizes="320px"
-              priority
-              draggable={false}
-              className={styles.miniImg}
-              onLoadingComplete={() => measureMini()}
-            />
-          </div>
-          <div className={styles.viewport} style={vpStyle} />
-          <div className={styles.veil} />
-        </div>
-      )}
     </div>
   );
 }

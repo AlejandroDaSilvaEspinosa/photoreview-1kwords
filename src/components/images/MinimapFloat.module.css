@@ -1,0 +1,67 @@
+/* Minimapa flotante (solo narrow): CUADRADO y colapsable */
+.miniFloat {
+    position: absolute;
+    z-index: 9;
+    /* por encima del FAB y toolbox */
+    width: clamp(160px, 32vw, 280px);
+    pointer-events: auto;
+    /* ✅ capta eventos (no pasan al visor) */
+    user-select: none;
+    touch-action: none;
+    /* ✅ evita gestos nativos que atraviesen */
+    filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.45));
+}
+
+/* Estado colapsado: el contenido se oculta desde JSX (no se renderiza).
+   Mantenemos clase por si quieres aplicar estilos extra al contenedor. */
+.miniFloatCollapsed {}
+
+/* Barra/asa del minimapa */
+.miniDragHandle {
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    /* título + botón */
+    padding: 0 6px 0 10px;
+    font-size: 12px;
+    letter-spacing: .2px;
+    color: #cdd2dd;
+    background: linear-gradient(180deg, #1d1d1d, #151515);
+    border: 1px solid var(--border-1);
+    border-bottom: none;
+    border-radius: 12px 12px 0 0;
+    cursor: grab;
+    border: none;
+}
+
+.miniDragHandle:active {
+    cursor: grabbing;
+}
+
+.miniDragHandleDisabled {
+    opacity: .85;
+}
+
+.miniHandleTitle {
+    pointer-events: none;
+    font-weight: 600;
+    opacity: .95;
+}
+
+.miniHandleBtn {
+    width: 26px;
+    height: 22px;
+    border-radius: 6px;
+    border: 1px solid var(--border-1);
+    background: #222;
+    color: #eaeaea;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+}
+
+.miniHandleBtn:hover {
+    background: #2a2a2a;
+}
