@@ -53,6 +53,7 @@ export default function MinimapFloat({
     y: 12,
   });
   const [dragging, setDragging] = useState(false);
+  const hasClampedOnce = useRef(false);
 
   useLayoutEffect(() => {
     try {
@@ -65,14 +66,16 @@ export default function MinimapFloat({
       const rawCol = localStorage.getItem(LS_KEYS.collapsed);
       if (rawCol === "1" || rawCol === "0") setMiniCollapsed(rawCol === "1");
     } catch {
-      //No Oop
+      // no-op
     }
     setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (hydrated) localStorage.setItem(LS_KEYS.pos, JSON.stringify(miniPos));
-  }, [hydrated, miniPos.x, miniPos.y]);
+    if (hydrated && !dragging)
+      localStorage.setItem(LS_KEYS.pos, JSON.stringify(miniPos));
+  }, [hydrated, dragging, miniPos.x, miniPos.y]);
+
   useEffect(() => {
     if (hydrated)
       localStorage.setItem(LS_KEYS.collapsed, miniCollapsed ? "1" : "0");
@@ -95,40 +98,66 @@ export default function MinimapFloat({
     [imgW, imgH]
   );
 
+  // ⬇️ clamp con paddings del contenedor (corrige “5px del bottom”)
   const clampToBounds = useCallback(
     (p: { x: number; y: number }, collapsed = miniCollapsed) => {
-      const crect = containerRef.current?.getBoundingClientRect();
+      const crel = containerRef.current as HTMLElement | null;
+      const crect = crel?.getBoundingClientRect();
       const ow = crect?.width ?? window.innerWidth;
       const oh = crect?.height ?? window.innerHeight;
+
+      // Paddings del contenedor
+      const cs = crel ? getComputedStyle(crel) : null;
+      const padL = cs ? parseFloat(cs.paddingLeft || "0") : 0;
+      const padR = cs ? parseFloat(cs.paddingRight || "0") : 0;
+      const padT = cs ? parseFloat(cs.paddingTop || "0") : 0;
+      const padB = cs ? parseFloat(cs.paddingBottom || "0") : 0;
+
       const mw = getFloatW();
       const mh = computeMiniHeight(collapsed);
-      const maxX = Math.max(0, ow - mw);
-      const maxY = Math.max(0, oh - mh);
-      return { x: clamp(p.x, 0, maxX), y: clamp(p.y, 0, maxY) };
+
+      const minX = padL;
+      const minY = padT;
+      const maxX = Math.max(minX, ow - mw - padR);
+      const maxY = Math.max(minY, oh - mh - padB);
+
+      return { x: clamp(p.x, minX, maxX), y: clamp(p.y, minY, maxY) };
     },
     [containerRef, computeMiniHeight, miniCollapsed]
   );
 
-  useLayoutEffect(() => {
-    if (!hydrated || !imgW || !imgH) return;
+  // Primera sujeción al contenedor cuando ya tiene tamaño real
+  useEffect(() => {
+    if (!hydrated) return;
+    const crect = containerRef.current?.getBoundingClientRect();
+    if (!crect || !crect.width || !crect.height) return;
+
+    // Dejar que el layout asiente y entonces clampear (evita reseteos)
+    const raf = requestAnimationFrame(() => {
+      setMiniPos((p) => clampToBounds(p));
+      hasClampedOnce.current = true;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [hydrated, containerRef, clampToBounds]);
+
+  // Si cambia tamaño de imagen/contenedor, re-clampeamos pero sin “saltar”
+  useEffect(() => {
+    if (!hydrated || !hasClampedOnce.current) return;
     setMiniPos((p) => clampToBounds(p));
-  }, [hydrated, imgW, imgH, clampToBounds]);
+  }, [hydrated, imgW, imgH, viewportPx.vw, viewportPx.vh, clampToBounds]);
 
   const toggleCollapsed = useCallback(() => {
     setMiniCollapsed((prev) => {
       const next = !prev;
       setMiniPos((p) => {
-        const crect = containerRef.current?.getBoundingClientRect();
-        const oh = crect?.height ?? window.innerHeight;
-        const mh = computeMiniHeight(next);
-        const y = Math.max(0, oh - mh);
-        return clampToBounds({ x: p.x, y }, next);
+        // reubicamos para que quepa tras el cambio de altura
+        return clampToBounds(p, next);
       });
       return next;
     });
-  }, [computeMiniHeight, clampToBounds, containerRef]);
+  }, [clampToBounds]);
 
-  // === Drag del flotante (corrige mouse/touch, captura y soltar) ===
+  // === Drag del flotante (mouse/touch + captura robusta) ===
   const dragRef = useRef<{
     active: boolean;
     id: number | null;
@@ -179,10 +208,9 @@ export default function MinimapFloat({
     if (!dragRef.current.active) return;
     dragRef.current = { active: false, id: null, sx: 0, sy: 0, ox: 0, oy: 0 };
     setDragging(false);
-    // la captura se suelta en el propio handle con onPointerUp
   };
 
-  // Escucha global robusta (incluye pointermove/up y mousemove/up por compat)
+  // Escucha global robusta (incluye pointermove/up y mousemove/up)
   useEffect(() => {
     const onPMove = (e: PointerEvent) => doMiniDrag(e.clientX, e.clientY);
     const onMMove = (e: MouseEvent) => doMiniDrag(e.clientX, e.clientY);
@@ -202,7 +230,10 @@ export default function MinimapFloat({
       window.removeEventListener("mouseup", onMUp);
       window.removeEventListener("pointercancel", onPCancel);
     };
-  }, [clampToBounds, doMiniDrag]); // usa el último clamp
+  }, [doMiniDrag]);
+
+  // Forzar remonte del Minimap si cambian inputs relevantes (evita “imagen colgada”)
+  const miniKey = `${src}|${imgW}x${imgH}|${miniCollapsed ? 1 : 0}`;
 
   return (
     <div
@@ -211,14 +242,17 @@ export default function MinimapFloat({
         miniCollapsed ? styles.miniFloatCollapsed : ""
       }`}
       style={{ left: miniPos.x, top: miniPos.y, touchAction: "none" }}
+      data-no-pin
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
     >
       <div
         className={`${styles.miniDragHandle} ${
           miniCollapsed ? styles.miniDragHandleDisabled : ""
         }`}
         ref={handleRef}
+        data-no-pin
         onPointerDown={(e) => {
           const target = e.target as HTMLElement;
           if (target.closest(`.${styles.miniHandleBtn}`)) return; // evita iniciar drag al pulsar el botón
@@ -228,7 +262,6 @@ export default function MinimapFloat({
         }}
         onPointerUp={(e) => {
           e.stopPropagation();
-          // soltar captura si la hay
           (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
           endMiniDrag();
         }}
@@ -240,6 +273,7 @@ export default function MinimapFloat({
             miniCollapsed ? "Expandir minimapa" : "Minimizar minimapa"
           }
           title={miniCollapsed ? "Expandir" : "Minimizar"}
+          data-no-pin
           onPointerDown={(e) => {
             e.stopPropagation();
             e.preventDefault();
@@ -254,8 +288,9 @@ export default function MinimapFloat({
       </div>
 
       {!miniCollapsed && (
-        <div ref={miniRootRef}>
+        <div ref={miniRootRef} data-no-pin>
           <Minimap
+            key={miniKey}
             src={src}
             imgW={imgW}
             imgH={imgH}

@@ -68,6 +68,7 @@ export default function Minimap({
   useLayoutEffect(() => {
     measure();
   }, [measure, imgW, imgH, miniAspect, viewportPx.vw, viewportPx.vh]);
+
   useLayoutEffect(() => {
     const ro = new ResizeObserver(() => measure());
     if (miniRef.current) ro.observe(miniRef.current);
@@ -124,7 +125,6 @@ export default function Minimap({
   const handleDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-
     if (disabled) return;
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     setActivePointer(e.pointerId);
@@ -139,11 +139,14 @@ export default function Minimap({
   const handleUpOrCancel = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-
     if (activePointer !== e.pointerId) return;
     setActivePointer(null);
     (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
   };
+
+  const ar =
+    miniAspect ||
+    (imgW && imgH ? `${Math.max(imgW, 1)}/${Math.max(imgH, 1)}` : undefined);
 
   return (
     <div
@@ -151,17 +154,18 @@ export default function Minimap({
       className={`${styles.minimap} ${className ?? ""}`}
       style={{
         touchAction: "none",
-        aspectRatio: miniAspect,
+        aspectRatio: ar,
         pointerEvents: disabled ? "none" : "auto",
       }}
+      data-no-pin // 👈 importante: no crear hilos al clickar aquí
       onPointerDown={handleDown}
       onPointerMove={handleMove}
       onPointerUp={handleUpOrCancel}
       onPointerCancel={handleUpOrCancel}
+      onClick={(e) => e.stopPropagation()}
     >
-      <div className={styles.miniImgWrap}>
+      <div className={styles.miniImgWrap} data-no-pin>
         <ImageWithSkeleton
-          key={`${src}-mini`}
           src={src}
           alt=""
           fill
@@ -169,10 +173,11 @@ export default function Minimap({
           priority
           draggable={false}
           className={styles.miniImg}
+          onDragStart={(e) => e.preventDefault()}
         />
       </div>
-      <div className={styles.viewport} style={vpStyle} />
-      <div className={styles.veil} />
+      <div className={styles.viewport} style={vpStyle} data-no-pin />
+      <div className={styles.veil} data-no-pin />
     </div>
   );
 }

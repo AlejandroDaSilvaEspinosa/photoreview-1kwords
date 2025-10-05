@@ -1,3 +1,6 @@
+// ==============================
+// File: src/components/images/ZoomOverlay.tsx
+// ==============================
 "use client";
 
 import React, {
@@ -61,48 +64,94 @@ type ToolMode = "pan" | "pin";
 const clamp = (n: number, min: number, max: number) =>
   Math.max(min, Math.min(max, n));
 
-/** Numeración estable por imagen */
+/** ====== Numeración estable por imagen (con reenumero al borrar) ======
+ * - Para cada imagen guardamos: key(img + x + y) -> número mostrado.
+ * - Inicializamos 1..N por orden de id (determinista).
+ * - Al añadir un punto nuevo, asignamos nextIndex (length+1).
+ * - Si detectamos que hay puntos eliminados (keys que desaparecen), reconstruimos 1..N.
+ */
 function useStableDotNumbers(
-  imageKey: string,
+  imageName: string | null,
   threads: Array<{ id: number; x: number; y: number; status: ThreadStatus }>
 ) {
+  // imagen -> (key -> numero)
   const perImageMapRef = useRef<Map<string, Map<string, number>>>(new Map());
+  // imagen -> siguiente número a asignar
   const nextIndexRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
-    if (!imageKey) return;
-    const current = threads.filter((t) => t.status !== "deleted");
-    let map = perImageMapRef.current.get(imageKey);
-    const next = nextIndexRef.current.get(imageKey);
+    if (!imageName) return;
 
+    const current = threads.filter((t) => t.status !== "deleted");
+    const currentKeys = new Set(
+      current.map((t) => pointKey(imageName, t.x, t.y))
+    );
+
+    let map = perImageMapRef.current.get(imageName);
+    const prevNext = nextIndexRef.current.get(imageName);
+
+    // Primera vez para esta imagen: sembramos 1..N ordenado por id
     if (!map) {
       map = new Map<string, number>();
       const sorted = current.slice().sort((a, b) => a.id - b.id);
       let i = 1;
-      for (const t of sorted) map.set(pointKey(imageKey, t.x, t.y), i++);
-      perImageMapRef.current.set(imageKey, map);
-      nextIndexRef.current.set(imageKey, i);
+      for (const t of sorted) {
+        map.set(pointKey(imageName, t.x, t.y), i++);
+      }
+      perImageMapRef.current.set(imageName, map);
+      nextIndexRef.current.set(imageName, i);
       return;
     }
 
-    let localNext = typeof next === "number" ? next : 1;
-    for (const t of current) {
-      const key = pointKey(imageKey, t.x, t.y);
-      if (!map.has(key)) map.set(key, localNext++);
+    // ¿Hay removals? (alguna key del map ya no está en current)
+    let hasRemoval = false;
+    for (const k of map.keys()) {
+      if (!currentKeys.has(k)) {
+        hasRemoval = true;
+        break;
+      }
     }
-    nextIndexRef.current.set(imageKey, localNext);
-  }, [imageKey, threads]);
+
+    if (hasRemoval) {
+      // RECONSTRUIR: 1..N por orden id
+      const rebuilt = new Map<string, number>();
+      const sorted = current.slice().sort((a, b) => a.id - b.id);
+      let i = 1;
+      for (const t of sorted) {
+        rebuilt.set(pointKey(imageName, t.x, t.y), i++);
+      }
+      perImageMapRef.current.set(imageName, rebuilt);
+      nextIndexRef.current.set(imageName, i);
+      return;
+    }
+
+    // No hay removals → asignamos números a keys nuevas
+    let localNext = typeof prevNext === "number" ? prevNext : 1;
+    for (const t of current) {
+      const key = pointKey(imageName, t.x, t.y);
+      if (!map.has(key)) {
+        map.set(key, localNext++);
+      }
+    }
+    nextIndexRef.current.set(imageName, localNext);
+  }, [imageName, threads]);
 
   const getNumber = useCallback(
     (img: string, x: number, y: number): number | null => {
       const map = perImageMapRef.current.get(img);
       if (!map) return null;
-      return map.get(pointKey(img, x, y)) ?? null;
+      const n = map.get(pointKey(img, x, y));
+      return n ?? null;
     },
     []
   );
 
-  return { getNumber };
+  const resetForImage = useCallback((img: string) => {
+    perImageMapRef.current.delete(img);
+    nextIndexRef.current.delete(img);
+  }, []);
+
+  return { getNumber, resetForImage };
 }
 
 export default function ZoomOverlay({
@@ -123,7 +172,13 @@ export default function ZoomOverlay({
   pendingStatusIds,
 }: Props) {
   const imageKey = imageName || "__overlay__";
-  const { getNumber } = useStableDotNumbers(imageKey, threads);
+
+  // Numeración estable EXACTA a ImageViewer
+  const threadsForRender = useMemo(
+    () => threads.filter((t) => t.status !== "deleted"),
+    [threads]
+  );
+  const { getNumber } = useStableDotNumbers(imageKey, threadsForRender as any);
 
   // responsive
   const [isNarrow, setIsNarrow] = useState(false);
@@ -542,17 +597,17 @@ export default function ZoomOverlay({
     [tool, tx, ty, zoom, imgW, imgH, setHideThreads, onCreateThreadAt, isNarrow]
   );
 
-  // dots
+  // ====== Dots (numeración estable; reenumera 1..N si hay borrados) ======
   const dots = useMemo(
     () =>
-      threads.map((t, i) => ({
+      threadsForRender.map((t, i) => ({
         id: t.id,
         left: `${t.x}%`,
         top: `${t.y}%`,
         status: t.status,
         num: getNumber(imageKey, t.x, t.y) ?? i + 1,
       })),
-    [threads, imageKey, getNumber]
+    [threadsForRender, imageKey, getNumber]
   );
 
   const centerToThread = (t: Thread) => {

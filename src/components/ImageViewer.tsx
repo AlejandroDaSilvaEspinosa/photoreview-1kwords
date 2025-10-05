@@ -92,11 +92,12 @@ interface ImageViewerProps {
   onGoToSku?: (skuCode: string) => void;
 }
 
-/** ====== Hook ligero para numeración estable por imagen ======
- * - Por cada imagen guardamos: key (img + x + y) -> número mostrado.
- * - Inicializamos 1..N una sola vez (orden por id para base determinista).
- * - En cuanto aparece una key nueva, le damos nextIndex (length+1).
- * - No reenumeramos al borrar/cambiar estado.
+/** ====== Numeración estable por imagen (con reenumero al borrar) ======
+ * - Para cada imagen guardamos: key(img + x + y) -> número mostrado.
+ * - Inicializamos 1..N por orden de id (determinista).
+ * - Al añadir un punto nuevo, asignamos nextIndex (length+1).
+ * - Si detectamos que hay puntos eliminados (menos keys que antes o keys que desaparecen),
+ *   RECONSTRUIMOS 1..N para esa imagen para evitar huecos.
  */
 function useStableDotNumbers(
   imageName: string | null,
@@ -109,12 +110,16 @@ function useStableDotNumbers(
 
   useEffect(() => {
     if (!imageName) return;
+
     const current = threads.filter((t) => t.status !== "deleted");
+    const currentKeys = new Set(
+      current.map((t) => pointKey(imageName, t.x, t.y))
+    );
 
     let map = perImageMapRef.current.get(imageName);
-    const next = nextIndexRef.current.get(imageName);
+    const prevNext = nextIndexRef.current.get(imageName);
 
-    // Primera vez para esta imagen: sembramos 1..N ordenado por id (determinista)
+    // Primera vez para esta imagen: sembramos 1..N ordenado por id
     if (!map) {
       map = new Map<string, number>();
       const sorted = current.slice().sort((a, b) => a.id - b.id);
@@ -127,8 +132,30 @@ function useStableDotNumbers(
       return;
     }
 
-    // Ya existe el mapa: sólo asignamos número a keys nuevas
-    let localNext = typeof next === "number" ? next : 1;
+    // ¿Hay removals? (alguna key del map ya no está en current)
+    let hasRemoval = false;
+    for (const k of map.keys()) {
+      if (!currentKeys.has(k)) {
+        hasRemoval = true;
+        break;
+      }
+    }
+
+    if (hasRemoval) {
+      // RECONSTRUIR: 1..N por orden id
+      const rebuilt = new Map<string, number>();
+      const sorted = current.slice().sort((a, b) => a.id - b.id);
+      let i = 1;
+      for (const t of sorted) {
+        rebuilt.set(pointKey(imageName, t.x, t.y), i++);
+      }
+      perImageMapRef.current.set(imageName, rebuilt);
+      nextIndexRef.current.set(imageName, i);
+      return;
+    }
+
+    // No hay removals → asignamos números a keys nuevas
+    let localNext = typeof prevNext === "number" ? prevNext : 1;
     for (const t of current) {
       const key = pointKey(imageName, t.x, t.y);
       if (!map.has(key)) {
@@ -138,17 +165,13 @@ function useStableDotNumbers(
     nextIndexRef.current.set(imageName, localNext);
   }, [imageName, threads]);
 
-  const getNumber = useCallback(
-    (img: string, x: number, y: number): number | null => {
-      const map = perImageMapRef.current.get(img);
-      if (!map) return null;
-      const n = map.get(pointKey(img, x, y));
-      return n ?? null;
-    },
-    []
-  );
+  const getNumber = useCallback((img: string, x: number, y: number) => {
+    const map = perImageMapRef.current.get(img);
+    if (!map) return null;
+    const n = map.get(pointKey(img, x, y));
+    return n ?? null;
+  }, []);
 
-  // (Por si quieres limpiar manualmente en algún evento)
   const resetForImage = useCallback((img: string) => {
     perImageMapRef.current.delete(img);
     nextIndexRef.current.delete(img);
@@ -224,7 +247,12 @@ export default function ImageViewer({
   const activeThreadId = useThreadsStore((s) => s.activeThreadId);
   const setActiveThreadId = useThreadsStore((s) => s.setActiveThreadId);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [creatingThreadId, setCreatingThreadId] = useState<number | null>(null);
+
+  // 🔁 Varios creates en paralelo (Set) para evitar colisiones
+  const [creatingThreadIds, setCreatingThreadIds] = useState<Set<number>>(
+    () => new Set()
+  );
+
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tool, setTool] = useState<"zoom" | "pin">("zoom");
@@ -267,7 +295,7 @@ export default function ImageViewer({
     [threadsRaw]
   );
 
-  // Numeración estable y ligera por imagen
+  // Numeración estable con reenumero al borrar
   const { getNumber } = useStableDotNumbers(
     selectedImage?.name ?? null,
     threadsForRender as any
@@ -698,10 +726,17 @@ export default function ImageViewer({
       const rx = roundTo(x, 3);
       const ry = roundTo(y, 3);
       suppressFollowThreadOnceRef.current = true;
+
       const tempId = createThreadOptimistic(imgName, rx, ry);
-      setCreatingThreadId(tempId);
+      setCreatingThreadIds((prev) => {
+        const n = new Set(prev);
+        n.add(tempId);
+        return n;
+      });
+
       setActiveThreadId(tempId);
       setActiveKey(pointKey(imgName, rx, ry));
+
       const sysText = `**@${
         username ?? "desconocido"
       }** ha creado un nuevo hilo de revisión.`;
@@ -718,6 +753,7 @@ export default function ImageViewer({
         }).then((r) => (r.ok ? r.json() : null));
         if (!created?.threadId)
           throw new Error("El servidor no devolvió un ID de hilo.");
+
         const realId = created.threadId as number;
         const realRow: ThreadRow = {
           id: realId,
@@ -727,12 +763,26 @@ export default function ImageViewer({
           y: ry,
           status: "pending",
         } as any;
+
         confirmCreate(tempId, realRow);
         moveThreadMessages(tempId, realId);
-        setCreatingThreadId(null);
-        startTransition(() => {
-          if (selectedThreadId !== realId) onSelectThread?.(realId);
+
+        // SOLO promociona selección si este temp sigue siendo el activo
+        const curActive = useThreadsStore.getState().activeThreadId;
+        if (curActive === tempId) {
+          setActiveThreadId(realId);
+          startTransition(() => {
+            if (selectedThreadId !== realId) onSelectThread?.(realId);
+          });
+        }
+
+        // Quita este temp del set de "creating"
+        setCreatingThreadIds((prev) => {
+          const n = new Set(prev);
+          n.delete(tempId);
+          return n;
         });
+
         try {
           enqueueSendSystemMessage(realId, sysText);
         } catch {
@@ -740,8 +790,16 @@ export default function ImageViewer({
         }
       } catch (e) {
         rollbackCreate(tempId);
-        setActiveThreadId(null);
-        setCreatingThreadId(null);
+        // Limpia este temp del set creating
+        setCreatingThreadIds((prev) => {
+          const n = new Set(prev);
+          n.delete(tempId);
+          return n;
+        });
+        // Si el activo era el temp borrado, límpialo
+        const curActive = useThreadsStore.getState().activeThreadId;
+        if (curActive === tempId) setActiveThreadId(null);
+
         toastError(e, { title: "No se pudo crear el hilo" });
       }
     },
@@ -770,7 +828,9 @@ export default function ImageViewer({
         });
         return;
       }
-      if (creatingThreadId != null && threadId === creatingThreadId) return;
+      // Si el hilo está en creación (temp), no permitimos aún
+      if (creatingThreadIds.has(threadId)) return;
+
       try {
         enqueueSendMessage(threadId, text);
         requestAnimationFrame(() => {
@@ -783,7 +843,7 @@ export default function ImageViewer({
         toastError(e, { title: "No se pudo encolar el mensaje" });
       }
     },
-    [isSkuValidated, creatingThreadId]
+    [isSkuValidated, creatingThreadIds]
   );
 
   const toggleThreadStatus = useCallback(
@@ -860,6 +920,7 @@ export default function ImageViewer({
       }
       if (resolvedActiveThreadId === id)
         startTransition(() => onSelectThread?.(null));
+      // No hace falta nada extra: el hook de numeración detecta removals y reenumera.
     },
     [setThreadStatus, resolvedActiveThreadId, onSelectThread, isSkuValidated]
   );
@@ -1147,13 +1208,13 @@ export default function ImageViewer({
                 .toUpperCase()}
             />
 
-            {/* Dots: numeración estable con length+1 para nuevos hilos (por imagen) */}
+            {/* Dots: numeración estable; reenumera 1..N si hay borrados */}
             {showThreads &&
               threadsForRender.map((th, idxRender) => {
                 const topPx = imgBox.offsetTop + (th.y / 100) * imgBox.height;
                 const leftPx = imgBox.offsetLeft + (th.x / 100) * imgBox.width;
                 const bg = colorByStatus(th.status);
-                const isActive = activeThreadId === th.id;
+                const isActive = resolvedActiveThreadId === th.id;
                 const hasUnread = hasUnreadInThread(th.id);
                 const num =
                   selectedImage?.name != null
@@ -1288,12 +1349,14 @@ export default function ImageViewer({
         loading={loading}
         initialCollapsed={false}
         composeLocked={
-          creatingThreadId != null &&
-          activeThreadId != null &&
-          creatingThreadId === activeThreadId
+          !!(
+            resolvedActiveThreadId &&
+            creatingThreadIds.has(resolvedActiveThreadId)
+          )
         }
         statusLocked={
-          activeThreadId != null && pendingStatusMap.has(activeThreadId)
+          resolvedActiveThreadId != null &&
+          pendingStatusMap.has(resolvedActiveThreadId)
         }
         validationLock={isSkuValidated}
         pendingStatusIds={new Set(Array.from(pendingStatusMap.keys()))}
@@ -1326,7 +1389,7 @@ export default function ImageViewer({
 
       {zoomOverlay && selectedImage?.url && (
         <ZoomOverlay
-          imageName={selectImage.name}
+          imageName={selectedImage?.name || ""}
           src={selectedImage.bigImgUrl || selectedImage.url}
           threads={threadsInImage}
           activeThreadId={resolvedActiveThreadId}
@@ -1345,8 +1408,7 @@ export default function ImageViewer({
           }}
           onAddThreadMessage={(threadId: number, text: string) => {
             try {
-              if (creatingThreadId != null && threadId === creatingThreadId)
-                return;
+              if (creatingThreadIds.has(threadId)) return;
               if (selectedImage?.name) addMessage(threadId, text);
             } catch (e) {
               toastError(e, { title: "No se pudo enviar el mensaje" });

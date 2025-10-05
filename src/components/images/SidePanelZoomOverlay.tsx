@@ -50,20 +50,36 @@ export default function SidePanelZoomOverlay({
   onDeleteThread,
 }: Props) {
   return (
-    <div className={styles.sidebar} style={{ touchAction: "none" }}>
-      <Minimap
-        src={src}
-        imgW={imgW}
-        imgH={imgH}
-        cx={cx}
-        cy={cy}
-        zoom={zoom}
-        viewportPx={viewportPx}
-        onMoveViewport={onMoveViewport}
-        miniAspect={miniAspect}
-      />
+    <div
+      className={styles.sidebar}
+      style={{ touchAction: "none" }}
+      data-no-pin
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+    >
+      <div data-no-pin>
+        <Minimap
+          src={src}
+          imgW={imgW}
+          imgH={imgH}
+          cx={cx}
+          cy={cy}
+          zoom={zoom}
+          viewportPx={viewportPx}
+          onMoveViewport={onMoveViewport}
+          miniAspect={miniAspect}
+          // Minimap ya marca data-no-pin y corta propagación internamente
+        />
+      </div>
 
-      <div className={styles.chatPanel}>
+      <div
+        className={styles.chatPanel}
+        data-no-pin
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        onPointerUp={(e) => e.stopPropagation()}
+      >
         <ThreadsPanel
           threads={threads}
           activeThreadId={activeThreadId}
