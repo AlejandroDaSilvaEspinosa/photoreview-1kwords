@@ -82,7 +82,20 @@ export default function ZoomOverlay({
   pendingStatusIds,
 }: Props) {
   const imageKey = imageName || "__overlay__";
+
+  // Provider de numeración compartida
   const dot = useDotNumbers();
+
+  // Sólo hilos visibles
+  const threadsForRender = useMemo(
+    () => threads.filter((t) => t.status !== "deleted"),
+    [threads]
+  );
+
+  // 🔄 Sincroniza numeración para esta imagen
+  useEffect(() => {
+    dot?.sync?.(imageKey, threadsForRender as any);
+  }, [dot, imageKey, threadsForRender]);
 
   // responsive
   const [isNarrow, setIsNarrow] = useState(false);
@@ -146,7 +159,6 @@ export default function ZoomOverlay({
   const tx = view.vw / 2 - cxPx * zoom;
   const ty = view.vh / 2 - cyPx * zoom;
 
-  // (opcionales)
   const viewWPercent = (view.vw / (imgW * zoom)) * 100;
   const viewHPercent = (view.vh / (imgH * zoom)) * 100;
 
@@ -502,12 +514,7 @@ export default function ZoomOverlay({
     [tool, tx, ty, zoom, imgW, imgH, setHideThreads, onCreateThreadAt, isNarrow]
   );
 
-  // Dots (numeración estable desde el provider)
-  const threadsForRender = useMemo(
-    () => threads.filter((t) => t.status !== "deleted"),
-    [threads]
-  );
-
+  // ====== Dots (numeración estable del provider) ======
   const dots = useMemo(
     () =>
       threadsForRender.map((t, i) => ({
@@ -515,9 +522,9 @@ export default function ZoomOverlay({
         left: `${t.x}%`,
         top: `${t.y}%`,
         status: t.status,
-        num: dot?.getNumber(t.x, t.y) ?? i + 1,
+        num: dot?.getNumberFor(imageKey, t.x, t.y) ?? i + 1,
       })),
-    [threadsForRender, dot?.version]
+    [threadsForRender, imageKey, dot?.version] // version: re-render cuando cambien asignaciones
   );
 
   const centerToThread = (t: Thread) => {
@@ -545,6 +552,12 @@ export default function ZoomOverlay({
     () => (imgW && imgH ? `${imgW} / ${imgH}` : undefined),
     [imgW, imgH]
   );
+
+  // Hilo activo → número desde provider
+  const activeNum = useMemo(() => {
+    const t = threads.find((x) => x.id === activeThreadId);
+    return t ? dot?.getNumberFor(imageKey, t.x, t.y) ?? 0 : 0;
+  }, [threads, activeThreadId, imageKey, dot?.version]);
 
   return (
     <div
@@ -773,12 +786,7 @@ export default function ZoomOverlay({
           <div className={styles.chatDrawerHeader}>
             <div className={styles.chatDrawerTitle}>
               {threads.find((t) => t.id === activeThreadId)
-                ? `Hilo #${
-                    dot?.getNumber(
-                      threads.find((t) => t.id === activeThreadId)!.x,
-                      threads.find((t) => t.id === activeThreadId)!.y
-                    ) ?? 0
-                  }`
+                ? `Hilo #${activeNum}`
                 : "Hilos"}
             </div>
             <button

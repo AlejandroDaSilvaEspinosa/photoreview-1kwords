@@ -1,131 +1,149 @@
-// ==============================
-// File: src/contexts/DotNumbersProvider.tsx
-// ==============================
 "use client";
 
 import React, {
   createContext,
   useCallback,
   useContext,
-  useEffect,
-  useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import { pointKey } from "@/lib/common/coords";
 import type { ThreadStatus } from "@/types/review";
 
-/**
- * Calcula numeración estable 1..N por imagen:
- * - Seed por orden de id
- * - Incremental para puntos nuevos
- * - Reconstrucción 1..N si hay borrados (status === "deleted")
- */
-type MinimalThread = { id: number; x: number; y: number; status: ThreadStatus };
+type NumThread = { id: number; x: number; y: number; status: ThreadStatus };
 
-type Ctx = {
-  imageName: string | null;
-  /** getNumber para coords de la imagen actual */
-  getNumber: (x: number, y: number) => number | null;
-  /** versión para invalidar memos en consumidores cuando cambian los números */
+type DotNumbersCtx = {
+  /** aumenta cuando hay cambios de numeración/sync para facilitar dependencias */
   version: number;
+  /** Sincroniza el estado interno de numeración para una imagen */
+  sync: (imageName: string | null, threads: NumThread[]) => void;
+  /** Obtiene el número para (x,y) de la imagen actual (la última usada en sync) */
+  getNumber: (x: number, y: number) => number | null;
+  /** Obtiene el número para (x,y) de una imagen concreta */
+  getNumberFor: (imageName: string, x: number, y: number) => number | null;
+  /** Resetea el mapa de una imagen (opcional) */
+  resetForImage: (imageName: string) => void;
 };
 
-const DotNumbersCtx = createContext<Ctx | null>(null);
+const Ctx = createContext<DotNumbersCtx | null>(null);
 
 export function DotNumbersProvider({
-  imageName,
-  threads,
   children,
 }: {
-  imageName: string | null;
-  threads: MinimalThread[];
-  children: ReactNode;
+  children: React.ReactNode;
 }) {
-  // Mapa solo para la imagen actual
-  const mapRef = useRef<Map<string, number>>(new Map());
-  const nextRef = useRef<number>(1);
+  // imagen -> (key -> numero)
+  const mapsRef = useRef<Map<string, Map<string, number>>>(new Map());
+  // imagen -> siguiente número a asignar
+  const nextRef = useRef<Map<string, number>>(new Map());
+  // imagen "actual" (último sync)
+  const currentImageRef = useRef<string | null>(null);
+
+  // Para provocar re-render en consumidores que dependan de la numeración
   const [version, setVersion] = useState(0);
 
-  useEffect(() => {
+  const sync = useCallback((imageName: string | null, threads: NumThread[]) => {
     if (!imageName) return;
+
+    currentImageRef.current = imageName;
 
     const current = threads.filter((t) => t.status !== "deleted");
     const currentKeys = new Set(
       current.map((t) => pointKey(imageName, t.x, t.y))
     );
 
-    let didChange = false;
+    let map = mapsRef.current.get(imageName);
+    const prevNext = nextRef.current.get(imageName);
 
-    // 1) Primera vez: sembramos 1..N por id
-    if (mapRef.current.size === 0) {
+    // Primera vez: 1..N por id ascendente
+    if (!map) {
+      map = new Map<string, number>();
       const sorted = current.slice().sort((a, b) => a.id - b.id);
-      const fresh = new Map<string, number>();
       let i = 1;
-      for (const t of sorted) fresh.set(pointKey(imageName, t.x, t.y), i++);
-      mapRef.current = fresh;
-      nextRef.current = i;
-      didChange = true;
-    } else {
-      // 2) ¿Hubo removals? → reconstruimos 1..N
-      let hasRemoval = false;
-      for (const k of mapRef.current.keys()) {
-        if (!currentKeys.has(k)) {
-          hasRemoval = true;
-          break;
-        }
+      for (const t of sorted) {
+        map.set(pointKey(imageName, t.x, t.y), i++);
       }
-      if (hasRemoval) {
-        const sorted = current.slice().sort((a, b) => a.id - b.id);
-        const rebuilt = new Map<string, number>();
-        let i = 1;
-        for (const t of sorted) rebuilt.set(pointKey(imageName, t.x, t.y), i++);
-        mapRef.current = rebuilt;
-        nextRef.current = i;
-        didChange = true;
-      } else {
-        // 3) No removals → asignamos numeración a nuevas keys
-        let localNext = nextRef.current ?? 1;
-        for (const t of current) {
-          const k = pointKey(imageName, t.x, t.y);
-          if (!mapRef.current.has(k)) {
-            mapRef.current.set(k, localNext++);
-            didChange = true;
-          }
-        }
-        if (didChange) nextRef.current = localNext;
+      mapsRef.current.set(imageName, map);
+      nextRef.current.set(imageName, i);
+      setVersion((v) => v + 1);
+      return;
+    }
+
+    // Detectar eliminaciones (keys del mapa que ya no existen)
+    let hasRemoval = false;
+    for (const k of map.keys()) {
+      if (!currentKeys.has(k)) {
+        hasRemoval = true;
+        break;
       }
     }
 
-    if (didChange) setVersion((v) => v + 1);
-  }, [imageName, threads]);
+    if (hasRemoval) {
+      // Reconstruir 1..N por id ascendente para compactar huecos
+      const rebuilt = new Map<string, number>();
+      const sorted = current.slice().sort((a, b) => a.id - b.id);
+      let i = 1;
+      for (const t of sorted) {
+        rebuilt.set(pointKey(imageName, t.x, t.y), i++);
+      }
+      mapsRef.current.set(imageName, rebuilt);
+      nextRef.current.set(imageName, i);
+      setVersion((v) => v + 1);
+      return;
+    }
 
-  // Al cambiar de imagen, reseteamos el mapa
-  useEffect(() => {
-    mapRef.current = new Map();
-    nextRef.current = 1;
-    setVersion((v) => v + 1);
-  }, [imageName]);
+    // Sin eliminaciones → asignar números a posibles puntos nuevos
+    let localNext = typeof prevNext === "number" ? prevNext : 1;
+    let changed = false;
+    for (const t of current) {
+      const key = pointKey(imageName, t.x, t.y);
+      if (!map.has(key)) {
+        map.set(key, localNext++);
+        changed = true;
+      }
+    }
+    if (changed) {
+      nextRef.current.set(imageName, localNext);
+      setVersion((v) => v + 1);
+    }
+  }, []);
+
+  const getNumberFor = useCallback(
+    (imageName: string, x: number, y: number) => {
+      const map = mapsRef.current.get(imageName);
+      if (!map) return null;
+      const n = map.get(pointKey(imageName, x, y));
+      return n ?? null;
+    },
+    []
+  );
 
   const getNumber = useCallback(
     (x: number, y: number) => {
-      if (!imageName) return null;
-      return mapRef.current.get(pointKey(imageName, x, y)) ?? null;
+      const img = currentImageRef.current;
+      if (!img) return null;
+      return getNumberFor(img, x, y);
     },
-    [imageName, version] // version asegura que leemos el mapa actualizado
+    [getNumberFor]
   );
 
-  const ctxValue = useMemo<Ctx>(
-    () => ({ imageName, getNumber, version }),
-    [imageName, getNumber, version]
-  );
+  const resetForImage = useCallback((img: string) => {
+    mapsRef.current.delete(img);
+    nextRef.current.delete(img);
+    setVersion((v) => v + 1);
+  }, []);
 
-  return (
-    <DotNumbersCtx.Provider value={ctxValue}>{children}</DotNumbersCtx.Provider>
-  );
+  const value: DotNumbersCtx = {
+    version,
+    sync,
+    getNumber,
+    getNumberFor,
+    resetForImage,
+  };
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
 export function useDotNumbers() {
-  return useContext(DotNumbersCtx);
+  return useContext(Ctx);
 }

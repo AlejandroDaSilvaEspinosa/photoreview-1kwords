@@ -6,6 +6,7 @@ import Toaster from "@/components/Toaster";
 import { supabaseServer } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { powerCore } from "@/app/fonts";
+import { DotNumbersProvider } from "@/contexts/DotNumbersProvider";
 
 export const metadata: Metadata = {
   title: "1kwords® - App",
@@ -31,7 +32,7 @@ export default async function ProtectedLayout({
     <html lang="es" className={powerCore.variable}>
       <body>
         <ToastProvider>
-          {children}
+          <DotNumbersProvider>{children}</DotNumbersProvider>
           <Toaster />
         </ToastProvider>
       </body>

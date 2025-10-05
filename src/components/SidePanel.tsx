@@ -1,6 +1,4 @@
-// ==============================
 // File: src/components/SidePanel.tsx
-// ==============================
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
@@ -71,7 +69,7 @@ type Props = {
   composeLocked?: boolean; // cuando se está creando el hilo activo
   statusLocked?: boolean; // compat: lock del hilo activo
   validationLock?: boolean; // SKU validado → sólo lectura
-  pendingStatusIds?: Set<number>; // hilos guardando estado (lista)
+  pendingStatusIds?: Set<number>; // NUEVO: hilos guardando estado (lista)
 
   /** Reglas de validación */
   blockValidateByNeedsCorrection?: boolean;
@@ -98,9 +96,9 @@ export default function SidePanel({
   loading = false,
   initialCollapsed = false,
   composeLocked = false,
-  statusLocked = false, // compat
+  statusLocked = false, // compat: se usará si no viene pendingStatusIds
   validationLock = false,
-  pendingStatusIds,
+  pendingStatusIds, // NUEVO
   blockValidateByNeedsCorrection = false,
 }: Props) {
   const [collapsed, setCollapsed] = useState<boolean>(initialCollapsed);

@@ -107,7 +107,7 @@ export default function ImageViewer({
   const { images } = sku;
   useWireSkuRealtime(sku.sku);
 
-  // Hook de numeración estable compartida
+  // Provider de numeración
   const dot = useDotNumbers();
 
   // ======= modal de validación
@@ -210,6 +210,11 @@ export default function ImageViewer({
     () => (threadsRaw ?? EMPTY_ARR).filter((t: any) => t.status !== "deleted"),
     [threadsRaw]
   );
+
+  // 🔄 Sincroniza numeración (reconstruye automáticamente ante borrados / RT)
+  useEffect(() => {
+    dot?.sync?.(selectedImage?.name ?? null, threadsForRender as any);
+  }, [dot, selectedImage?.name, threadsForRender]);
 
   const threadToImageMapSize = threadToImage.size;
   const threadToImageStable = useThreadsStore((s) => s.threadToImage);
@@ -409,10 +414,8 @@ export default function ImageViewer({
           }
         }
 
-        if (!cancelled) {
-          setLoadError(null);
-          setLoading(false);
-        }
+        setLoadError(null);
+        setLoading(false);
       } catch (e: any) {
         if (!cancelled) {
           setLoadError("No se pudo actualizar (modo sin conexión)");

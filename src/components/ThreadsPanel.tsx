@@ -1,6 +1,4 @@
-// ==============================
 // File: src/components/ThreadsPanel.tsx
-// ==============================
 "use client";
 
 import React, { useMemo, useState } from "react";
@@ -72,39 +70,28 @@ export default function ThreadsPanel({
   emptyTitle = "Aún no hay hilos",
   emptySubtitle = "Crea un hilo en la imagen para empezar el chat.",
 }: Props) {
-  // Mantiene render reactivo a mensajes/unread
+  const dot = useDotNumbers();
+
   useMessagesStore((s) => s.byThread);
   useMessagesStore((s) => s.selfAuthId);
 
-  const dot = useDotNumbers();
-
-  // Lista visible (sin deleted)
-  const threadsForRender = useMemo(
-    () => threads.filter((t) => t.status !== "deleted"),
-    [threads]
-  );
-
-  // Activo
+  // ====== Vista activa (chat si hay hilo seleccionado) ======
   const activeThread = useMemo(
     () =>
       activeThreadId != null
-        ? threadsForRender.find((t) => t.id === activeThreadId) ?? null
+        ? threads.find((t) => t.id === activeThreadId) ?? null
         : null,
-    [threadsForRender, activeThreadId]
+    [threads, activeThreadId]
   );
 
-  const classicIndex = useMemo(
-    () =>
-      activeThreadId
-        ? threadsForRender.findIndex((t) => t.id === activeThreadId) + 1
-        : 0,
-    [threadsForRender, activeThreadId]
-  );
-
-  const activeStableNumber = useMemo(() => {
-    if (!activeThread) return 0;
-    return dot?.getNumber(activeThread.x, activeThread.y) ?? classicIndex;
-  }, [activeThread, classicIndex, dot?.version]);
+  // Número estable para el hilo activo
+  const threadIndex =
+    useMemo(
+      () =>
+        activeThread ? dot?.getNumber(activeThread.x, activeThread.y) ?? 0 : 0,
+      // dot?.version asegura recomputar cuando el provider reenumere
+      [activeThread, dot?.version]
+    ) || 0;
 
   // ====== pending local (fallback si no se gestiona desde arriba) ======
   const [localPending, setLocalPending] = useState<Set<number>>(new Set());
@@ -145,6 +132,12 @@ export default function ThreadsPanel({
     }
   };
 
+  // ====== Render: lista de hilos ======
+  const list = useMemo(
+    () => threads.filter((t) => t.status !== "deleted"),
+    [threads]
+  );
+
   // ====== Render: si hay hilo activo, mostramos el chat ======
   if (activeThread) {
     const lockedActive =
@@ -155,8 +148,7 @@ export default function ThreadsPanel({
       <div className={styles.panel}>
         <ThreadChat
           activeThread={activeThread}
-          /** Número ESTABLE del hilo activo */
-          threadIndex={activeStableNumber}
+          threadIndex={threadIndex}
           composeLocked={composeLocked}
           statusLocked={lockedActive}
           validationLock={validationLock}
@@ -169,28 +161,27 @@ export default function ThreadsPanel({
     );
   }
 
-  // ====== Render: lista de hilos ======
   return (
     <section className={styles.panel} aria-label="Lista de hilos">
       <div className={styles.header}>
         <h3 className={styles.title}>Hilos</h3>
-        <span className={styles.count}>{threadsForRender.length}</span>
+        <span className={styles.count}>{list.length}</span>
       </div>
 
-      {threadsForRender.length === 0 ? (
+      {list.length === 0 ? (
         <div className={styles.emptyCard}>
           <div className={styles.emptyTitle}>{emptyTitle}</div>
           <div className={styles.emptySubtitle}>{emptySubtitle}</div>
         </div>
       ) : (
         <ul className={styles.list}>
-          {threadsForRender.map((t, i) => {
+          {list.map((t, i) => {
             const isLocked = isPending(t.id);
             const variant = t.status === "corrected" ? "orange" : "green";
             const willGo = toggleLabel(t.status);
             const willGoIcon = toggleIcon(t.status);
             const hasUnread = hasUnreadInThread(t.id);
-            const num = dot?.getNumber(t.x, t.y) ?? i + 1; // <- número estable
+            const n = dot?.getNumber(t.x, t.y) ?? i + 1;
 
             return (
               <li key={t.id} className={styles.row}>
@@ -199,7 +190,7 @@ export default function ThreadsPanel({
                   onClick={() =>
                     centerToThread ? centerToThread(t) : onFocusThread(t.id)
                   }
-                  title={`Hilo #${num} — ${STATUS_LABEL[t.status]}`}
+                  title={`Hilo #${n} — ${STATUS_LABEL[t.status]}`}
                 >
                   {hasUnread && (
                     <span
@@ -219,7 +210,7 @@ export default function ThreadsPanel({
                     style={{ background: colorByThreadStatus(t.status) }}
                     aria-hidden
                   />
-                  <span className={styles.threadTitle}>Hilo #{num}</span>
+                  <span className={styles.threadTitle}>Hilo #{n}</span>
                   <span className={styles.threadStatus}>
                     {STATUS_LABEL[t.status]}
                   </span>
@@ -240,6 +231,7 @@ export default function ThreadsPanel({
                     {isLocked ? (
                       <>
                         <span className={styles.spinner} aria-hidden />{" "}
+                        {/* Actualizando… */}
                       </>
                     ) : (
                       willGoIcon
