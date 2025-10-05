@@ -72,6 +72,7 @@ export default function ThreadsPanel({
 }: Props) {
   const dot = useDotNumbers();
 
+  // Suscripciones para unread y autore-render
   useMessagesStore((s) => s.byThread);
   useMessagesStore((s) => s.selfAuthId);
 
@@ -89,7 +90,7 @@ export default function ThreadsPanel({
     useMemo(
       () =>
         activeThread ? dot?.getNumber(activeThread.x, activeThread.y) ?? 0 : 0,
-      // dot?.version asegura recomputar cuando el provider reenumere
+      // dot?.version asegura recomputar cuando el provider reenumera (borrados/merge cache+live)
       [activeThread, dot?.version]
     ) || 0;
 
@@ -132,11 +133,25 @@ export default function ThreadsPanel({
     }
   };
 
-  // ====== Render: lista de hilos ======
-  const list = useMemo(
+  // 1) Filtro (sin eliminados)
+  const baseList = useMemo(
     () => threads.filter((t) => t.status !== "deleted"),
     [threads]
   );
+
+  // 2) Orden por número estable del provider (1..N).
+  //    - Fallback: los que aún no tengan número van al final, empatando por id.
+  const list = useMemo(() => {
+    const out = [...baseList];
+    if (!dot) return out;
+    out.sort((a, b) => {
+      const na = dot.getNumber(a.x, a.y) ?? Number.MAX_SAFE_INTEGER; // sin número → al final
+      const nb = dot.getNumber(b.x, b.y) ?? Number.MAX_SAFE_INTEGER;
+      if (na !== nb) return na - nb;
+      return a.id - b.id; // desempate determinista
+    });
+    return out;
+  }, [baseList, dot?.version]);
 
   // ====== Render: si hay hilo activo, mostramos el chat ======
   if (activeThread) {
@@ -181,7 +196,7 @@ export default function ThreadsPanel({
             const willGo = toggleLabel(t.status);
             const willGoIcon = toggleIcon(t.status);
             const hasUnread = hasUnreadInThread(t.id);
-            const n = dot?.getNumber(t.x, t.y) ?? i + 1;
+            const n = dot?.getNumber(t.x, t.y) ?? i + 1; // mostrar el número estable
 
             return (
               <li key={t.id} className={styles.row}>

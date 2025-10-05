@@ -19,8 +19,8 @@ function srcToString(src: any): string {
 }
 
 const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
-  (
-    {
+  (props, ref) => {
+    const {
       wrapperClassName,
       className,
       minSkeletonMs = 180,
@@ -28,9 +28,8 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
       forceSkeletonOnSrcChange = true,
       onReady,
       ...imgProps
-    },
-    ref
-  ) => {
+    } = props;
+
     const [loaded, setLoaded] = useState(false);
     const [error, setError] = useState(false);
     const [mountedAt, setMountedAt] = useState<number>(() => Date.now());
@@ -38,6 +37,15 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
     const [ratio, setRatio] = useState<number | null>(null);
 
     const srcKey = useMemo(() => srcToString(imgProps.src), [imgProps.src]);
+
+    // --- ref combinada para poder leer .complete y no romper la ref externa ---
+    const imgElRef = useRef<HTMLImageElement | null>(null);
+    const setRefs = (node: HTMLImageElement | null) => {
+      imgElRef.current = node;
+      if (typeof ref === "function") ref(node);
+      else if (ref)
+        (ref as React.MutableRefObject<HTMLImageElement | null>).current = node;
+    };
 
     useEffect(() => {
       if (!forceSkeletonOnSrcChange) return;
@@ -50,49 +58,63 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
       }
     }, [srcKey, forceSkeletonOnSrcChange]);
 
-    useEffect(() => {
-      return () => {
+    useEffect(
+      () => () => {
         if (doneTimer.current) window.clearTimeout(doneTimer.current);
-      };
-    }, []);
+      },
+      []
+    );
 
     const handleLoaded = (img: HTMLImageElement) => {
       if (error) return;
       const elapsed = Date.now() - mountedAt;
       const remaining = Math.max(0, minSkeletonMs - elapsed);
-      if (remaining === 0) {
+      const finish = () => {
         setLoaded(true);
         onReady?.(img);
-      } else {
+      };
+      if (remaining === 0) finish();
+      else
         doneTimer.current = window.setTimeout(() => {
-          setLoaded(true);
+          finish();
           doneTimer.current = null;
-          onReady?.(img);
         }, remaining) as unknown as number;
-      }
     };
+
+    // --- SAFARI FIX: si la imagen ya estaba en caché al montar, simula el onLoad ---
+    useEffect(() => {
+      const img = imgElRef.current;
+      if (img && img.complete && img.naturalWidth > 0) {
+        setRatio(img.naturalWidth / img.naturalHeight);
+        handleLoaded(img);
+      }
+    }, [srcKey]); // re-check cuando cambia el src
+
     const proxiedSrc = useMemo(
       () => proxifySrc(srcToString(imgProps.src)),
       [imgProps.src]
     );
+
     return (
       <div
         className={`${styles.wrapper} ${wrapperClassName ?? ""}`}
-        style={{
-          aspectRatio: ratio ? `${ratio}` : "1 / 1", // fallback cuadrado
-          // width: "100%",
-          height: "100%",
-        }}
+        style={{ aspectRatio: ratio ? `${ratio}` : "1 / 1", height: "100%" }}
         aria-busy={!loaded && !error}
       >
         {!loaded && !error && <div className={styles.skeleton} />}
 
         {!error ? (
           <Image
-            ref={ref as any}
+            ref={setRefs}
             key={proxiedSrc}
             {...imgProps}
-            src={proxiedSrc}
+            // Si es above-the-fold, esto evita IO/refresh raros en Safari:
+            loading={imgProps.loading ?? "eager"}
+            // Mucho más fiable que onLoad con caché:
+            onLoadingComplete={(img) => {
+              setRatio(img.naturalWidth / img.naturalHeight);
+              handleLoaded(img);
+            }}
             onLoad={(e) => {
               const img = e.currentTarget as HTMLImageElement;
               setRatio(img.naturalWidth / img.naturalHeight);
@@ -105,6 +127,10 @@ const ImageWithSkeleton = React.forwardRef<HTMLImageElement, Props>(
             className={`${styles.image} ${loaded ? styles.imageVisible : ""} ${
               className ?? ""
             }`}
+            // (Opcional) evita doble optimización si usas proxy propio:
+            // unoptimized
+            // (Opcional) prioridad para hero/primer fold:
+            // priority
           />
         ) : (
           <div className={styles.fallback} title="No se pudo cargar la imagen">
