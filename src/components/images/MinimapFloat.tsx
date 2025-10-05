@@ -150,12 +150,15 @@ export default function MinimapFloat({
     setMiniCollapsed((prev) => {
       const next = !prev;
       setMiniPos((p) => {
-        // reubicamos para que quepa tras el cambio de altura
-        return clampToBounds(p, next);
+        const crect = containerRef.current?.getBoundingClientRect();
+        const oh = crect?.height ?? window.innerHeight;
+        const mh = computeMiniHeight(next);
+        const y = Math.max(0, oh - mh);
+        return clampToBounds({ x: p.x, y }, next);
       });
       return next;
     });
-  }, [clampToBounds]);
+  }, [computeMiniHeight, clampToBounds, containerRef]);
 
   // === Drag del flotante (mouse/touch + captura robusta) ===
   const dragRef = useRef<{

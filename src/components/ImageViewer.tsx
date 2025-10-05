@@ -48,6 +48,7 @@ import {
 import Modal from "@/components/ui/Modal";
 import NextSkuCard from "@/components/NextSkuCard";
 import { useStatusesStore } from "@/stores/statuses";
+import { useDotNumbers } from "@/contexts/DotNumbersProvider";
 
 import SearchIcon from "@/icons/search.svg";
 import EyeOffIncon from "@/icons/eye-off.svg";
@@ -92,94 +93,6 @@ interface ImageViewerProps {
   onGoToSku?: (skuCode: string) => void;
 }
 
-/** ====== Numeración estable por imagen (con reenumero al borrar) ======
- * - Para cada imagen guardamos: key(img + x + y) -> número mostrado.
- * - Inicializamos 1..N por orden de id (determinista).
- * - Al añadir un punto nuevo, asignamos nextIndex (length+1).
- * - Si detectamos que hay puntos eliminados (menos keys que antes o keys que desaparecen),
- *   RECONSTRUIMOS 1..N para esa imagen para evitar huecos.
- */
-function useStableDotNumbers(
-  imageName: string | null,
-  threads: Array<{ id: number; x: number; y: number; status: ThreadStatus }>
-) {
-  // imagen -> (key -> numero)
-  const perImageMapRef = useRef<Map<string, Map<string, number>>>(new Map());
-  // imagen -> siguiente número a asignar
-  const nextIndexRef = useRef<Map<string, number>>(new Map());
-
-  useEffect(() => {
-    if (!imageName) return;
-
-    const current = threads.filter((t) => t.status !== "deleted");
-    const currentKeys = new Set(
-      current.map((t) => pointKey(imageName, t.x, t.y))
-    );
-
-    let map = perImageMapRef.current.get(imageName);
-    const prevNext = nextIndexRef.current.get(imageName);
-
-    // Primera vez para esta imagen: sembramos 1..N ordenado por id
-    if (!map) {
-      map = new Map<string, number>();
-      const sorted = current.slice().sort((a, b) => a.id - b.id);
-      let i = 1;
-      for (const t of sorted) {
-        map.set(pointKey(imageName, t.x, t.y), i++);
-      }
-      perImageMapRef.current.set(imageName, map);
-      nextIndexRef.current.set(imageName, i);
-      return;
-    }
-
-    // ¿Hay removals? (alguna key del map ya no está en current)
-    let hasRemoval = false;
-    for (const k of map.keys()) {
-      if (!currentKeys.has(k)) {
-        hasRemoval = true;
-        break;
-      }
-    }
-
-    if (hasRemoval) {
-      // RECONSTRUIR: 1..N por orden id
-      const rebuilt = new Map<string, number>();
-      const sorted = current.slice().sort((a, b) => a.id - b.id);
-      let i = 1;
-      for (const t of sorted) {
-        rebuilt.set(pointKey(imageName, t.x, t.y), i++);
-      }
-      perImageMapRef.current.set(imageName, rebuilt);
-      nextIndexRef.current.set(imageName, i);
-      return;
-    }
-
-    // No hay removals → asignamos números a keys nuevas
-    let localNext = typeof prevNext === "number" ? prevNext : 1;
-    for (const t of current) {
-      const key = pointKey(imageName, t.x, t.y);
-      if (!map.has(key)) {
-        map.set(key, localNext++);
-      }
-    }
-    nextIndexRef.current.set(imageName, localNext);
-  }, [imageName, threads]);
-
-  const getNumber = useCallback((img: string, x: number, y: number) => {
-    const map = perImageMapRef.current.get(img);
-    if (!map) return null;
-    const n = map.get(pointKey(img, x, y));
-    return n ?? null;
-  }, []);
-
-  const resetForImage = useCallback((img: string) => {
-    perImageMapRef.current.delete(img);
-    nextIndexRef.current.delete(img);
-  }, []);
-
-  return { getNumber, resetForImage };
-}
-
 export default function ImageViewer({
   sku,
   username,
@@ -193,6 +106,9 @@ export default function ImageViewer({
 }: ImageViewerProps) {
   const { images } = sku;
   useWireSkuRealtime(sku.sku);
+
+  // Hook de numeración estable compartida
+  const dot = useDotNumbers();
 
   // ======= modal de validación
   const [validatedModalOpen, setValidatedModalOpen] = useState(false);
@@ -289,16 +205,10 @@ export default function ImageViewer({
     })
   );
 
-  // Lista para render (filtrada; SIN reordenar). Numeración la pone el hook.
+  // Lista para render (filtrada; SIN reordenar). Numeración viene del provider.
   const threadsForRender = useMemo(
     () => (threadsRaw ?? EMPTY_ARR).filter((t: any) => t.status !== "deleted"),
     [threadsRaw]
-  );
-
-  // Numeración estable con reenumero al borrar
-  const { getNumber } = useStableDotNumbers(
-    selectedImage?.name ?? null,
-    threadsForRender as any
   );
 
   const threadToImageMapSize = threadToImage.size;
@@ -920,7 +830,7 @@ export default function ImageViewer({
       }
       if (resolvedActiveThreadId === id)
         startTransition(() => onSelectThread?.(null));
-      // No hace falta nada extra: el hook de numeración detecta removals y reenumera.
+      // Nada extra: el provider reenumera al detectar borrados.
     },
     [setThreadStatus, resolvedActiveThreadId, onSelectThread, isSkuValidated]
   );
@@ -1208,7 +1118,7 @@ export default function ImageViewer({
                 .toUpperCase()}
             />
 
-            {/* Dots: numeración estable; reenumera 1..N si hay borrados */}
+            {/* Dots: numeración estable compartida via DotNumbersProvider */}
             {showThreads &&
               threadsForRender.map((th, idxRender) => {
                 const topPx = imgBox.offsetTop + (th.y / 100) * imgBox.height;
@@ -1216,10 +1126,7 @@ export default function ImageViewer({
                 const bg = colorByStatus(th.status);
                 const isActive = resolvedActiveThreadId === th.id;
                 const hasUnread = hasUnreadInThread(th.id);
-                const num =
-                  selectedImage?.name != null
-                    ? getNumber(selectedImage.name, th.x, th.y) ?? idxRender + 1
-                    : idxRender + 1;
+                const num = dot?.getNumber(th.x, th.y) ?? idxRender + 1;
 
                 return (
                   <div

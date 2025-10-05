@@ -6,7 +6,6 @@
 import React, {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -31,6 +30,7 @@ import ChatIcon from "@/icons/chat.svg";
 
 import SidePanel from "./SidePanelZoomOverlay";
 import MinimapFloat from "./MinimapFloat";
+import { useDotNumbers } from "@/contexts/DotNumbersProvider";
 
 type Props = {
   src: string;
@@ -64,96 +64,6 @@ type ToolMode = "pan" | "pin";
 const clamp = (n: number, min: number, max: number) =>
   Math.max(min, Math.min(max, n));
 
-/** ====== Numeración estable por imagen (con reenumero al borrar) ======
- * - Para cada imagen guardamos: key(img + x + y) -> número mostrado.
- * - Inicializamos 1..N por orden de id (determinista).
- * - Al añadir un punto nuevo, asignamos nextIndex (length+1).
- * - Si detectamos que hay puntos eliminados (keys que desaparecen), reconstruimos 1..N.
- */
-function useStableDotNumbers(
-  imageName: string | null,
-  threads: Array<{ id: number; x: number; y: number; status: ThreadStatus }>
-) {
-  // imagen -> (key -> numero)
-  const perImageMapRef = useRef<Map<string, Map<string, number>>>(new Map());
-  // imagen -> siguiente número a asignar
-  const nextIndexRef = useRef<Map<string, number>>(new Map());
-
-  useEffect(() => {
-    if (!imageName) return;
-
-    const current = threads.filter((t) => t.status !== "deleted");
-    const currentKeys = new Set(
-      current.map((t) => pointKey(imageName, t.x, t.y))
-    );
-
-    let map = perImageMapRef.current.get(imageName);
-    const prevNext = nextIndexRef.current.get(imageName);
-
-    // Primera vez para esta imagen: sembramos 1..N ordenado por id
-    if (!map) {
-      map = new Map<string, number>();
-      const sorted = current.slice().sort((a, b) => a.id - b.id);
-      let i = 1;
-      for (const t of sorted) {
-        map.set(pointKey(imageName, t.x, t.y), i++);
-      }
-      perImageMapRef.current.set(imageName, map);
-      nextIndexRef.current.set(imageName, i);
-      return;
-    }
-
-    // ¿Hay removals? (alguna key del map ya no está en current)
-    let hasRemoval = false;
-    for (const k of map.keys()) {
-      if (!currentKeys.has(k)) {
-        hasRemoval = true;
-        break;
-      }
-    }
-
-    if (hasRemoval) {
-      // RECONSTRUIR: 1..N por orden id
-      const rebuilt = new Map<string, number>();
-      const sorted = current.slice().sort((a, b) => a.id - b.id);
-      let i = 1;
-      for (const t of sorted) {
-        rebuilt.set(pointKey(imageName, t.x, t.y), i++);
-      }
-      perImageMapRef.current.set(imageName, rebuilt);
-      nextIndexRef.current.set(imageName, i);
-      return;
-    }
-
-    // No hay removals → asignamos números a keys nuevas
-    let localNext = typeof prevNext === "number" ? prevNext : 1;
-    for (const t of current) {
-      const key = pointKey(imageName, t.x, t.y);
-      if (!map.has(key)) {
-        map.set(key, localNext++);
-      }
-    }
-    nextIndexRef.current.set(imageName, localNext);
-  }, [imageName, threads]);
-
-  const getNumber = useCallback(
-    (img: string, x: number, y: number): number | null => {
-      const map = perImageMapRef.current.get(img);
-      if (!map) return null;
-      const n = map.get(pointKey(img, x, y));
-      return n ?? null;
-    },
-    []
-  );
-
-  const resetForImage = useCallback((img: string) => {
-    perImageMapRef.current.delete(img);
-    nextIndexRef.current.delete(img);
-  }, []);
-
-  return { getNumber, resetForImage };
-}
-
 export default function ZoomOverlay({
   src,
   imageName,
@@ -172,13 +82,7 @@ export default function ZoomOverlay({
   pendingStatusIds,
 }: Props) {
   const imageKey = imageName || "__overlay__";
-
-  // Numeración estable EXACTA a ImageViewer
-  const threadsForRender = useMemo(
-    () => threads.filter((t) => t.status !== "deleted"),
-    [threads]
-  );
-  const { getNumber } = useStableDotNumbers(imageKey, threadsForRender as any);
+  const dot = useDotNumbers();
 
   // responsive
   const [isNarrow, setIsNarrow] = useState(false);
@@ -242,6 +146,7 @@ export default function ZoomOverlay({
   const tx = view.vw / 2 - cxPx * zoom;
   const ty = view.vh / 2 - cyPx * zoom;
 
+  // (opcionales)
   const viewWPercent = (view.vw / (imgW * zoom)) * 100;
   const viewHPercent = (view.vh / (imgH * zoom)) * 100;
 
@@ -597,7 +502,12 @@ export default function ZoomOverlay({
     [tool, tx, ty, zoom, imgW, imgH, setHideThreads, onCreateThreadAt, isNarrow]
   );
 
-  // ====== Dots (numeración estable; reenumera 1..N si hay borrados) ======
+  // Dots (numeración estable desde el provider)
+  const threadsForRender = useMemo(
+    () => threads.filter((t) => t.status !== "deleted"),
+    [threads]
+  );
+
   const dots = useMemo(
     () =>
       threadsForRender.map((t, i) => ({
@@ -605,9 +515,9 @@ export default function ZoomOverlay({
         left: `${t.x}%`,
         top: `${t.y}%`,
         status: t.status,
-        num: getNumber(imageKey, t.x, t.y) ?? i + 1,
+        num: dot?.getNumber(t.x, t.y) ?? i + 1,
       })),
-    [threadsForRender, imageKey, getNumber]
+    [threadsForRender, dot?.version]
   );
 
   const centerToThread = (t: Thread) => {
@@ -864,8 +774,7 @@ export default function ZoomOverlay({
             <div className={styles.chatDrawerTitle}>
               {threads.find((t) => t.id === activeThreadId)
                 ? `Hilo #${
-                    getNumber(
-                      imageKey,
+                    dot?.getNumber(
                       threads.find((t) => t.id === activeThreadId)!.x,
                       threads.find((t) => t.id === activeThreadId)!.y
                     ) ?? 0
