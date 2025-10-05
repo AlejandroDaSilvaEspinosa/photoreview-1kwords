@@ -1,0 +1,18 @@
+/* Sidebar (minimapa + panel contenedor de chats/lista) */
+.sidebar {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 12px;
+}
+
+/* Panel contenedor (aquí se monta ThreadsPanel) */
+.chatPanel {
+    background: var(--surface-2, #151515);
+    color: var(--text-1, #ddd);
+    border: 1px solid var(--border-1, #2a2a2a);
+    border-radius: 12px;
+    padding: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}

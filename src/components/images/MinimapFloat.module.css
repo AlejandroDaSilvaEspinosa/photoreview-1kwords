@@ -5,16 +5,18 @@
     /* por encima del FAB y toolbox */
     width: clamp(160px, 32vw, 280px);
     pointer-events: auto;
-    /* ✅ capta eventos (no pasan al visor) */
+    /* capta eventos */
     user-select: none;
     touch-action: none;
-    /* ✅ evita gestos nativos que atraviesen */
+    /* evita gestos nativos */
     filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.45));
 }
 
-/* Estado colapsado: el contenido se oculta desde JSX (no se renderiza).
-   Mantenemos clase por si quieres aplicar estilos extra al contenedor. */
-.miniFloatCollapsed {}
+/* Estado colapsado: oculta el contenido del minimapa.
+   OJO: el Minimap recibe además esta clase desde el padre para que el selector module→module funcione. */
+.miniFloatCollapsed .minimap {
+    display: none;
+}
 
 /* Barra/asa del minimapa */
 .miniDragHandle {
@@ -39,10 +41,6 @@
     cursor: grabbing;
 }
 
-.miniDragHandleDisabled {
-    opacity: .85;
-}
-
 .miniHandleTitle {
     pointer-events: none;
     font-weight: 600;
@@ -64,4 +62,9 @@
 
 .miniHandleBtn:hover {
     background: #2a2a2a;
+}
+
+/* *Opcional*: estilo que se aplica al Minimap (se inyecta como className extra) */
+.minimap {
+    /* vacío a propósito; sirve de “hook” para el selector .miniFloatCollapsed .minimap */
 }

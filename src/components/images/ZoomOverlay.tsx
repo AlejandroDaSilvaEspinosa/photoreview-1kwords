@@ -1,11 +1,9 @@
-// ==============================
-// File: src/components/images/ZoomOverlay.tsx
-// ==============================
 "use client";
 
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -28,13 +26,11 @@ import PlusIcon from "@/icons/plus.svg";
 import MinusIcon from "@/icons/minus.svg";
 import ChatIcon from "@/icons/chat.svg";
 
-// 🔹 Nuevos componentes
-import Minimap from "./Minimap";
+import SidePanel from "./SidePanelZoomOverlay";
 import MinimapFloat from "./MinimapFloat";
 
 type Props = {
   src: string;
-  /** opcional: clave usada para numeración estable; si no llega, se usa un fallback */
   imageName?: string;
   threads: Thread[];
   activeThreadId: number | null;
@@ -62,33 +58,10 @@ type Props = {
 };
 
 type ToolMode = "pan" | "pin";
-
 const clamp = (n: number, min: number, max: number) =>
   Math.max(min, Math.min(max, n));
-const dist = (ax: number, ay: number, bx: number, by: number) =>
-  Math.hypot(ax - bx, ay - by);
-const mid = (ax: number, ay: number, bx: number, by: number) => ({
-  x: (ax + bx) / 2,
-  y: (ay + by) / 2,
-});
 
-type GestureState = {
-  mode: "none" | "pan" | "pinch";
-  startX: number;
-  startY: number;
-  startCxPx: number;
-  startCyPx: number;
-  startZoom: number;
-  startDist: number;
-  xImg0: number;
-  yImg0: number;
-  tapX: number;
-  tapY: number;
-  moved: boolean;
-  didPinch: boolean;
-};
-
-/** ====== Numeración estable por imagen (igual filosofía que ImageViewer) ====== */
+/** Numeración estable por imagen */
 function useStableDotNumbers(
   imageKey: string,
   threads: Array<{ id: number; x: number; y: number; status: ThreadStatus }>
@@ -99,30 +72,23 @@ function useStableDotNumbers(
   useEffect(() => {
     if (!imageKey) return;
     const current = threads.filter((t) => t.status !== "deleted");
-
     let map = perImageMapRef.current.get(imageKey);
     const next = nextIndexRef.current.get(imageKey);
 
-    // Primera vez: siembra 1..N estable (orden por id)
     if (!map) {
       map = new Map<string, number>();
       const sorted = current.slice().sort((a, b) => a.id - b.id);
       let i = 1;
-      for (const t of sorted) {
-        map.set(pointKey(imageKey, t.x, t.y), i++);
-      }
+      for (const t of sorted) map.set(pointKey(imageKey, t.x, t.y), i++);
       perImageMapRef.current.set(imageKey, map);
       nextIndexRef.current.set(imageKey, i);
       return;
     }
 
-    // Ya existía: asigna números solo a keys nuevas
     let localNext = typeof next === "number" ? next : 1;
     for (const t of current) {
       const key = pointKey(imageKey, t.x, t.y);
-      if (!map.has(key)) {
-        map.set(key, localNext++);
-      }
+      if (!map.has(key)) map.set(key, localNext++);
     }
     nextIndexRef.current.set(imageKey, localNext);
   }, [imageKey, threads]);
@@ -131,20 +97,13 @@ function useStableDotNumbers(
     (img: string, x: number, y: number): number | null => {
       const map = perImageMapRef.current.get(img);
       if (!map) return null;
-      const n = map.get(pointKey(img, x, y));
-      return n ?? null;
+      return map.get(pointKey(img, x, y)) ?? null;
     },
     []
   );
 
   return { getNumber };
 }
-
-/** ====== Claves de localStorage ====== */
-const LS_KEYS = {
-  pos: "rev.zoom.minimap.pos.v1",
-  collapsed: "rev.zoom.minimap.collapsed.v1",
-};
 
 export default function ZoomOverlay({
   src,
@@ -166,7 +125,7 @@ export default function ZoomOverlay({
   const imageKey = imageName || "__overlay__";
   const { getNumber } = useStableDotNumbers(imageKey, threads);
 
-  // ===== responsive =====
+  // responsive
   const [isNarrow, setIsNarrow] = useState(false);
   const [showChat, setShowChat] = useState(false);
   useEffect(() => {
@@ -176,331 +135,45 @@ export default function ZoomOverlay({
     return () => window.removeEventListener("resize", update);
   }, []);
 
-  // Tamaño real de la imagen
+  // main image dims
   const [imgW, setImgW] = useState(0);
   const [imgH, setImgH] = useState(0);
   const [imgReady, setImgReady] = useState(false);
 
-  // Centro y zoom
+  // camera
   const [cx, setCx] = useState(initial?.xPct ?? 50);
   const [cy, setCy] = useState(initial?.yPct ?? 50);
   const [zoom, setZoom] = useState(initial?.zoom ?? 1);
   const [hasInitialized, setHasInitialized] = useState(false);
   const [tool, setTool] = useState<ToolMode>("pan");
-  const [isDragging, setIsDragging] = useState(false);
 
+  // refs/containers
   const overlayRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{
-    x: number;
-    y: number;
-    cxPx: number;
-    cyPx: number;
-  } | null>(null);
 
-  // Doble-tap & pinch
-  const tapRef = useRef<{ t: number; x: number; y: number }>({
-    t: 0,
-    x: 0,
-    y: 0,
-  });
-  const gestureRef = useRef<GestureState>({
-    mode: "none",
-    startX: 0,
-    startY: 0,
-    startCxPx: 0,
-    startCyPx: 0,
-    startZoom: 1,
-    startDist: 0,
-    xImg0: 0,
-    yImg0: 0,
-    tapX: 0,
-    tapY: 0,
-    moved: false,
-    didPinch: false,
-  });
-  const pinchRAF = useRef<number | null>(null);
-
-  // minimapa (dims)
-  const miniRef = useRef<HTMLDivElement>(null);
-  const [miniDims, setMiniDims] = useState({
-    mw: 1,
-    mh: 1,
-    dW: 1,
-    dH: 1,
-    offX: 0,
-    offY: 0,
-  });
-
-  // ===== minimapa flotante (solo narrow) - posición persistente =====
-  const floatRef = useRef<HTMLDivElement>(null);
-  const handleRef = useRef<HTMLDivElement>(null);
-  const [miniPos, setMiniPos] = useState<{ x: number; y: number }>({
-    x: 12,
-    y: 12,
-  });
-  const [miniPosInit, setMiniPosInit] = useState(false);
-  const miniPosInitRef = useRef(miniPosInit);
+  // prevent body scroll
   useEffect(() => {
-    miniPosInitRef.current = miniPosInit;
-  }, [miniPosInit]);
-
-  const [miniCollapsed, setMiniCollapsed] = useState(false);
-  const miniDrag = useRef<{
-    sx: number;
-    sy: number;
-    ox: number;
-    oy: number;
-    dragging: boolean;
-  }>({ sx: 0, sy: 0, ox: 12, oy: 12, dragging: false });
-
-  const DEFAULT_CORNER_ON_COLLAPSE: "bl" | "br" = "bl";
-  const DEFAULT_CORNER_ON_EXPAND: "bl" | "br" = "bl";
-
-  /** Lee posición/collapsed desde localStorage (solo en narrow) */
-  useEffect(() => {
-    if (!isNarrow) return;
-    try {
-      const rawPos = localStorage.getItem(LS_KEYS.pos);
-      if (rawPos) {
-        const parsed = JSON.parse(rawPos);
-        if (
-          parsed &&
-          typeof parsed.x === "number" &&
-          typeof parsed.y === "number" &&
-          Number.isFinite(parsed.x) &&
-          Number.isFinite(parsed.y)
-        ) {
-          setMiniPos({ x: parsed.x, y: parsed.y });
-          setMiniPosInit(true); // evita snap inicial
-        }
-      }
-      const rawCol = localStorage.getItem(LS_KEYS.collapsed);
-      if (rawCol === "1" || rawCol === "0") {
-        setMiniCollapsed(rawCol === "1");
-      }
-    } catch {
-      /* noop */
-    }
-  }, [isNarrow]);
-
-  /** Guarda posición en localStorage cuando cambia */
-  useEffect(() => {
-    if (!isNarrow) return;
-    try {
-      localStorage.setItem(LS_KEYS.pos, JSON.stringify(miniPos));
-    } catch {
-      /* noop */
-    }
-  }, [isNarrow, miniPos.x, miniPos.y]);
-
-  /** Guarda collapsed en localStorage cuando cambia */
-  useEffect(() => {
-    if (!isNarrow) return;
-    try {
-      localStorage.setItem(LS_KEYS.collapsed, miniCollapsed ? "1" : "0");
-    } catch {
-      /* noop */
-    }
-  }, [isNarrow, miniCollapsed]);
-
-  const snapMiniToCorner = useCallback(
-    (collapsed: boolean, corner: "bl" | "br" = "bl") => {
-      const crect = wrapRef.current?.getBoundingClientRect();
-      const ow = crect?.width ?? window.innerWidth;
-      const oh = crect?.height ?? window.innerHeight;
-
-      const fr = floatRef.current?.getBoundingClientRect();
-      const mw = fr?.width ?? 240;
-
-      const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
-
-      // Alto real del minimapa con aspect-ratio dinámico
-      const miniRect = miniRef.current?.getBoundingClientRect();
-      const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw; // fallback cuadrado
-      const miniH = miniRect?.height ?? ratioH;
-
-      const mh = collapsed ? handleH : handleH + miniH;
-
-      const PAD = 0;
-      const x = corner === "bl" ? PAD : Math.max(PAD, ow - mw - PAD);
-      const y = Math.max(PAD, oh - mh - PAD);
-
-      setMiniPos({ x, y });
-      miniDrag.current.ox = x;
-      miniDrag.current.oy = y;
-      setMiniPosInit(true);
-    },
-    [imgW, imgH]
-  );
-
-  /** Si no hay posición inicial, hace snap; si la hay, solo aclampa a límites. */
-  useEffect(() => {
-    if (!isNarrow || !imgW || !imgH) return;
-
-    const crect = wrapRef.current?.getBoundingClientRect();
-    const ow = crect?.width ?? window.innerWidth;
-    const oh = crect?.height ?? window.innerHeight;
-
-    const fr = floatRef.current?.getBoundingClientRect();
-    const mw = fr?.width ?? 240;
-
-    const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
-
-    const miniRect = miniRef.current?.getBoundingClientRect();
-    const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw;
-    const miniH = miniRect?.height ?? ratioH;
-
-    const mh = miniCollapsed ? handleH : handleH + miniH;
-
-    const maxX = Math.max(0, ow - mw);
-    const maxY = Math.max(0, oh - mh);
-
-    if (miniPosInitRef.current) {
-      // Tenemos pos guardada → solo clamp
-      setMiniPos((p) => ({ x: clamp(p.x, 0, maxX), y: clamp(p.y, 0, maxY) }));
-    } else {
-      // Sin pos guardada → coloca en esquina adecuada
-      snapMiniToCorner(
-        miniCollapsed,
-        miniCollapsed ? DEFAULT_CORNER_ON_COLLAPSE : DEFAULT_CORNER_ON_EXPAND
-      );
-    }
-  }, [
-    isNarrow,
-    imgW,
-    imgH,
-    miniCollapsed,
-    snapMiniToCorner,
-    DEFAULT_CORNER_ON_COLLAPSE,
-    DEFAULT_CORNER_ON_EXPAND,
-  ]);
-
-  /** Clamp en resize de viewport */
-  useEffect(() => {
-    const onResize = () => {
-      if (!isNarrow) return;
-
-      const crect = wrapRef.current?.getBoundingClientRect();
-      const ow = crect?.width ?? window.innerWidth;
-      const oh = crect?.height ?? window.innerHeight;
-
-      const fr = floatRef.current?.getBoundingClientRect();
-      const mw = fr?.width ?? 240;
-
-      const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
-
-      const miniRect = miniRef.current?.getBoundingClientRect();
-      const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw;
-      const miniH = miniRect?.height ?? ratioH;
-
-      const mh = miniCollapsed ? handleH : handleH + miniH;
-
-      setMiniPos((p) => ({
-        x: clamp(p.x, 0, Math.max(0, ow - mw)),
-        y: clamp(p.y, 0, Math.max(0, oh - mh)),
-      }));
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [isNarrow, miniCollapsed, imgW, imgH]);
-
-  const beginMiniDrag = useCallback(
-    (clientX: number, clientY: number) => {
-      if (miniCollapsed) return;
-      miniDrag.current.sx = clientX;
-      miniDrag.current.sy = clientY;
-      miniDrag.current.ox = miniPos.x;
-      miniDrag.current.oy = miniPos.y;
-      miniDrag.current.dragging = true;
-      setMiniPosInit(true); // ya “tenemos posición”
-    },
-    [miniPos.x, miniPos.y, miniCollapsed]
-  );
-
-  const doMiniDrag = useCallback(
-    (clientX: number, clientY: number) => {
-      if (!miniDrag.current.dragging || miniCollapsed) return;
-
-      const crect = wrapRef.current?.getBoundingClientRect();
-      const ow = crect?.width ?? window.innerWidth;
-      const oh = crect?.height ?? window.innerHeight;
-
-      const fr = floatRef.current?.getBoundingClientRect();
-      const mw = fr?.width ?? 240;
-
-      const handleH = handleRef.current?.getBoundingClientRect().height ?? 28;
-
-      const miniRect = miniRef.current?.getBoundingClientRect();
-      const ratioH = imgW && imgH ? (mw * imgH) / imgW : mw;
-      const miniH = miniRect?.height ?? ratioH;
-
-      const mh = handleH + miniH; // expandido al arrastrar
-
-      const dx = clientX - miniDrag.current.sx;
-      const dy = clientY - miniDrag.current.sy;
-
-      const nx = clamp(miniDrag.current.ox + dx, 0, Math.max(0, ow - mw));
-      const ny = clamp(miniDrag.current.oy + dy, 0, Math.max(0, oh - mh));
-      setMiniPos({ x: nx, y: ny });
-    },
-    [miniCollapsed, imgW, imgH]
-  );
-
-  const endMiniDrag = useCallback(() => {
-    miniDrag.current.dragging = false;
-  }, []);
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => doMiniDrag(e.clientX, e.clientY);
-    const onUp = () => endMiniDrag();
-    const onTouchMove = (e: TouchEvent) => {
-      if (!miniDrag.current.dragging) return;
-      const t = e.touches[0];
-      if (t) doMiniDrag(t.clientX, t.clientY);
-    };
-    const onTouchEnd = () => endMiniDrag();
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    window.addEventListener("touchmove", onTouchMove, { passive: false });
-    window.addEventListener("touchend", onTouchEnd);
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", onTouchEnd);
+      document.body.style.overflow = original;
     };
-  }, [doMiniDrag, endMiniDrag]);
-
-  // re-render en resize (viewport imagen)
-  const [, force] = useState(0);
-  useEffect(() => {
-    const ro = new ResizeObserver(() => force((n) => n + 1));
-    if (wrapRef.current) ro.observe(wrapRef.current);
-    return () => ro.disconnect();
   }, []);
 
-  // cerrar con ESC
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  // tamaño viewport
+  // viewport px
   const view = (() => {
     const rect = wrapRef.current?.getBoundingClientRect();
     return { vw: rect?.width ?? 1, vh: rect?.height ?? 1 };
   })();
 
-  // zoom helpers
-  const getMinZoom = useCallback(() => {
-    if (!imgW || !imgH) return 1;
-    return Math.min(view.vw / imgW, view.vh / imgH);
-  }, [imgW, imgH, view.vw, view.vh]);
+  // helpers zoom
   const getFitZoom = useCallback(() => {
     if (!imgW || !imgH || !view.vw || !view.vh) return 1;
     return Math.min(view.vw / imgW, view.vh / imgH);
   }, [imgW, imgH, view.vw, view.vh]);
+
+  const getMinZoom = getFitZoom;
+
   const getPanEnabledZoom = useCallback(() => {
     if (!imgW || !imgH || !view.vw || !view.vh) return 1;
     const rw = view.vw / imgW;
@@ -508,17 +181,15 @@ export default function ZoomOverlay({
     return Math.max(rw, rh) * 1.06;
   }, [imgW, imgH, view.vw, view.vh]);
 
-  // centro px y transform
+  // transforms
   const cxPx = (cx / 100) * imgW;
   const cyPx = (cy / 100) * imgH;
   const tx = view.vw / 2 - cxPx * zoom;
   const ty = view.vh / 2 - cyPx * zoom;
 
-  // visible %
   const viewWPercent = (view.vw / (imgW * zoom)) * 100;
   const viewHPercent = (view.vh / (imgH * zoom)) * 100;
 
-  // clamping helpers
   const clampCenterPxFor = useCallback(
     (cxPxNew: number, cyPxNew: number, z: number) => {
       if (!imgW || !imgH || !view.vw || !view.vh) return { cx: 50, cy: 50 };
@@ -556,34 +227,24 @@ export default function ZoomOverlay({
     [imgW, imgH, view.vw, view.vh]
   );
 
-  // ====== inicialización ======
-  useEffect(() => {
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = original;
-    };
-  }, []);
-
+  // init camera
   const initializeView = useCallback(() => {
     if (hasInitialized || !imgReady || !view.vw || !view.vh) return;
     const fit = getFitZoom();
-    {
-      const panZoom = getPanEnabledZoom();
-      const z0 = Math.max(initial?.zoom ?? fit * 1.2, panZoom);
-      const fx = initial?.xPct ?? 50;
-      const fy = initial?.yPct ?? 50;
-      const { cx, cy } = centerEdgeAware(
-        fx,
-        fy,
-        z0,
-        initial?.ax ?? 0.5,
-        initial?.ay ?? 0.5
-      );
-      setZoom(z0);
-      setCx(cx);
-      setCy(cy);
-    }
+    const panZoom = getPanEnabledZoom();
+    const z0 = Math.max(initial?.zoom ?? fit * 1.2, panZoom);
+    const fx = initial?.xPct ?? 50;
+    const fy = initial?.yPct ?? 50;
+    const { cx, cy } = centerEdgeAware(
+      fx,
+      fy,
+      z0,
+      initial?.ax ?? 0.5,
+      initial?.ay ?? 0.5
+    );
+    setZoom(z0);
+    setCx(cx);
+    setCy(cy);
     setHasInitialized(true);
   }, [
     hasInitialized,
@@ -595,11 +256,12 @@ export default function ZoomOverlay({
     getPanEnabledZoom,
     centerEdgeAware,
   ]);
+
   useEffect(() => {
     initializeView();
   }, [initializeView]);
 
-  // ====== rueda (desktop) ======
+  /** Wheel (desktop) */
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
       e.stopPropagation();
@@ -645,210 +307,101 @@ export default function ZoomOverlay({
     ]
   );
 
-  // ====== mouse drag (pan) ======
-  const visWpx = view.vw / zoom;
-  const visHpx = view.vh / zoom;
-  const setCenterToPx = useCallback(
-    (nx: number, ny: number) => {
-      const halfW = Math.min(visWpx / 2, imgW / 2);
-      const halfH = Math.min(visHpx / 2, imgH / 2);
-      const newCx = (clamp(nx, halfW, imgW - halfW) / imgW) * 100;
-      const newCy = (clamp(ny, halfH, imgH - halfH) / imgH) * 100;
-      setCx(newCx);
-      setCy(newCy);
-    },
-    [imgW, imgH, visWpx, visHpx]
-  );
+  /** Pointer state (pan/pinch) */
+  type PState =
+    | { mode: "none" }
+    | {
+        mode: "pan";
+        pointerId: number;
+        startX: number;
+        startY: number;
+        startCxPx: number;
+        startCyPx: number;
+      }
+    | {
+        mode: "pinch";
+        p0: { id: number; x: number; y: number };
+        p1: { id: number; x: number; y: number };
+        startZoom: number;
+        startDist: number;
+        imgX0: number;
+        imgY0: number;
+      };
+  const pState = useRef<PState>({ mode: "none" });
+  const movedRef = useRef(false);
+  const lastTapRef = useRef(0);
 
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (tool !== "pan") return;
-    setIsDragging(true);
-    dragRef.current = { x: e.clientX, y: e.clientY, cxPx, cyPx };
-  };
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (tool !== "pan" || !dragRef.current) return;
-    const dx = (e.clientX - dragRef.current.x) / zoom;
-    const dy = (e.clientY - dragRef.current.y) / zoom;
-    setCenterToPx(dragRef.current.cxPx - dx, dragRef.current.cyPx - dy);
-  };
-  const endDrag = () => {
-    setIsDragging(false);
-    dragRef.current = null;
-  };
+  const dist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y);
+  const mid = (a: { x: number; y: number }, b: { x: number; y: number }) => ({
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+  });
 
-  // ====== click principal → crear hilo ======
-  const onClickMain = (e: React.MouseEvent) => {
-    const wantsPin = tool === "pin" || e.shiftKey;
-    if (!wantsPin) return;
-    if (dragRef.current) return;
-    const rect = wrapRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const xImgPx = (e.clientX - rect.left - tx) / zoom;
-    const yImgPx = (e.clientY - rect.top - ty) / zoom;
-    const xPct = clamp((xImgPx / imgW) * 100, 0, 100);
-    const yPct = clamp((yImgPx / imgH) * 100, 0, 100);
-    setHideThreads(true);
-    onCreateThreadAt(xPct, yPct);
-    if (isNarrow) setShowChat(true);
-  };
-
-  // ====== minimapa (medidas) ======
-  const measureMini = useCallback(() => {
-    if (!miniRef.current || !imgW || !imgH) return;
-    const rect = miniRef.current.getBoundingClientRect();
-    const mw = rect.width;
-    const mh = rect.height;
-    const s = Math.min(mw / imgW, mh / imgH);
-    const dW = imgW * s;
-    const dH = imgH * s;
-    const offX = (mw - dW) / 2;
-    const offY = (mh - dH) / 2;
-    setMiniDims({ mw, mh, dW, dH, offX, offY });
-  }, [imgW, imgH]);
-  useEffect(() => {
-    measureMini();
-  }, [measureMini, view.vw, view.vh, isNarrow, miniCollapsed]);
-  useEffect(() => {
-    const ro = new ResizeObserver(() => measureMini());
-    if (miniRef.current) ro.observe(miniRef.current);
-    return () => ro.disconnect();
-  }, [measureMini]);
-
-  const moveViewportToMiniPos = useCallback(
-    (clientX: number, clientY: number) => {
-      const rect = miniRef.current?.getBoundingClientRect();
-      if (!rect || !miniDims.dW || !miniDims.dH) return;
-      const xIn = clientX - rect.left - miniDims.offX;
-      const yIn = clientY - rect.top - miniDims.offY;
-      const nx = clamp(xIn / miniDims.dW, 0, 1) * 100;
-      const ny = clamp(yIn / miniDims.dH, 0, 1) * 100;
-      const wPct = (view.vw / (imgW * zoom)) * 100;
-      const hPct = (view.vh / (imgH * zoom)) * 100;
-      const halfW = Math.min(wPct, 100) / 2;
-      const halfH = Math.min(hPct, 100) / 2;
-      setCx(clamp(nx, halfW, 100 - halfW));
-      setCy(clamp(ny, halfH, 100 - halfH));
-    },
-    [miniDims, view.vw, view.vh, imgW, imgH, zoom]
-  );
-
-  const onMiniClickOrDrag = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      moveViewportToMiniPos(e.clientX, e.clientY);
-    },
-    [moveViewportToMiniPos]
-  );
-
-  const onMiniTouchStart = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const t = e.touches[0];
-      if (!t) return;
-      moveViewportToMiniPos(t.clientX, t.clientY);
-    },
-    [moveViewportToMiniPos]
-  );
-
-  const onMiniTouchMove = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const t = e.touches[0];
-      if (!t) return;
-      moveViewportToMiniPos(t.clientX, t.clientY);
-    },
-    [moveViewportToMiniPos]
-  );
-
-  const vpStyle = useMemo(() => {
-    const effW = Math.min(viewWPercent, 100);
-    const effH = Math.min(viewHPercent, 100);
-    const vpWpx = miniDims.dW * (effW / 100);
-    const vpHpx = miniDims.dH * (effH / 100);
-    let left = miniDims.offX + ((cx - effW / 2) / 100) * miniDims.dW;
-    let top = miniDims.offY + ((cy - effH / 2) / 100) * miniDims.dH;
-    left = clamp(left, miniDims.offX, miniDims.offX + miniDims.dW - vpWpx);
-    top = clamp(top, miniDims.offY, miniDims.offY + miniDims.dH - vpHpx);
-    return {
-      width: `${vpWpx}px`,
-      height: `${vpHpx}px`,
-      left: `${left}px`,
-      top: `${top}px`,
-    } as React.CSSProperties;
-  }, [miniDims, viewWPercent, viewHPercent, cx, cy]);
-
-  // ====== derivados ======
-  const activeThread = useMemo(
-    () => threads.find((t) => t.id === activeThreadId) || null,
-    [threads, activeThreadId]
-  );
-
-  const threadIndex = useMemo(() => {
-    if (!activeThread) return 0;
-    const n = getNumber(imageKey, activeThread.x, activeThread.y);
-    return n ?? 0;
-  }, [activeThread, imageKey, getNumber]);
-
-  const fitToView = useCallback(() => {
-    const z = getFitZoom();
-    setZoom(z);
-    setCx(50);
-    setCy(50);
-  }, [getFitZoom]);
-
-  // ====== MOBILE: gestures ======
-  const onTouchStart = useCallback(
-    (e: React.TouchEvent) => {
-      e.preventDefault();
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
       const rect = wrapRef.current?.getBoundingClientRect();
       if (!rect || !imgW || !imgH) return;
-      if (e.touches.length === 1) {
-        const t = e.touches[0];
-        const x = t.clientX - rect.left;
-        const y = t.clientY - rect.top;
-        gestureRef.current.mode = "pan";
-        gestureRef.current.startX = x;
-        gestureRef.current.startY = y;
-        gestureRef.current.startCxPx = (cx / 100) * imgW;
-        gestureRef.current.startCyPx = (cy / 100) * imgH;
-        gestureRef.current.tapX = x;
-        gestureRef.current.tapY = y;
-        gestureRef.current.moved = false;
-      } else if (e.touches.length >= 2) {
-        const t0 = e.touches[0];
-        const t1 = e.touches[1];
-        const x0 = t0.clientX - rect.left;
-        const y0 = t0.clientY - rect.top;
-        const x1 = t1.clientX - rect.left;
-        const y1 = t1.clientY - rect.top;
-        const { x: mx, y: my } = mid(x0, y0, x1, y1);
-        const d = dist(x0, y0, x1, y1);
-        gestureRef.current.mode = "pinch";
-        gestureRef.current.startZoom = zoom;
-        gestureRef.current.startDist = d || 1;
-        gestureRef.current.xImg0 = (mx - tx) / zoom;
-        gestureRef.current.yImg0 = (my - ty) / zoom;
-        gestureRef.current.didPinch = true;
+      movedRef.current = false;
+
+      if (pState.current.mode === "none") {
+        pState.current = {
+          mode: "pan",
+          pointerId: e.pointerId,
+          startX: e.clientX - rect.left,
+          startY: e.clientY - rect.top,
+          startCxPx: (cx / 100) * imgW,
+          startCyPx: (cy / 100) * imgH,
+        };
+        return;
+      }
+
+      if (pState.current.mode === "pan") {
+        const p0 = {
+          id: pState.current.pointerId,
+          x: pState.current.startX,
+          y: pState.current.startY,
+        };
+        const p1 = {
+          id: e.pointerId,
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+        };
+        const m = mid(p0, p1);
+        const d = dist(p0, p1) || 1;
+        const imgX0 = (m.x - tx) / zoom;
+        const imgY0 = (m.y - ty) / zoom;
+        pState.current = {
+          mode: "pinch",
+          p0,
+          p1,
+          startZoom: zoom,
+          startDist: d,
+          imgX0,
+          imgY0,
+        };
       }
     },
-    [imgW, imgH, cx, cy, zoom, tx, ty]
+    [imgW, imgH, cx, cy, tx, ty, zoom]
   );
 
-  const onTouchMove = useCallback(
-    (e: React.TouchEvent) => {
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent) => {
       const rect = wrapRef.current?.getBoundingClientRect();
       if (!rect || !imgW || !imgH) return;
-      if (gestureRef.current.mode === "pan" && e.touches.length === 1) {
-        const t = e.touches[0];
-        const x = t.clientX - rect.left;
-        const y = t.clientY - rect.top;
-        const dx = (x - gestureRef.current.startX) / zoom;
-        const dy = (y - gestureRef.current.startY) / zoom;
-        const cxPxNew = gestureRef.current.startCxPx - dx;
-        const cyPxNew = gestureRef.current.startCyPx - dy;
+
+      if (
+        pState.current.mode === "pan" &&
+        e.pointerId === pState.current.pointerId
+      ) {
+        movedRef.current = true;
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const dx = (x - pState.current.startX) / zoom;
+        const dy = (y - pState.current.startY) / zoom;
+        const cxPxNew = pState.current.startCxPx - dx;
+        const cyPxNew = pState.current.startCyPx - dy;
         const { cx: cxPct, cy: cyPct } = clampCenterPxFor(
           cxPxNew,
           cyPxNew,
@@ -856,94 +409,104 @@ export default function ZoomOverlay({
         );
         setCx(cxPct);
         setCy(cyPct);
-      } else if (gestureRef.current.mode === "pinch" && e.touches.length >= 2) {
-        if (pinchRAF.current != null) return;
-        pinchRAF.current = requestAnimationFrame(() => {
-          pinchRAF.current = null;
-          const t0 = e.touches[0];
-          const t1 = e.touches[1];
-          const x0 = t0.clientX - rect.left;
-          const y0 = t0.clientY - rect.top;
-          const x1 = t1.clientX - rect.left;
-          const y1 = t1.clientY - rect.top;
-          const dNow = dist(x0, y0, x1, y1);
-          const factor = dNow / (gestureRef.current.startDist || dNow);
-          const minZ = getMinZoom();
-          const maxZ = 10;
-          const nextZ = clamp(
-            gestureRef.current.startZoom * factor,
-            minZ,
-            maxZ
-          );
-          const mx = (x0 + x1) / 2;
-          const my = (y0 + y1) / 2;
-          const cxPxNext =
-            view.vw / (2 * nextZ) + gestureRef.current.xImg0 - mx / nextZ;
-          const cyPxNext =
-            view.vh / (2 * nextZ) + gestureRef.current.yImg0 - my / nextZ;
-          const { cx: cxPct, cy: cyPct } = clampCenterPxFor(
-            cxPxNext,
-            cyPxNext,
-            nextZ
-          );
-          setZoom(nextZ);
-          setCx(cxPct);
-          setCy(cyPct);
-        });
+        return;
+      }
+
+      if (pState.current.mode === "pinch") {
+        movedRef.current = true;
+        if (e.pointerId === pState.current.p0.id) {
+          pState.current.p0 = {
+            ...pState.current.p0,
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+          };
+        } else if (e.pointerId === pState.current.p1.id) {
+          pState.current.p1 = {
+            ...pState.current.p1,
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+          };
+        } else return;
+
+        const dNow = dist(pState.current.p0, pState.current.p1);
+        const factor = dNow / (pState.current.startDist || dNow);
+        const minZ = getMinZoom();
+        const maxZ = 10;
+        const nextZ = clamp(pState.current.startZoom * factor, minZ, maxZ);
+        const m = mid(pState.current.p0, pState.current.p1);
+        const cxPxNext =
+          view.vw / (2 * nextZ) + pState.current.imgX0 - m.x / nextZ;
+        const cyPxNext =
+          view.vh / (2 * nextZ) + pState.current.imgY0 - m.y / nextZ;
+        const { cx: cxPct, cy: cyPct } = clampCenterPxFor(
+          cxPxNext,
+          cyPxNext,
+          nextZ
+        );
+        setZoom(nextZ);
+        setCx(cxPct);
+        setCy(cyPct);
       }
     },
-    [imgW, imgH, zoom, view.vw, view.vh, getMinZoom, clampCenterPxFor]
+    [imgW, imgH, view.vw, view.vh, getMinZoom, clampCenterPxFor, zoom]
   );
 
-  const onTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
-      if (e.touches.length > 0) return;
-      const now = performance.now();
-      const last = tapRef.current;
-      const isQuick = now - last.t < 300;
+  const onPointerUp = useCallback(
+    (e: React.PointerEvent) => {
       if (
-        isQuick &&
-        !gestureRef.current.moved &&
-        !gestureRef.current.didPinch
+        pState.current.mode === "pan" &&
+        e.pointerId === pState.current.pointerId
       ) {
-        const fit = getFitZoom();
-        const panZoom = getPanEnabledZoom();
-        const threshold = panZoom * 1.5;
-        if (zoom >= threshold) {
-          const nextZ = panZoom;
-          const cxPxNow = (cx / 100) * imgW;
-          const cyPxNow = (cy / 100) * imgH;
-          const { cx: cx2, cy: cy2 } = clampCenterPxFor(
-            cxPxNow,
-            cyPxNow,
-            nextZ
-          );
-          setZoom(nextZ);
-          setCx(cx2);
-          setCy(cy2);
-        } else {
-          const nextZ = clamp(Math.max(zoom * 2, fit * 2.4), getMinZoom(), 10);
-          const cxPxNext = view.vw / (2 * nextZ) + (cxPx - view.vw / 2) / zoom;
-          const cyPxNext = view.vh / (2 * nextZ) + (cyPx - view.vh / 2) / zoom;
-          const { cx: cxPct, cy: cyPct } = clampCenterPxFor(
-            cxPxNext,
-            cyPxNext,
-            nextZ
-          );
-          setZoom(nextZ);
-          setCx(cxPct);
-          setCy(cyPct);
+        // double-tap zoom
+        const now = performance.now();
+        const dt = now - lastTapRef.current;
+        if (dt < 300 && !movedRef.current) {
+          const fit = getFitZoom();
+          const panZoom = getPanEnabledZoom();
+          const threshold = panZoom * 1.5;
+          if (zoom >= threshold) {
+            const nextZ = panZoom;
+            const cxPxNow = (cx / 100) * imgW;
+            const cyPxNow = (cy / 100) * imgH;
+            const { cx: cx2, cy: cy2 } = clampCenterPxFor(
+              cxPxNow,
+              cyPxNow,
+              nextZ
+            );
+            setZoom(nextZ);
+            setCx(cx2);
+            setCy(cy2);
+          } else {
+            const nextZ = clamp(
+              Math.max(zoom * 2, fit * 2.4),
+              getMinZoom(),
+              10
+            );
+            const cxPxNext =
+              view.vw / (2 * nextZ) + (cxPx - view.vw / 2) / zoom;
+            const cyPxNext =
+              view.vh / (2 * nextZ) + (cyPx - view.vh / 2) / zoom;
+            const { cx: cxPct, cy: cyPct } = clampCenterPxFor(
+              cxPxNext,
+              cyPxNext,
+              nextZ
+            );
+            setZoom(nextZ);
+            setCx(cxPct);
+            setCy(cyPct);
+          }
         }
-      }
-      tapRef.current = { t: now, x: 0, y: 0 };
-      gestureRef.current.mode = "none";
-      gestureRef.current.didPinch = false;
-      if (pinchRAF.current) {
-        cancelAnimationFrame(pinchRAF.current);
-        pinchRAF.current = null;
+        lastTapRef.current = now;
+        pState.current = { mode: "none" };
+      } else if (pState.current.mode === "pinch") {
+        pState.current = { mode: "none" };
       }
     },
     [
+      getFitZoom,
+      getPanEnabledZoom,
+      getMinZoom,
+      clampCenterPxFor,
       zoom,
       cx,
       cy,
@@ -953,14 +516,33 @@ export default function ZoomOverlay({
       view.vh,
       imgW,
       imgH,
-      getFitZoom,
-      getPanEnabledZoom,
-      getMinZoom,
-      clampCenterPxFor,
     ]
   );
 
-  // ====== dots (numeración estable) ======
+  const onPointerCancel = useCallback(() => {
+    pState.current = { mode: "none" };
+  }, []);
+
+  /** Crear hilo (click si no hubo pan/pinch) */
+  const onClickMain = useCallback(
+    (e: React.MouseEvent) => {
+      const wantsPin = tool === "pin" || e.shiftKey;
+      if (!wantsPin) return;
+      if (movedRef.current) return;
+      const rect = wrapRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const xImgPx = (e.clientX - rect.left - tx) / zoom;
+      const yImgPx = (e.clientY - rect.top - ty) / zoom;
+      const xPct = clamp((xImgPx / imgW) * 100, 0, 100);
+      const yPct = clamp((yImgPx / imgH) * 100, 0, 100);
+      setHideThreads(true);
+      onCreateThreadAt(xPct, yPct);
+      if (isNarrow) setShowChat(true);
+    },
+    [tool, tx, ty, zoom, imgW, imgH, setHideThreads, onCreateThreadAt, isNarrow]
+  );
+
+  // dots
   const dots = useMemo(
     () =>
       threads.map((t, i) => ({
@@ -976,18 +558,24 @@ export default function ZoomOverlay({
   const centerToThread = (t: Thread) => {
     const px = (t.x / 100) * imgW;
     const py = (t.y / 100) * imgH;
-    setCenterToPx(px, py);
+    const visWpx = view.vw / zoom;
+    const visHpx = view.vh / zoom;
+    const halfW = Math.min(visWpx / 2, imgW / 2);
+    const halfH = Math.min(visHpx / 2, imgH / 2);
+    const nx = clamp(px, halfW, imgW - halfW);
+    const ny = clamp(py, halfH, imgH - halfH);
+    setCx((nx / imgW) * 100);
+    setCy((ny / imgH) * 100);
     onFocusThread(t.id);
     if (isNarrow) setShowChat(true);
   };
 
-  const [cursor, setCursor] = useState("");
-  useEffect(() => {
-    setCursor(
-      tool === "pin" ? "crosshair" : dragRef.current ? "grabbing" : "grab"
-    );
-  }, [isDragging, tool]);
-
+  const cursor =
+    tool === "pin"
+      ? "crosshair"
+      : pState.current.mode === "pan"
+      ? "grabbing"
+      : "grab";
   const miniAspect = useMemo(
     () => (imgW && imgH ? `${imgW} / ${imgH}` : undefined),
     [imgW, imgH]
@@ -1000,10 +588,16 @@ export default function ZoomOverlay({
       aria-label="Zoom"
       ref={overlayRef}
       style={{ touchAction: "none" }}
-      onMouseDown={(e) => e.stopPropagation()}
-      onTouchStart={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
     >
-      <button className={styles.close} onClick={onClose} aria-label="Cerrar">
+      {/* cerrar en pointerUp */}
+      <button
+        className={styles.close}
+        onPointerUp={onClose}
+        aria-label="Cerrar"
+        title="Cerrar"
+      >
         <CloseIcon />
       </button>
 
@@ -1060,7 +654,12 @@ export default function ZoomOverlay({
         </button>
         <button
           className={styles.toolBtn}
-          onClick={fitToView}
+          onClick={() => {
+            const z = getFitZoom();
+            setZoom(z);
+            setCx(50);
+            setCy(50);
+          }}
           title="Ajustar a la ventana"
           aria-label="Ajustar a la ventana"
         >
@@ -1074,15 +673,11 @@ export default function ZoomOverlay({
         ref={wrapRef}
         style={{ touchAction: "none" }}
         onWheel={onWheel}
-        onMouseDown={onMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={endDrag}
-        onMouseLeave={endDrag}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
         onClick={onClickMain}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-        onTouchCancel={onTouchEnd}
       >
         <div
           className={styles.stage}
@@ -1096,7 +691,6 @@ export default function ZoomOverlay({
             ["--zoom" as any]: zoom,
           }}
         >
-          {/* Imagen principal */}
           <div className={styles.imgWrap}>
             <ImageWithSkeleton
               src={src}
@@ -1112,14 +706,12 @@ export default function ZoomOverlay({
                 setImgW(w);
                 setImgH(h);
                 setImgReady(true);
-                requestAnimationFrame(() => measureMini());
               }}
               onLoadingComplete={(img: HTMLImageElement) => {
                 if (!imgW || !imgH) {
                   setImgW(img.naturalWidth || 1);
                   setImgH(img.naturalHeight || 1);
                   setImgReady(true);
-                  requestAnimationFrame(() => measureMini());
                 }
               }}
             />
@@ -1151,70 +743,54 @@ export default function ZoomOverlay({
             ))}
         </div>
 
-        {/* Minimap flotante (solo ≤1050px) */}
+        {/* Minimap flotante (≤1050px) totalmente encapsulado */}
         {isNarrow && (
           <MinimapFloat
+            containerRef={wrapRef}
             src={src}
-            aspect={miniAspect}
-            position={miniPos}
-            collapsed={miniCollapsed}
-            setCollapsed={setMiniCollapsed}
-            miniRef={miniRef}
-            floatRef={floatRef}
-            handleRef={handleRef}
-            vpStyle={vpStyle}
-            onMiniClickOrDrag={onMiniClickOrDrag}
-            onMiniTouchStart={onMiniTouchStart}
-            onMiniTouchMove={onMiniTouchMove}
-            beginMiniDrag={beginMiniDrag}
-            snapMiniToCorner={snapMiniToCorner}
-            measureMini={measureMini}
+            imgW={imgW}
+            imgH={imgH}
+            cx={cx}
+            cy={cy}
+            zoom={zoom}
+            viewportPx={{ vw: view.vw, vh: view.vh }}
+            onMoveViewport={(xPct, yPct) => {
+              setCx(xPct);
+              setCy(yPct);
+            }}
+            miniAspect={miniAspect}
           />
         )}
       </div>
 
-      {/* Sidebar clásica (solo >1050px) */}
+      {/* Sidebar (>1050px) encapsulada */}
       {!isNarrow && (
-        <div className={styles.sidebar} style={{ touchAction: "none" }}>
-          <Minimap
-            src={src}
-            aspect={miniAspect}
-            vpStyle={vpStyle}
-            miniRef={miniRef}
-            onMouseDown={onMiniClickOrDrag}
-            onMouseMove={(e) => e.buttons === 1 && onMiniClickOrDrag(e)}
-            onTouchStart={onMiniTouchStart}
-            onTouchMove={onMiniTouchMove}
-            onImageReady={measureMini}
-          />
-
-          <div className={styles.chatPanel}>
-            <ThreadsPanel
-              threads={threads}
-              activeThreadId={activeThreadId}
-              validationLock={!!validationLock}
-              pendingStatusIds={pendingStatusIds}
-              composeLocked={false}
-              statusLockedForActive={
-                !!(
-                  pendingStatusIds &&
-                  activeThreadId &&
-                  pendingStatusIds.has(activeThreadId)
-                )
-              }
-              onAddThreadMessage={onAddThreadMessage}
-              onFocusThread={onFocusThread}
-              centerToThread={centerToThread}
-              onToggleThreadStatus={onToggleThreadStatus}
-              onDeleteThread={onDeleteThread}
-              emptyTitle="Aún no hay hilos en esta imagen"
-              emptySubtitle="Haz click/tap en la imagen para crear un hilo y empezar el chat."
-            />
-          </div>
-        </div>
+        <SidePanel
+          src={src}
+          miniAspect={miniAspect}
+          imgW={imgW}
+          imgH={imgH}
+          cx={cx}
+          cy={cy}
+          zoom={zoom}
+          viewportPx={{ vw: view.vw, vh: view.vh }}
+          onMoveViewport={(xPct, yPct) => {
+            setCx(xPct);
+            setCy(yPct);
+          }}
+          threads={threads}
+          activeThreadId={activeThreadId}
+          validationLock={!!validationLock}
+          pendingStatusIds={pendingStatusIds}
+          onAddThreadMessage={onAddThreadMessage}
+          onFocusThread={onFocusThread}
+          centerToThread={centerToThread}
+          onToggleThreadStatus={onToggleThreadStatus}
+          onDeleteThread={onDeleteThread}
+        />
       )}
 
-      {/* FAB (mostrar chat) — ≤1050px */}
+      {/* FAB chat — ≤1050px */}
       {isNarrow && !showChat && (
         <button
           className={styles.fabChat}
@@ -1226,12 +802,20 @@ export default function ZoomOverlay({
         </button>
       )}
 
-      {/* Drawer de chat — ≤1050px */}
+      {/* Drawer chat — ≤1050px */}
       {isNarrow && showChat && (
         <div className={styles.chatDrawer} role="dialog" aria-label="Chat">
           <div className={styles.chatDrawerHeader}>
             <div className={styles.chatDrawerTitle}>
-              {activeThread ? `Hilo #${threadIndex}` : "Hilos"}
+              {threads.find((t) => t.id === activeThreadId)
+                ? `Hilo #${
+                    getNumber(
+                      imageKey,
+                      threads.find((t) => t.id === activeThreadId)!.x,
+                      threads.find((t) => t.id === activeThreadId)!.y
+                    ) ?? 0
+                  }`
+                : "Hilos"}
             </div>
             <button
               className={styles.chatDrawerClose}
