@@ -64,7 +64,9 @@ export default function MinimapFloat({
       }
       const rawCol = localStorage.getItem(LS_KEYS.collapsed);
       if (rawCol === "1" || rawCol === "0") setMiniCollapsed(rawCol === "1");
-    } catch {}
+    } catch {
+      //No Oop
+    }
     setHydrated(true);
   }, []);
 
@@ -158,14 +160,20 @@ export default function MinimapFloat({
     setDragging(true);
   };
 
-  const doMiniDrag = (clientX: number, clientY: number) => {
-    if (!dragRef.current.active) return;
-    const dx = clientX - dragRef.current.sx;
-    const dy = clientY - dragRef.current.sy;
-    setMiniPos(
-      clampToBounds({ x: dragRef.current.ox + dx, y: dragRef.current.oy + dy })
-    );
-  };
+  const doMiniDrag = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!dragRef.current.active) return;
+      const dx = clientX - dragRef.current.sx;
+      const dy = clientY - dragRef.current.sy;
+      setMiniPos(
+        clampToBounds({
+          x: dragRef.current.ox + dx,
+          y: dragRef.current.oy + dy,
+        })
+      );
+    },
+    [clampToBounds]
+  );
 
   const endMiniDrag = () => {
     if (!dragRef.current.active) return;
@@ -194,7 +202,7 @@ export default function MinimapFloat({
       window.removeEventListener("mouseup", onMUp);
       window.removeEventListener("pointercancel", onPCancel);
     };
-  }, [clampToBounds]); // usa el último clamp
+  }, [clampToBounds, doMiniDrag]); // usa el último clamp
 
   return (
     <div
