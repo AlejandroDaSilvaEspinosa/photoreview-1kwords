@@ -56,7 +56,7 @@ export function DotNumbersProvider({
     const prevNext = nextRef.current.get(imageName);
 
     // Primera vez: 1..N por id ascendente
-    if (!map) {
+    if (!map || (map.size === 0 && current.length > 0)) {
       map = new Map<string, number>();
       const sorted = current.slice().sort((a, b) => a.id - b.id);
       let i = 1;
